@@ -1,18 +1,18 @@
 import { eq, and } from "drizzle-orm"
 import { Database } from "@/storage/db"
-import { ControlAccountTable } from "./control.sql"
+import { AccountTable } from "./account.sql"
 import z from "zod"
 
 export * from "./control.sql"
 
-export namespace Control {
+export namespace Account {
   export const Account = z.object({
     email: z.string(),
     url: z.string(),
   })
   export type Account = z.infer<typeof Account>
 
-  function fromRow(row: (typeof ControlAccountTable)["$inferSelect"]): Account {
+  function fromRow(row: (typeof AccountTable)["$inferSelect"]): Account {
     return {
       email: row.email,
       url: row.url,
@@ -20,16 +20,12 @@ export namespace Control {
   }
 
   export function account(): Account | undefined {
-    const row = Database.use((db) =>
-      db.select().from(ControlAccountTable).where(eq(ControlAccountTable.active, true)).get(),
-    )
+    const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.active, true)).get())
     return row ? fromRow(row) : undefined
   }
 
   export async function token(): Promise<string | undefined> {
-    const row = Database.use((db) =>
-      db.select().from(ControlAccountTable).where(eq(ControlAccountTable.active, true)).get(),
-    )
+    const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.active, true)).get())
     if (!row) return undefined
     if (row.token_expiry && row.token_expiry > Date.now()) return row.access_token
 
@@ -52,13 +48,13 @@ export namespace Control {
 
     Database.use((db) =>
       db
-        .update(ControlAccountTable)
+        .update(AccountTable)
         .set({
           access_token: json.access_token,
           refresh_token: json.refresh_token ?? row.refresh_token,
           token_expiry: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined,
         })
-        .where(and(eq(ControlAccountTable.email, row.email), eq(ControlAccountTable.url, row.url)))
+        .where(and(eq(AccountTable.email, row.email), eq(AccountTable.url, row.url)))
         .run(),
     )
 

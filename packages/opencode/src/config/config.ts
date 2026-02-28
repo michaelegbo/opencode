@@ -32,7 +32,7 @@ import { Glob } from "../util/glob"
 import { PackageRegistry } from "@/bun/registry"
 import { proxied } from "@/util/proxied"
 import { iife } from "@/util/iife"
-import { Control } from "@/control"
+import { Account } from "@/account"
 import { ConfigPaths } from "./paths"
 import { Filesystem } from "@/util/filesystem"
 
@@ -107,7 +107,7 @@ export namespace Config {
       }
     }
 
-    const token = await Control.token()
+    const token = await Account.token()
     if (token) {
     }
 

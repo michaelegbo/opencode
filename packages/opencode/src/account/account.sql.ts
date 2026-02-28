@@ -1,9 +1,8 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core"
-import { eq } from "drizzle-orm"
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "@/storage/schema.sql"
 
-export const ControlAccountTable = sqliteTable(
-  "control_account",
+export const AccountTable = sqliteTable(
+  "account",
   {
     email: text().notNull(),
     url: text().notNull(),
