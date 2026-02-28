@@ -107,7 +107,8 @@ export namespace Config {
       }
     }
 
-    const token = await Account.token()
+    const active = Account.active()
+    const token = active ? await Account.token(active.id) : undefined
     if (token) {
     }
 

@@ -1,10 +1,11 @@
-import { eq, and } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { AccountTable } from "./account.sql"
 import z from "zod"
 
 export namespace Account {
   export const Account = z.object({
+    id: z.string(),
     email: z.string(),
     url: z.string(),
   })
@@ -12,18 +13,40 @@ export namespace Account {
 
   function fromRow(row: (typeof AccountTable)["$inferSelect"]): Account {
     return {
+      id: row.id,
       email: row.email,
       url: row.url,
     }
   }
 
-  export function account(): Account | undefined {
+  export function active(): Account | undefined {
     const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.active, true)).get())
     return row ? fromRow(row) : undefined
   }
 
-  export async function token(): Promise<string | undefined> {
-    const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.active, true)).get())
+  export function list(): Account[] {
+    return Database.use((db) => db.select().from(AccountTable).all().map(fromRow))
+  }
+
+  export async function workspaces(accountID: string): Promise<{ id: string; name: string }[]> {
+    const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.id, accountID)).get())
+    if (!row) return []
+
+    const access = await token(accountID)
+    if (!access) return []
+
+    const res = await fetch(`${row.url}/api/orgs`, {
+      headers: { authorization: `Bearer ${access}` },
+    })
+
+    if (!res.ok) return []
+
+    const json = (await res.json()) as Array<{ id?: string; name?: string }>
+    return json.map((x) => ({ id: x.id ?? "", name: x.name ?? "" }))
+  }
+
+  export async function token(accountID: string): Promise<string | undefined> {
+    const row = Database.use((db) => db.select().from(AccountTable).where(eq(AccountTable.id, accountID)).get())
     if (!row) return undefined
     if (row.token_expiry && row.token_expiry > Date.now()) return row.access_token
 
@@ -52,7 +75,7 @@ export namespace Account {
           refresh_token: json.refresh_token ?? row.refresh_token,
           token_expiry: json.expires_in ? Date.now() + json.expires_in * 1000 : undefined,
         })
-        .where(and(eq(AccountTable.email, row.email), eq(AccountTable.url, row.url)))
+        .where(eq(AccountTable.id, row.id))
         .run(),
     )
 
@@ -122,23 +145,20 @@ export namespace Account {
       access_token?: string
       refresh_token?: string
       expires_in?: number
-      email?: string
       error?: string
       error_description?: string
     }
 
     if (json.access_token) {
-      let email = json.email
-      if (!email) {
-        const me = await fetch(`${input.server}/api/user`, {
-          headers: { authorization: `Bearer ${json.access_token}` },
-        })
-        const user = (await me.json()) as { email?: string }
-        if (!user.email) {
-          return { type: "error", msg: "No email in response" }
-        }
-        email = user.email
+      const me = await fetch(`${input.server}/api/user`, {
+        headers: { authorization: `Bearer ${json.access_token}` },
+      })
+      const user = (await me.json()) as { id?: string; email?: string }
+      if (!user.id || !user.email) {
+        return { type: "error", msg: "No id or email in response" }
       }
+      const id = user.id
+      const email = user.email
 
       const access = json.access_token
       const expiry = Date.now() + json.expires_in! * 1000
@@ -148,6 +168,7 @@ export namespace Account {
         db.update(AccountTable).set({ active: false }).run()
         db.insert(AccountTable)
           .values({
+            id,
             email,
             url: input.url,
             access_token: access,
@@ -156,7 +177,7 @@ export namespace Account {
             active: true,
           })
           .onConflictDoUpdate({
-            target: [AccountTable.email, AccountTable.url],
+            target: AccountTable.id,
             set: {
               access_token: access,
               refresh_token: refresh,
