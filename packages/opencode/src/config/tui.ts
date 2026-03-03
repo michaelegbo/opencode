@@ -18,7 +18,11 @@ export namespace TuiConfig {
   export type Info = z.output<typeof Info>
 
   function mergeInfo(target: Info, source: Info): Info {
-    return mergeDeep(target, source)
+    const merged = mergeDeep(target, source)
+    if (target.plugin && source.plugin) {
+      merged.plugin = [...target.plugin, ...source.plugin]
+    }
+    return merged
   }
 
   function customPath() {
@@ -67,14 +71,33 @@ export namespace TuiConfig {
     }
 
     result.keybinds = Config.Keybinds.parse(result.keybinds ?? {})
+    result.plugin = Config.deduplicatePlugins(result.plugin ?? [])
+
+    const deps: Promise<void>[] = []
+    for (const dir of unique(directories)) {
+      if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+      deps.push(
+        (async () => {
+          const shouldInstall = await Config.needsInstall(dir)
+          if (!shouldInstall) return
+          await Config.installDependencies(dir)
+        })(),
+      )
+    }
 
     return {
       config: result,
+      deps,
     }
   })
 
   export async function get() {
     return state().then((x) => x.config)
+  }
+
+  export async function waitForDependencies() {
+    const deps = await state().then((x) => x.deps)
+    await Promise.all(deps)
   }
 
   async function loadFile(filepath: string): Promise<Info> {
@@ -87,13 +110,13 @@ export namespace TuiConfig {
   }
 
   async function load(text: string, configFilepath: string): Promise<Info> {
-    const data = await ConfigPaths.parseText(text, configFilepath, "empty")
-    if (!data || typeof data !== "object" || Array.isArray(data)) return {}
+    const raw = await ConfigPaths.parseText(text, configFilepath, "empty")
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
 
     // Flatten a nested "tui" key so users who wrote `{ "tui": { ... } }` inside tui.json
     // (mirroring the old opencode.json shape) still get their settings applied.
     const normalized = (() => {
-      const copy = { ...(data as Record<string, unknown>) }
+      const copy = { ...(raw as Record<string, unknown>) }
       if (!("tui" in copy)) return copy
       if (!copy.tui || typeof copy.tui !== "object" || Array.isArray(copy.tui)) {
         delete copy.tui
@@ -113,6 +136,13 @@ export namespace TuiConfig {
       return {}
     }
 
-    return parsed.data
+    const data = parsed.data
+    if (data.plugin) {
+      for (let i = 0; i < data.plugin.length; i++) {
+        data.plugin[i] = Config.resolvePluginSpec(data.plugin[i], configFilepath)
+      }
+    }
+
+    return data
   }
 }

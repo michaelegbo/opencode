@@ -70,7 +70,6 @@ import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import { Editor } from "../../util/editor"
 import stripAnsi from "strip-ansi"
-import { Footer } from "./footer.tsx"
 import { usePromptRef } from "../../context/prompt"
 import { useExit } from "../../context/exit"
 import { Filesystem } from "@/util/filesystem"
@@ -81,8 +80,11 @@ import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
+import type { TuiSlotMap } from "@opencode-ai/plugin"
 
 addDefaultParsers(parsers.parsers)
+
+type Slot = (props: { name: "session_footer"; session_id: TuiSlotMap["session_footer"]["session_id"] }) => unknown
 
 class CustomSpeedScroll implements ScrollAcceleration {
   constructor(private speed: number) {}
@@ -113,7 +115,7 @@ function use() {
   return ctx
 }
 
-export function Session() {
+export function Session(props: { slot: Slot }) {
   const route = useRouteData("session")
   const { navigate } = useRoute()
   const sync = useSync()
@@ -1178,6 +1180,7 @@ export function Session() {
                 }}
                 sessionID={route.sessionID}
               />
+              {props.slot({ name: "session_footer", session_id: route.sessionID }) as never}
             </box>
           </Show>
           <Toast />

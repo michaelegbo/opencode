@@ -16,6 +16,7 @@
     "dist"
   ],
   "dependencies": {
+    "@opentui/core": "0.1.86",
     "@opencode-ai/sdk": "workspace:*",
     "zod": "catalog:"
   },

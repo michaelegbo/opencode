@@ -508,3 +508,57 @@ test("gracefully falls back when tui.json has invalid JSON", async () => {
     },
   })
 })
+
+test("supports tuple plugin specs with options in tui.json", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(dir, "tui.json"),
+        JSON.stringify({
+          plugin: [["acme-plugin@1.2.3", { enabled: true, label: "demo" }]],
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await TuiConfig.get()
+      expect(config.plugin).toEqual([["acme-plugin@1.2.3", { enabled: true, label: "demo" }]])
+    },
+  })
+})
+
+test("deduplicates tuple plugin specs by name with higher precedence winning", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Bun.write(
+        path.join(Global.Path.config, "tui.json"),
+        JSON.stringify({
+          plugin: [["acme-plugin@1.0.0", { source: "global" }]],
+        }),
+      )
+      await Bun.write(
+        path.join(dir, "tui.json"),
+        JSON.stringify({
+          plugin: [
+            ["acme-plugin@2.0.0", { source: "project" }],
+            ["second-plugin@3.0.0", { source: "project" }],
+          ],
+        }),
+      )
+    },
+  })
+
+  await Instance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const config = await TuiConfig.get()
+      expect(config.plugin).toEqual([
+        ["acme-plugin@2.0.0", { source: "project" }],
+        ["second-plugin@3.0.0", { source: "project" }],
+      ])
+    },
+  })
+})

@@ -9,13 +9,16 @@ import type {
   Message,
   Part,
   Auth,
-  Config,
+  Config as SDKConfig,
 } from "@opencode-ai/sdk"
+import type { createOpencodeClient as createOpencodeClientV2, Event as TuiEvent } from "@opencode-ai/sdk/v2"
+import type { CliRenderer, Plugin as SlotPlugin } from "@opentui/core"
 
 import type { BunShell } from "./shell"
 import { type ToolDefinition } from "./tool"
 
 export * from "./tool"
+export type { CliRenderer, SlotMode } from "@opentui/core"
 
 export type ProviderContext = {
   source: "env" | "config" | "custom" | "api"
@@ -32,7 +35,80 @@ export type PluginInput = {
   $: BunShell
 }
 
-export type Plugin = (input: PluginInput) => Promise<Hooks>
+export type PluginOptions = Record<string, unknown>
+
+export type Config = Omit<SDKConfig, "plugin"> & {
+  plugin?: Array<string | [string, PluginOptions]>
+}
+
+type HexColor = `#${string}`
+type RefName = string
+type Variant = {
+  dark: HexColor | RefName | number
+  light: HexColor | RefName | number
+}
+type ThemeColorValue = HexColor | RefName | number | Variant
+
+export type ThemeJson = {
+  $schema?: string
+  defs?: Record<string, HexColor | RefName>
+  theme: Record<string, ThemeColorValue> & {
+    selectedListItemText?: ThemeColorValue
+    backgroundMenu?: ThemeColorValue
+    thinkingOpacity?: number
+  }
+}
+
+export type TuiSlotMap = {
+  home_hint: {}
+  home_footer: {}
+  session_footer: {
+    session_id: string
+  }
+}
+
+export type TuiSlotContext = {
+  url: string
+  directory?: string
+}
+
+export type TuiSlotPlugin<Node = unknown> = SlotPlugin<Node, TuiSlotMap, TuiSlotContext>
+
+export type TuiSlots = {
+  register: (plugin: TuiSlotPlugin) => () => void
+}
+
+export type Plugin = (input: PluginInput, options?: PluginOptions) => Promise<Hooks>
+
+export type TuiEventBus = {
+  on: <Type extends TuiEvent["type"]>(
+    type: Type,
+    handler: (event: Extract<TuiEvent, { type: Type }>) => void,
+  ) => () => void
+}
+
+export type TuiPluginInput<Renderer = CliRenderer> = {
+  client: ReturnType<typeof createOpencodeClientV2>
+  event: TuiEventBus
+  url: string
+  directory?: string
+  renderer: Renderer
+  slots: TuiSlots
+}
+
+export type TuiPlugin<Renderer = CliRenderer> = (
+  input: TuiPluginInput<Renderer>,
+  options?: PluginOptions,
+) => Promise<void>
+
+export type PluginModule<Renderer = CliRenderer> =
+  | Plugin
+  | {
+      server?: Plugin
+      tui?: TuiPlugin<Renderer>
+      slots?: TuiSlotPlugin
+      themes?: Record<string, ThemeJson>
+    }
 
 export type AuthHook = {
   provider: string

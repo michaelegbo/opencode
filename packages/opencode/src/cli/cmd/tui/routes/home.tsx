@@ -15,11 +15,14 @@ import { Installation } from "@/installation"
 import { useKV } from "../context/kv"
 import { useCommandDialog } from "../component/dialog-command"
 import { useLocal } from "../context/local"
+import type { TuiSlotMap } from "@opencode-ai/plugin"
+
+type Slot = <K extends "home_hint" | "home_footer">(props: { name: K } & TuiSlotMap[K]) => unknown
 
 // TODO: what is the best way to do this?
 let once = false
 
-export function Home() {
+export function Home(props: { slot: Slot }) {
   const sync = useSync()
   const kv = useKV()
   const { theme } = useTheme()
@@ -57,8 +60,8 @@ export function Home() {
   ])
 
   const Hint = (
-    <Show when={connectedMcpCount() > 0}>
-      <box flexShrink={0} flexDirection="row" gap={1}>
+    <box flexShrink={0} flexDirection="row" gap={1}>
+      <Show when={connectedMcpCount() > 0}>
         <text fg={theme.text}>
           <Switch>
             <Match when={mcpError()}>
@@ -71,8 +74,9 @@ export function Home() {
             </Match>
           </Switch>
         </text>
-      </box>
-    </Show>
+      </Show>
+      {props.slot({ name: "home_hint" }) as never}
+    </box>
   )
 
   let prompt: PromptRef
@@ -150,6 +154,7 @@ export function Home() {
           </Show>
         </box>
         <box flexGrow={1} />
+        {props.slot({ name: "home_footer" }) as never}
         <box flexShrink={0}>
           <text fg={theme.textMuted}>{Installation.VERSION}</text>
         </box>

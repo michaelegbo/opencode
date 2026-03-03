@@ -1,7 +1,10 @@
 import { createOpencodeClient, type Event } from "@opencode-ai/sdk/v2"
+import type { CliRenderer } from "@opentui/core"
+import type { TuiSlots } from "@opencode-ai/plugin"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
+import { TuiPlugin } from "../plugin"
 
 export type EventSource = {
   on: (handler: (event: Event) => void) => () => void
@@ -12,6 +15,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
   name: "SDK",
   init: (props: {
     url: string
+    renderer: CliRenderer
+    slots: TuiSlots
     directory?: string
     fetch?: typeof fetch
     headers?: RequestInit["headers"]
@@ -37,6 +42,17 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     const emitter = createGlobalEmitter<{
       [key in Event["type"]]: Extract<Event, { type: key }>
     }>()
+
+    TuiPlugin.init({
+      client: sdk,
+      event: emitter,
+      url: props.url,
+      directory: props.directory,
+      renderer: props.renderer,
+      slots: props.slots,
+    }).catch((error) => {
+      console.error("Failed to load TUI plugins", error)
+    })
 
     let queue: Event[] = []
     let timer: Timer | undefined
