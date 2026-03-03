@@ -1875,14 +1875,14 @@ function Read(props: ToolProps<typeof ReadTool>) {
         part={props.part}
       >
         Read {normalizePath(props.input.filePath!)} {input(props.input, ["filePath"])}
-        <For each={loaded()}>
-          {(filepath) => (
-            <>
-              {"\n"}↳{"  "}Loaded {normalizePath(filepath)}
-            </>
-          )}
-        </For>
       </InlineTool>
+      <For each={loaded()}>
+        {(filepath) => (
+          <box paddingLeft={5}>
+            <text fg={theme.textMuted}>⤷ Loaded {normalizePath(filepath)}</text>
+          </box>
+        )}
+      </For>
     </>
   )
 }
@@ -1985,12 +1985,12 @@ function Task(props: ToolProps<typeof TaskTool>) {
       <Show when={isRunning() && tools().length > 0}>
         {" "}
         · {tools().length} toolcalls
-        <Show fallback={"\n↳ Running..."} when={current()}>
-          {"\n"}↳ {Locale.titlecase(current()!.tool)} {(current()!.state as any).title}
+        <Show fallback={"\n⤷ Running..."} when={current()}>
+          {"\n"}⤷ {Locale.titlecase(current()!.tool)} {(current()!.state as any).title}
         </Show>
       </Show>
       <Show when={duration() && props.part.state.status === "completed"}>
-        {"\n  ↳ "}
+        {"\n  ⤷ "}
         {tools().length} toolcalls · {Locale.duration(duration())}
       </Show>
     </InlineTool>
@@ -2212,10 +2212,16 @@ function Diagnostics(props: { diagnostics?: Record<string, Record<string, any>[]
 
 function normalizePath(input?: string) {
   if (!input) return ""
-  if (path.isAbsolute(input)) {
-    return path.relative(process.cwd(), input) || "."
-  }
-  return input
+
+  const cwd = process.cwd()
+  const absolute = path.isAbsolute(input) ? input : path.resolve(cwd, input)
+  const relative = path.relative(cwd, absolute)
+
+  if (!relative) return "."
+  if (!relative.startsWith("..")) return relative
+
+  // outside cwd - use absolute
+  return absolute
 }
 
 function input(input: Record<string, any>, omit?: string[]): string {
