@@ -23,9 +23,8 @@ export type ThemeJson = {
 }
 
 export type TuiSlotMap = {
-  home_hint: {}
-  home_footer: {}
-  session_footer: {
+  home_logo: {}
+  sidebar_top: {
     session_id: string
   }
 }

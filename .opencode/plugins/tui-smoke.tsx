@@ -3,14 +3,15 @@ import mytheme from "../themes/mytheme.json" with { type: "json" }
 const slot = (label) => ({
   id: "workspace-smoke",
   slots: {
-    home_hint() {
-      return <text> [plugin:{label}]</text>
+    home_logo() {
+      return <text>plugin logo:{label}</text>
     },
-    home_footer() {
-      return <text> theme:workspace-plugin-smoke</text>
-    },
-    session_footer(_ctx, props) {
-      return <text> session:{props.session_id.slice(0, 8)}</text>
+    sidebar_top(_ctx, props) {
+      return (
+        <text>
+          plugin:{label} session:{props.session_id.slice(0, 8)}
+        </text>
+      )
     },
   },
 })

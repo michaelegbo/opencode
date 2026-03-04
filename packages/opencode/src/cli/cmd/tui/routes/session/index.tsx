@@ -80,7 +80,6 @@ import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
 import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
-import { TuiPlugin } from "../../plugin"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1178,7 +1177,6 @@ export function Session() {
                 }}
                 sessionID={route.sessionID}
               />
-              {TuiPlugin.Slot({ name: "session_footer", session_id: route.sessionID })}
             </box>
           </Show>
           <Toast />

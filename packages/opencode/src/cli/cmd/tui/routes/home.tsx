@@ -73,7 +73,6 @@ export function Home() {
           </Switch>
         </text>
       </Show>
-      {TuiPlugin.Slot({ name: "home_hint" })}
     </box>
   )
 
@@ -113,7 +112,9 @@ export function Home() {
         <box flexGrow={1} minHeight={0} />
         <box height={4} minHeight={0} flexShrink={1} />
         <box flexShrink={0}>
-          <Logo />
+          <TuiPlugin.Slot name="home_logo" slotMode="replace">
+            <Logo />
+          </TuiPlugin.Slot>
         </box>
         <box height={1} minHeight={0} flexShrink={1} />
         <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0}>
@@ -152,7 +153,6 @@ export function Home() {
           </Show>
         </box>
         <box flexGrow={1} />
-        {TuiPlugin.Slot({ name: "home_footer" })}
         <box flexShrink={0}>
           <text fg={theme.textMuted}>{Installation.VERSION}</text>
         </box>

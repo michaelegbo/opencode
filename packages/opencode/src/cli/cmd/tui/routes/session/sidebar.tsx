@@ -11,6 +11,7 @@ import { useKeybind } from "../../context/keybind"
 import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
 import { TodoItem } from "../../component/todo-item"
+import { TuiPlugin } from "../../plugin"
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
@@ -90,6 +91,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           }}
         >
           <box flexShrink={0} gap={1} paddingRight={1}>
+            {TuiPlugin.Slot({ name: "sidebar_top", session_id: props.sessionID })}
             <box paddingRight={1}>
               <text fg={theme.text}>
                 <b>{session().title}</b>

@@ -4,6 +4,7 @@ import {
   type TuiSlotContext,
   type TuiSlotMap,
   type TuiSlots,
+  type SlotMode,
 } from "@opencode-ai/plugin/tui"
 import { createSlot, createSolidSlotRegistry, type JSX, type SolidPlugin } from "@opentui/solid"
 import type { CliRenderer } from "@opentui/core"
@@ -17,10 +18,29 @@ import { Instance } from "@/project/instance"
 import { resolvePluginTarget, uniqueModuleEntries } from "@/plugin/shared"
 import { registerThemes } from "./context/theme"
 
-type Slot = <K extends keyof TuiSlotMap>(props: { name: K } & TuiSlotMap[K]) => JSX.Element | null
+type SlotInput<K extends keyof TuiSlotMap> = {
+  name: K
+  mode?: SlotMode
+  slotMode?: SlotMode
+  children?: JSX.Element
+} & TuiSlotMap[K]
+
+type SlotProps<K extends keyof TuiSlotMap> = {
+  name: K
+  mode?: SlotMode
+  children?: JSX.Element
+} & TuiSlotMap[K]
+
+type Slot = <K extends keyof TuiSlotMap>(props: SlotInput<K>) => JSX.Element | null
 type InitInput = Omit<TuiPluginInput<CliRenderer>, "slots">
 
-function empty<K extends keyof TuiSlotMap>(_props: { name: K } & TuiSlotMap[K]) {
+function normalize<K extends keyof TuiSlotMap>(props: SlotInput<K>): SlotProps<K> {
+  const { slotMode, ...rest } = props
+  if (!slotMode || rest.mode) return rest as SlotProps<K>
+  return { ...rest, mode: slotMode } as SlotProps<K>
+}
+
+function empty<K extends keyof TuiSlotMap>(_props: SlotInput<K>) {
   return null
 }
 
@@ -79,7 +99,7 @@ export namespace TuiPlugin {
     )
 
     const slot = createSlot<TuiSlotMap, TuiSlotContext>(reg)
-    view = (props) => slot(props)
+    view = (props) => slot(normalize(props))
     return {
       register(pluginSlot) {
         if (!isTuiSlotPlugin(pluginSlot)) return () => {}
