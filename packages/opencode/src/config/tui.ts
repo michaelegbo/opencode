@@ -8,6 +8,7 @@ import { TuiInfo } from "./tui-schema"
 import { Instance } from "@/project/instance"
 import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
+import { isRecord } from "@/util/record"
 import { Global } from "@/global"
 
 export namespace TuiConfig {
@@ -98,12 +99,6 @@ export namespace TuiConfig {
   export async function waitForDependencies() {
     const deps = await state().then((x) => x.deps)
     await Promise.all(deps)
-  }
-
-  function isRecord(value: unknown): value is Record<string, unknown> {
-    if (!value || typeof value !== "object") return false
-    if (Array.isArray(value)) return false
-    return true
   }
 
   async function loadFile(filepath: string): Promise<Info> {

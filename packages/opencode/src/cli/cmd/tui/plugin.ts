@@ -12,20 +12,15 @@ import "@opentui/solid/preload"
 import { Config } from "@/config/config"
 import { TuiConfig } from "@/config/tui"
 import { Log } from "@/util/log"
-import { BunProc } from "@/bun"
+import { isRecord } from "@/util/record"
 import { Instance } from "@/project/instance"
+import { resolvePluginTarget, uniqueModuleEntries } from "@/plugin/shared"
 import { registerThemes } from "./context/theme"
 
 type Slot = <K extends keyof TuiSlotMap>(props: { name: K } & TuiSlotMap[K]) => JSX.Element | null
 
 function empty<K extends keyof TuiSlotMap>(_props: { name: K } & TuiSlotMap[K]) {
   return null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== "object") return false
-  if (Array.isArray(value)) return false
-  return true
 }
 
 function isTuiSlotPlugin(value: unknown): value is SolidPlugin<TuiSlotMap, TuiSlotContext> {
@@ -99,14 +94,6 @@ export namespace TuiPlugin {
     return loaded
   }
 
-  async function resolve(spec: string) {
-    if (spec.startsWith("file://")) return spec
-    const lastAtIndex = spec.lastIndexOf("@")
-    const pkg = lastAtIndex > 0 ? spec.substring(0, lastAtIndex) : spec
-    const version = lastAtIndex > 0 ? spec.substring(lastAtIndex + 1) : "latest"
-    return BunProc.install(pkg, version)
-  }
-
   async function load<Renderer>(input: TuiPluginInput<Renderer>) {
     const dir = process.cwd()
 
@@ -120,7 +107,7 @@ export namespace TuiPlugin {
         for (const item of plugins) {
           const spec = Config.pluginSpecifier(item)
           log.info("loading tui plugin", { path: spec })
-          const target = await resolve(spec).catch((error) => {
+          const target = await resolvePluginTarget(spec).catch((error) => {
             log.error("failed to resolve tui plugin", { path: spec, error })
             return
           })
@@ -132,10 +119,7 @@ export namespace TuiPlugin {
           })
           if (!mod) continue
 
-          const seen = new Set<unknown>()
-          for (const [name, entry] of Object.entries(mod)) {
-            if (seen.has(entry)) continue
-            seen.add(entry)
+          for (const [name, entry] of uniqueModuleEntries(mod)) {
             if (!entry || typeof entry !== "object") {
               log.warn("ignoring non-object tui plugin export", {
                 path: spec,

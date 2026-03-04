@@ -4,13 +4,13 @@ import { Bus } from "../bus"
 import { Log } from "../util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { Server } from "../server/server"
-import { BunProc } from "../bun"
 import { Instance } from "../project/instance"
 import { Flag } from "../flag/flag"
 import { CodexAuthPlugin } from "./codex"
 import { Session } from "../session"
 import { NamedError } from "@opencode-ai/util/error"
 import { CopilotAuthPlugin } from "./copilot"
+import { parsePluginSpecifier, resolvePluginTarget, uniqueModuleEntries } from "./shared"
 import { gitlabAuthPlugin as GitlabAuthPlugin } from "@gitlab/opencode-gitlab-auth"
 
 export namespace Plugin {
@@ -55,25 +55,22 @@ export namespace Plugin {
     }
 
     async function resolve(spec: string) {
-      if (spec.startsWith("file://")) return spec
-      const lastAtIndex = spec.lastIndexOf("@")
-      const pkg = lastAtIndex > 0 ? spec.substring(0, lastAtIndex) : spec
-      const version = lastAtIndex > 0 ? spec.substring(lastAtIndex + 1) : "latest"
-      const builtIn = BUILTIN.some((x) => x.startsWith(pkg + "@"))
-      const installed = await BunProc.install(pkg, version).catch((err) => {
+      const parsed = parsePluginSpecifier(spec)
+      const builtIn = BUILTIN.some((x) => x.startsWith(parsed.pkg + "@"))
+      const target = await resolvePluginTarget(spec, parsed).catch((err) => {
         const cause = err instanceof Error ? err.cause : err
         const detail = cause instanceof Error ? cause.message : String(cause ?? err)
-        log.error("failed to install plugin", { pkg, version, error: detail })
+        log.error("failed to install plugin", { pkg: parsed.pkg, version: parsed.version, error: detail })
         const label = builtIn ? "built-in plugin" : "plugin"
         Bus.publish(Session.Event.Error, {
           error: new NamedError.Unknown({
-            message: `Failed to install ${label} ${pkg}@${version}: ${detail}`,
+            message: `Failed to install ${label} ${parsed.pkg}@${parsed.version}: ${detail}`,
           }).toObject(),
         })
         return ""
       })
-      if (!installed) return
-      return installed
+      if (!target) return
+      return target
     }
 
     function isServerPlugin(value: unknown): value is PluginInstance {
@@ -108,11 +105,8 @@ export namespace Plugin {
 
       // Prevent duplicate initialization when plugins export the same function
       // as both a named export and default export (e.g., `export const X` and `export default X`).
-      // Object.entries(mod) would return both entries pointing to the same function reference.
-      const seen = new Set<unknown>()
-      for (const entry of Object.values(mod)) {
-        if (seen.has(entry)) continue
-        seen.add(entry)
+      // uniqueModuleEntries keeps only the first export for each shared value reference.
+      for (const [, entry] of uniqueModuleEntries(mod)) {
         const server = getServerPlugin(entry)
         if (!server) continue
         const init = await server(input, Config.pluginOptions(item)).catch((err) => {
