@@ -46,8 +46,6 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     TuiPlugin.init({
       client: sdk,
       event: emitter,
-      url: props.url,
-      directory: props.directory,
       renderer: props.renderer,
       slots: props.slots,
     }).catch((error) => {
