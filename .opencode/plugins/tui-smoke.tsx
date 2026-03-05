@@ -66,6 +66,21 @@ const tone = (api: TuiApi) => {
   }
 }
 
+type Skin = ReturnType<typeof tone>
+
+const Btn = (props: { txt: string; run: () => void; skin: Skin; on?: boolean }) => {
+  return (
+    <box
+      onMouseUp={props.run}
+      backgroundColor={props.on ? props.skin.accent : props.skin.border}
+      paddingLeft={1}
+      paddingRight={1}
+    >
+      <text fg={props.on ? props.skin.selected : props.skin.text}>{props.txt}</text>
+    </box>
+  )
+}
+
 const parse = (params: Record<string, unknown> | undefined) => {
   const tab = typeof params?.tab === "number" ? params.tab : 0
   const count = typeof params?.count === "number" ? params.count : 0
@@ -197,14 +212,12 @@ const Screen = (props: {
           {tabs.map((item, i) => {
             const on = value.tab === i
             return (
-              <box
-                onMouseUp={() => props.api.route.navigate(props.route.screen, { ...value, tab: i })}
-                backgroundColor={on ? skin.accent : skin.border}
-                paddingLeft={1}
-                paddingRight={1}
-              >
-                <text fg={on ? skin.selected : skin.text}>{item}</text>
-              </box>
+              <Btn
+                txt={item}
+                run={() => props.api.route.navigate(props.route.screen, { ...value, tab: i })}
+                skin={skin}
+                on={on}
+              />
             )
           })}
         </box>
@@ -243,54 +256,12 @@ const Screen = (props: {
         </box>
 
         <box flexDirection="row" gap={1} paddingTop={1}>
-          <box
-            onMouseUp={() => props.api.route.navigate("home")}
-            backgroundColor={skin.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.text}>go home</text>
-          </box>
-          <box
-            onMouseUp={() => props.api.route.navigate(props.route.modal, value)}
-            backgroundColor={skin.accent}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.selected}>modal</text>
-          </box>
-          <box
-            onMouseUp={() => props.api.route.navigate(props.route.alert, value)}
-            backgroundColor={skin.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.text}>alert</text>
-          </box>
-          <box
-            onMouseUp={() => props.api.route.navigate(props.route.confirm, value)}
-            backgroundColor={skin.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.text}>confirm</text>
-          </box>
-          <box
-            onMouseUp={() => props.api.route.navigate(props.route.prompt, value)}
-            backgroundColor={skin.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.text}>prompt</text>
-          </box>
-          <box
-            onMouseUp={() => props.api.route.navigate(props.route.select, value)}
-            backgroundColor={skin.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={skin.text}>select</text>
-          </box>
+          <Btn txt="go home" run={() => props.api.route.navigate("home")} skin={skin} />
+          <Btn txt="modal" run={() => props.api.route.navigate(props.route.modal, value)} skin={skin} on />
+          <Btn txt="alert" run={() => props.api.route.navigate(props.route.alert, value)} skin={skin} />
+          <Btn txt="confirm" run={() => props.api.route.navigate(props.route.confirm, value)} skin={skin} />
+          <Btn txt="prompt" run={() => props.api.route.navigate(props.route.prompt, value)} skin={skin} />
+          <Btn txt="select" run={() => props.api.route.navigate(props.route.select, value)} skin={skin} />
         </box>
       </box>
     </box>
@@ -335,22 +306,13 @@ const Modal = (props: {
           <text fg={skin.muted}>{props.api.keybind.print(props.input.screen)} screen command</text>
           <text fg={skin.muted}>enter opens screen · esc closes</text>
           <box flexDirection="row" gap={1}>
-            <box
-              onMouseUp={() => props.api.route.navigate(props.route.screen, { ...value, source: "modal" })}
-              backgroundColor={skin.accent}
-              paddingLeft={1}
-              paddingRight={1}
-            >
-              <text fg={skin.selected}>open screen</text>
-            </box>
-            <box
-              onMouseUp={() => props.api.route.navigate("home")}
-              backgroundColor={skin.border}
-              paddingLeft={1}
-              paddingRight={1}
-            >
-              <text fg={skin.text}>cancel</text>
-            </box>
+            <Btn
+              txt="open screen"
+              run={() => props.api.route.navigate(props.route.screen, { ...value, source: "modal" })}
+              skin={skin}
+              on
+            />
+            <Btn txt="cancel" run={() => props.api.route.navigate("home")} skin={skin} />
           </box>
         </box>
       </Dialog>
