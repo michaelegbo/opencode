@@ -3,6 +3,8 @@ import mytheme from "../themes/mytheme.json" with { type: "json" }
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { TuiApi, TuiPluginInput } from "@opencode-ai/plugin/tui"
 
+const tabs = ["overview", "counter", "help"]
+
 const pick = (value: unknown, fallback: string) => {
   if (typeof value !== "string") return fallback
   if (!value.trim()) return fallback
@@ -26,20 +28,39 @@ const ui = {
   accent: "#5f87ff",
 }
 
+const parse = (data: Record<string, unknown> | undefined) => {
+  const tab = typeof data?.tab === "number" ? data.tab : 0
+  const count = typeof data?.count === "number" ? data.count : 0
+  const source = typeof data?.source === "string" ? data.source : "unknown"
+  return {
+    tab,
+    count,
+    source,
+  }
+}
+
 const active = (api: TuiApi, id: string) => {
   const route = api.route.data
   return route.type === "plugin" && route.id === id
 }
 
+const merge = (api: TuiApi, patch: Record<string, unknown>) => {
+  const route = api.route.data
+  if (route.type !== "plugin") return patch
+  return { ...(route.data ?? {}), ...patch }
+}
+
 const open = (api: TuiApi, input: ReturnType<typeof cfg>, source: string) => {
   console.log("[smoke] open", { route: input.route, source })
-  api.route.plugin(input.route, { source })
+  api.route.plugin(input.route, merge(api, { source }))
   api.dialog.clear()
 }
 
-const Modal = (props: { api: TuiApi; input: ReturnType<typeof cfg> }) => {
-  const dim = useTerminalDimensions()
+const patch = (api: TuiApi, input: ReturnType<typeof cfg>, value: Record<string, unknown>) => {
+  api.route.plugin(input.route, merge(api, value))
+}
 
+const Modal = (props: { api: TuiApi; input: ReturnType<typeof cfg> }) => {
   useKeyboard((evt) => {
     if (evt.defaultPrevented) return
     if (evt.name !== "return") return
@@ -51,45 +72,27 @@ const Modal = (props: { api: TuiApi; input: ReturnType<typeof cfg> }) => {
   })
 
   return (
-    <box
-      position="absolute"
-      top={0}
-      left={0}
-      width={dim().width}
-      height={dim().height}
-      alignItems="center"
-      paddingTop={Math.max(3, Math.floor(dim().height / 4))}
-      backgroundColor="#000000"
-    >
-      <box width={64} maxWidth={dim().width - 4} backgroundColor={ui.panel} border borderColor={ui.border}>
-        <box paddingTop={1} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
-          <text fg={ui.text}>
-            <b>{props.input.label} modal</b>
-          </text>
-          <text fg={ui.muted}>Plugin commands and keybinds work without host internals</text>
-          <text fg={ui.muted}>
-            {props.api.keybind.print(props.input.modal)} open modal · {props.api.keybind.print(props.input.screen)} open
-            screen
-          </text>
-          <text fg={ui.muted}>enter opens screen · esc closes</text>
-          <box flexDirection="row" gap={1}>
-            <box
-              onMouseUp={() => open(props.api, props.input, "modal")}
-              backgroundColor={ui.accent}
-              paddingLeft={1}
-              paddingRight={1}
-            >
-              <text fg={ui.text}>open screen</text>
-            </box>
-            <box
-              onMouseUp={() => props.api.dialog.clear()}
-              backgroundColor={ui.border}
-              paddingLeft={1}
-              paddingRight={1}
-            >
-              <text fg={ui.text}>cancel</text>
-            </box>
-          </box>
+    <box paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1} flexDirection="column">
+      <text fg={ui.text}>
+        <b>{props.input.label} modal</b>
+      </text>
+      <text fg={ui.muted}>Plugin commands and keybinds work without host internals</text>
+      <text fg={ui.muted}>
+        {props.api.keybind.print(props.input.modal)} open modal · {props.api.keybind.print(props.input.screen)} open
+        screen
+      </text>
+      <text fg={ui.muted}>enter opens screen · esc closes</text>
+      <box flexDirection="row" gap={1}>
+        <box
+          onMouseUp={() => open(props.api, props.input, "modal")}
+          backgroundColor={ui.accent}
+          paddingLeft={1}
+          paddingRight={1}
+        >
+          <text fg={ui.text}>open screen</text>
+        </box>
+        <box onMouseUp={() => props.api.dialog.clear()} backgroundColor={ui.border} paddingLeft={1} paddingRight={1}>
+          <text fg={ui.text}>cancel</text>
         </box>
       </box>
     </box>
@@ -98,14 +101,51 @@ const Modal = (props: { api: TuiApi; input: ReturnType<typeof cfg> }) => {
 
 const Screen = (props: { api: TuiApi; input: ReturnType<typeof cfg>; data?: Record<string, unknown> }) => {
   const dim = useTerminalDimensions()
+  const value = parse(props.data)
 
   useKeyboard((evt) => {
     if (evt.defaultPrevented) return
+    if (!active(props.api, props.input.route)) return
+
+    const state = parse(props.api.route.data.type === "plugin" ? props.api.route.data.data : undefined)
+
     if (evt.name === "escape" || (evt.ctrl && evt.name === "h")) {
       console.log("[smoke] screen key", { key: evt.name, ctrl: evt.ctrl })
       evt.preventDefault()
       evt.stopPropagation()
       props.api.route.home()
+      return
+    }
+
+    if (evt.name === "left") {
+      console.log("[smoke] screen key", { key: evt.name })
+      evt.preventDefault()
+      evt.stopPropagation()
+      patch(props.api, props.input, { tab: (state.tab - 1 + tabs.length) % tabs.length })
+      return
+    }
+
+    if (evt.name === "right") {
+      console.log("[smoke] screen key", { key: evt.name })
+      evt.preventDefault()
+      evt.stopPropagation()
+      patch(props.api, props.input, { tab: (state.tab + 1) % tabs.length })
+      return
+    }
+
+    if (evt.name === "up" || (evt.ctrl && evt.name === "up")) {
+      console.log("[smoke] screen key", { key: evt.name, ctrl: evt.ctrl })
+      evt.preventDefault()
+      evt.stopPropagation()
+      patch(props.api, props.input, { count: state.count + 1 })
+      return
+    }
+
+    if (evt.name === "down" || (evt.ctrl && evt.name === "down")) {
+      console.log("[smoke] screen key", { key: evt.name, ctrl: evt.ctrl })
+      evt.preventDefault()
+      evt.stopPropagation()
+      patch(props.api, props.input, { count: state.count - 1 })
       return
     }
 
@@ -127,16 +167,80 @@ const Screen = (props: { api: TuiApi; input: ReturnType<typeof cfg>; data?: Reco
         paddingBottom={1}
         paddingLeft={2}
         paddingRight={2}
-        gap={1}
       >
-        <text fg={ui.text}>
-          <b>{props.input.label} screen</b>
-          <span style={{ fg: ui.muted }}> plugin route</span>
-        </text>
-        <text fg={ui.text}>Route id: {props.input.route}</text>
-        <text fg={ui.muted}>source: {String(props.data?.source ?? "unknown")}</text>
-        <text fg={ui.muted}>esc or ctrl+h go home · ctrl+m opens modal</text>
-        <box flexDirection="row" gap={1}>
+        <box flexDirection="row" justifyContent="space-between" paddingBottom={1}>
+          <text fg={ui.text}>
+            <b>{props.input.label} screen</b>
+            <span style={{ fg: ui.muted }}> plugin route</span>
+          </text>
+          <text fg={ui.muted}>esc or ctrl+h home</text>
+        </box>
+
+        <box flexDirection="row" gap={1} paddingBottom={1}>
+          {tabs.map((item, i) => {
+            const on = value.tab === i
+            return (
+              <box
+                onMouseUp={() => patch(props.api, props.input, { tab: i })}
+                backgroundColor={on ? ui.accent : ui.border}
+                paddingLeft={1}
+                paddingRight={1}
+              >
+                <text fg={ui.text}>{item}</text>
+              </box>
+            )
+          })}
+        </box>
+
+        <box
+          border
+          borderColor={ui.border}
+          paddingTop={1}
+          paddingBottom={1}
+          paddingLeft={2}
+          paddingRight={2}
+          flexGrow={1}
+        >
+          {value.tab === 0 ? (
+            <box flexDirection="column" gap={1}>
+              <text fg={ui.text}>Route id: {props.input.route}</text>
+              <text fg={ui.muted}>source: {value.source}</text>
+              <text fg={ui.muted}>left/right switch tabs</text>
+            </box>
+          ) : null}
+
+          {value.tab === 1 ? (
+            <box flexDirection="column" gap={1}>
+              <text fg={ui.text}>Counter: {value.count}</text>
+              <text fg={ui.muted}>ctrl+up and ctrl+down change value</text>
+              <box flexDirection="row" gap={1}>
+                <box
+                  onMouseUp={() => patch(props.api, props.input, { count: value.count + 1 })}
+                  backgroundColor={ui.border}
+                  paddingLeft={1}
+                >
+                  <text fg={ui.text}>+1</text>
+                </box>
+                <box
+                  onMouseUp={() => patch(props.api, props.input, { count: value.count - 1 })}
+                  backgroundColor={ui.border}
+                  paddingLeft={1}
+                >
+                  <text fg={ui.text}>-1</text>
+                </box>
+              </box>
+            </box>
+          ) : null}
+
+          {value.tab === 2 ? (
+            <box flexDirection="column" gap={1}>
+              <text fg={ui.muted}>ctrl+m opens modal</text>
+              <text fg={ui.muted}>esc or ctrl+h returns home</text>
+            </box>
+          ) : null}
+        </box>
+
+        <box flexDirection="row" gap={1} paddingTop={1}>
           <box onMouseUp={() => props.api.route.home()} backgroundColor={ui.border} paddingLeft={1} paddingRight={1}>
             <text fg={ui.text}>go home</text>
           </box>
