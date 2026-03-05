@@ -24,6 +24,10 @@ const names = (input: ReturnType<typeof cfg>) => {
   return {
     modal: `${input.route}.modal`,
     screen: `${input.route}.screen`,
+    alert: `${input.route}.alert`,
+    confirm: `${input.route}.confirm`,
+    prompt: `${input.route}.prompt`,
+    select: `${input.route}.select`,
   }
 }
 
@@ -39,16 +43,21 @@ const parse = (params: Record<string, unknown> | undefined) => {
   const tab = typeof params?.tab === "number" ? params.tab : 0
   const count = typeof params?.count === "number" ? params.count : 0
   const source = typeof params?.source === "string" ? params.source : "unknown"
+  const note = typeof params?.note === "string" ? params.note : ""
+  const selected = typeof params?.selected === "string" ? params.selected : ""
   return {
     tab: Math.max(0, Math.min(tab, tabs.length - 1)),
     count,
     source,
+    note,
+    selected,
   }
 }
 
 const current = (api: TuiApi, route: ReturnType<typeof names>) => {
   const value = api.route.current
-  if (value.name !== route.screen && value.name !== route.modal) return parse(undefined)
+  const ok = Object.values(route).includes(value.name)
+  if (!ok) return parse(undefined)
   if (!("params" in value)) return parse(undefined)
   return parse(value.params)
 }
@@ -106,6 +115,34 @@ const Screen = (props: {
       evt.preventDefault()
       evt.stopPropagation()
       props.api.route.navigate(props.route.modal, next)
+      return
+    }
+
+    if (evt.name === "a") {
+      evt.preventDefault()
+      evt.stopPropagation()
+      props.api.route.navigate(props.route.alert, next)
+      return
+    }
+
+    if (evt.name === "c") {
+      evt.preventDefault()
+      evt.stopPropagation()
+      props.api.route.navigate(props.route.confirm, next)
+      return
+    }
+
+    if (evt.name === "p") {
+      evt.preventDefault()
+      evt.stopPropagation()
+      props.api.route.navigate(props.route.prompt, next)
+      return
+    }
+
+    if (evt.name === "s") {
+      evt.preventDefault()
+      evt.stopPropagation()
+      props.api.route.navigate(props.route.select, next)
     }
   })
 
@@ -157,7 +194,8 @@ const Screen = (props: {
             <box flexDirection="column" gap={1}>
               <text fg={ui.text}>Route: {props.route.screen}</text>
               <text fg={ui.muted}>source: {value.source}</text>
-              <text fg={ui.muted}>left/right or h/l switch tabs</text>
+              <text fg={ui.muted}>note: {value.note || "(none)"}</text>
+              <text fg={ui.muted}>selected: {value.selected || "(none)"}</text>
             </box>
           ) : null}
 
@@ -170,7 +208,7 @@ const Screen = (props: {
 
           {value.tab === 2 ? (
             <box flexDirection="column" gap={1}>
-              <text fg={ui.muted}>ctrl+m opens modal</text>
+              <text fg={ui.muted}>ctrl+m modal | a alert | c confirm | p prompt | s select</text>
               <text fg={ui.muted}>esc or ctrl+h returns home</text>
             </box>
           ) : null}
@@ -191,7 +229,39 @@ const Screen = (props: {
             paddingLeft={1}
             paddingRight={1}
           >
-            <text fg={ui.text}>open modal</text>
+            <text fg={ui.text}>modal</text>
+          </box>
+          <box
+            onMouseUp={() => props.api.route.navigate(props.route.alert, value)}
+            backgroundColor={ui.border}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={ui.text}>alert</text>
+          </box>
+          <box
+            onMouseUp={() => props.api.route.navigate(props.route.confirm, value)}
+            backgroundColor={ui.border}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={ui.text}>confirm</text>
+          </box>
+          <box
+            onMouseUp={() => props.api.route.navigate(props.route.prompt, value)}
+            backgroundColor={ui.border}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={ui.text}>prompt</text>
+          </box>
+          <box
+            onMouseUp={() => props.api.route.navigate(props.route.select, value)}
+            backgroundColor={ui.border}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={ui.text}>select</text>
           </box>
         </box>
       </box>
@@ -259,6 +329,140 @@ const Modal = (props: {
   )
 }
 
+const AlertDialog = (props: { api: TuiApi; route: ReturnType<typeof names>; params?: Record<string, unknown> }) => {
+  const Dialog = props.api.ui.Dialog
+  const DialogAlert = props.api.ui.DialogAlert
+  const value = parse(props.params)
+
+  useKeyboard((evt) => {
+    if (props.api.route.current.name !== props.route.alert) return
+    if (evt.name !== "escape") return
+    evt.preventDefault()
+    evt.stopPropagation()
+    props.api.route.navigate(props.route.screen, value)
+  })
+
+  return (
+    <box width="100%" height="100%" backgroundColor={ui.panel}>
+      <Dialog onClose={() => props.api.route.navigate(props.route.screen, value)}>
+        <DialogAlert
+          title="Smoke alert"
+          message="Testing built-in alert dialog"
+          onConfirm={() => props.api.route.navigate(props.route.screen, { ...value, source: "alert" })}
+        />
+      </Dialog>
+    </box>
+  )
+}
+
+const ConfirmDialog = (props: { api: TuiApi; route: ReturnType<typeof names>; params?: Record<string, unknown> }) => {
+  const Dialog = props.api.ui.Dialog
+  const DialogConfirm = props.api.ui.DialogConfirm
+  const value = parse(props.params)
+
+  useKeyboard((evt) => {
+    if (props.api.route.current.name !== props.route.confirm) return
+    if (evt.name !== "escape") return
+    evt.preventDefault()
+    evt.stopPropagation()
+    props.api.route.navigate(props.route.screen, value)
+  })
+
+  return (
+    <box width="100%" height="100%" backgroundColor={ui.panel}>
+      <Dialog onClose={() => props.api.route.navigate(props.route.screen, value)}>
+        <DialogConfirm
+          title="Smoke confirm"
+          message="Apply +1 to counter?"
+          onConfirm={() =>
+            props.api.route.navigate(props.route.screen, { ...value, count: value.count + 1, source: "confirm" })
+          }
+          onCancel={() => props.api.route.navigate(props.route.screen, { ...value, source: "confirm-cancel" })}
+        />
+      </Dialog>
+    </box>
+  )
+}
+
+const PromptDialog = (props: { api: TuiApi; route: ReturnType<typeof names>; params?: Record<string, unknown> }) => {
+  const Dialog = props.api.ui.Dialog
+  const DialogPrompt = props.api.ui.DialogPrompt
+  const value = parse(props.params)
+
+  useKeyboard((evt) => {
+    if (props.api.route.current.name !== props.route.prompt) return
+    if (evt.name !== "escape") return
+    evt.preventDefault()
+    evt.stopPropagation()
+    props.api.route.navigate(props.route.screen, value)
+  })
+
+  return (
+    <box width="100%" height="100%" backgroundColor={ui.panel}>
+      <Dialog onClose={() => props.api.route.navigate(props.route.screen, value)}>
+        <DialogPrompt
+          title="Smoke prompt"
+          description={() => <text fg={ui.muted}>Enter a note to store in route params</text>}
+          value={value.note}
+          onConfirm={(note) => props.api.route.navigate(props.route.screen, { ...value, note, source: "prompt" })}
+          onCancel={() => props.api.route.navigate(props.route.screen, value)}
+        />
+      </Dialog>
+    </box>
+  )
+}
+
+const SelectDialog = (props: { api: TuiApi; route: ReturnType<typeof names>; params?: Record<string, unknown> }) => {
+  const Dialog = props.api.ui.Dialog
+  const DialogSelect = props.api.ui.DialogSelect
+  const value = parse(props.params)
+  const options = [
+    {
+      title: "Overview",
+      value: 0,
+      description: "Switch to overview tab",
+    },
+    {
+      title: "Counter",
+      value: 1,
+      description: "Switch to counter tab",
+    },
+    {
+      title: "Help",
+      value: 2,
+      description: "Switch to help tab",
+    },
+  ]
+
+  useKeyboard((evt) => {
+    if (props.api.route.current.name !== props.route.select) return
+    if (evt.name !== "escape") return
+    evt.preventDefault()
+    evt.stopPropagation()
+    props.api.route.navigate(props.route.screen, value)
+  })
+
+  return (
+    <box width="100%" height="100%" backgroundColor={ui.panel}>
+      <Dialog onClose={() => props.api.route.navigate(props.route.screen, value)}>
+        <DialogSelect
+          title="Smoke select"
+          options={options}
+          current={value.tab}
+          onSelect={(item) =>
+            props.api.route.navigate(props.route.screen, {
+              ...value,
+              tab: typeof item.value === "number" ? item.value : value.tab,
+              selected: item.title,
+              source: "select",
+            })
+          }
+        />
+      </Dialog>
+    </box>
+  )
+}
+
 const slot = (input: ReturnType<typeof cfg>) => ({
   id: "workspace-smoke",
   slots: {
@@ -300,6 +504,50 @@ const reg = (api: TuiApi, input: ReturnType<typeof cfg>) => {
       },
       onSelect: () => {
         api.route.navigate(route.screen, { source: "command", tab: 0, count: 0 })
+      },
+    },
+    {
+      title: `${input.label} alert dialog`,
+      value: "plugin.smoke.alert",
+      category: "Plugin",
+      slash: {
+        name: "smoke-alert",
+      },
+      onSelect: () => {
+        api.route.navigate(route.alert, current(api, route))
+      },
+    },
+    {
+      title: `${input.label} confirm dialog`,
+      value: "plugin.smoke.confirm",
+      category: "Plugin",
+      slash: {
+        name: "smoke-confirm",
+      },
+      onSelect: () => {
+        api.route.navigate(route.confirm, current(api, route))
+      },
+    },
+    {
+      title: `${input.label} prompt dialog`,
+      value: "plugin.smoke.prompt",
+      category: "Plugin",
+      slash: {
+        name: "smoke-prompt",
+      },
+      onSelect: () => {
+        api.route.navigate(route.prompt, current(api, route))
+      },
+    },
+    {
+      title: `${input.label} select dialog`,
+      value: "plugin.smoke.select",
+      category: "Plugin",
+      slash: {
+        name: "smoke-select",
+      },
+      onSelect: () => {
+        api.route.navigate(route.select, current(api, route))
       },
     },
     {
@@ -345,6 +593,22 @@ const tui = async (input: TuiPluginInput, options?: Record<string, unknown>) => 
     {
       name: route.modal,
       render: ({ params }) => <Modal api={input.api} input={value} route={route} params={params} />,
+    },
+    {
+      name: route.alert,
+      render: ({ params }) => <AlertDialog api={input.api} route={route} params={params} />,
+    },
+    {
+      name: route.confirm,
+      render: ({ params }) => <ConfirmDialog api={input.api} route={route} params={params} />,
+    },
+    {
+      name: route.prompt,
+      render: ({ params }) => <PromptDialog api={input.api} route={route} params={params} />,
+    },
+    {
+      name: route.select,
+      render: ({ params }) => <SelectDialog api={input.api} route={route} params={params} />,
     },
   ])
 
