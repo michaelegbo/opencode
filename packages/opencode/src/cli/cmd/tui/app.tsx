@@ -1,7 +1,7 @@
 import { render, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import { Clipboard } from "@tui/util/clipboard"
 import { Selection } from "@tui/util/selection"
-import { createCliRenderer, MouseButton, TextAttributes, type CliRendererConfig } from "@opentui/core"
+import { createCliRenderer, MouseButton, TextAttributes, type CliRendererConfig, type ParsedKey } from "@opentui/core"
 import { RouteProvider, useRoute } from "@tui/context/route"
 import { Switch, Match, createEffect, untrack, ErrorBoundary, createSignal, onMount, batch, Show, on } from "solid-js"
 import { win32DisableProcessedInput, win32FlushInputBuffer, win32InstallCtrlCGuard } from "./win32"
@@ -21,7 +21,7 @@ import { CommandProvider, useCommandDialog } from "@tui/component/dialog-command
 import { DialogAgent } from "@tui/component/dialog-agent"
 import { DialogSessionList } from "@tui/component/dialog-session-list"
 import { DialogWorkspaceList } from "@tui/component/dialog-workspace-list"
-import { KeybindProvider } from "@tui/context/keybind"
+import { KeybindProvider, useKeybind } from "@tui/context/keybind"
 import { ThemeProvider, useTheme } from "@tui/context/theme"
 import { Home } from "@tui/routes/home"
 import { Session } from "@tui/routes/session"
@@ -41,6 +41,7 @@ import { writeHeapSnapshot } from "v8"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { TuiConfigProvider } from "./context/tui-config"
 import { TuiConfig } from "@/config/tui"
+import type { TuiApi, TuiRoute } from "@opencode-ai/plugin/tui"
 import { TuiPlugin } from "./plugin"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
@@ -212,19 +213,72 @@ function App() {
   const local = useLocal()
   const kv = useKV()
   const command = useCommandDialog()
+  const keybind = useKeybind()
   const sdk = useSDK()
-  TuiPlugin.init({
-    client: sdk.client,
-    event: sdk.event,
-    renderer,
-  }).catch((error) => {
-    console.error("Failed to load TUI plugins", error)
-  })
   const toast = useToast()
   const { theme, mode, setMode } = useTheme()
   const sync = useSync()
   const exit = useExit()
   const promptRef = usePromptRef()
+  const api: TuiApi = {
+    command: {
+      register(cb) {
+        command.register(() => cb())
+      },
+      trigger(value) {
+        command.trigger(value)
+      },
+    },
+    dialog: {
+      clear() {
+        dialog.clear()
+      },
+      replace(input, onClose) {
+        dialog.replace(input, onClose)
+      },
+      get depth() {
+        return dialog.stack.length
+      },
+    },
+    route: {
+      get data() {
+        return route.data
+      },
+      navigate(next: TuiRoute) {
+        route.navigate(next)
+      },
+      home() {
+        route.navigate({ type: "home" })
+      },
+      plugin(id, data) {
+        route.navigate({ type: "plugin", id, data })
+      },
+    },
+    keybind: {
+      parse(evt: ParsedKey) {
+        return keybind.parse(evt)
+      },
+      match(key, evt: ParsedKey) {
+        return keybind.match(key, evt)
+      },
+      print(key) {
+        return keybind.print(key)
+      },
+    },
+    theme: {
+      get current() {
+        return theme
+      },
+    },
+  }
+  TuiPlugin.init({
+    client: sdk.client,
+    event: sdk.event,
+    renderer,
+    api,
+  }).catch((error) => {
+    console.error("Failed to load TUI plugins", error)
+  })
 
   useKeyboard((evt) => {
     if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
@@ -267,10 +321,6 @@ function App() {
   }
   const [terminalTitleEnabled, setTerminalTitleEnabled] = createSignal(kv.get("terminal_title_enabled", true))
 
-  createEffect(() => {
-    console.log(JSON.stringify(route.data))
-  })
-
   // Update terminal window title based on current route and session
   createEffect(() => {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
@@ -287,9 +337,13 @@ function App() {
         return
       }
 
-      // Truncate title to 40 chars max
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
       renderer.setTerminalTitle(`OC | ${title}`)
+      return
+    }
+
+    if (route.data.type === "plugin") {
+      renderer.setTerminalTitle(`OC | ${route.data.id}`)
     }
   })
 
@@ -760,6 +814,11 @@ function App() {
     })
   })
 
+  const plugin = () => {
+    if (route.data.type !== "plugin") return
+    return route.data
+  }
+
   return (
     <box
       width={dimensions().width}
@@ -783,6 +842,27 @@ function App() {
           <Session />
         </Match>
       </Switch>
+      <Show when={plugin()}>
+        {(item) => (
+          <TuiPlugin.Slot name="route" mode="replace" route_id={item().id} data={item().data}>
+            <PluginRouteMissing id={item().id} onHome={() => route.navigate({ type: "home" })} />
+          </TuiPlugin.Slot>
+        )}
+      </Show>
+      <TuiPlugin.Slot name="app" />
+    </box>
+  )
+}
+
+function PluginRouteMissing(props: { id: string; onHome: () => void }) {
+  const { theme } = useTheme()
+
+  return (
+    <box width="100%" height="100%" alignItems="center" justifyContent="center" flexDirection="column" gap={1}>
+      <text fg={theme.warning}>Unknown plugin route: {props.id}</text>
+      <box onMouseUp={props.onHome} backgroundColor={theme.backgroundElement} paddingLeft={1} paddingRight={1}>
+        <text fg={theme.text}>go home</text>
+      </box>
     </box>
   )
 }

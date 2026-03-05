@@ -97,6 +97,43 @@ test("ignores function-only tui exports and loads object exports", async () => {
         on: () => () => {},
       },
       renderer,
+      api: {
+        command: {
+          register: () => {},
+          trigger: () => {},
+        },
+        dialog: {
+          clear: () => {},
+          replace: () => {},
+          get depth() {
+            return 0
+          },
+        },
+        route: {
+          get data() {
+            return { type: "home" as const }
+          },
+          navigate: () => {},
+          home: () => {},
+          plugin: () => {},
+        },
+        keybind: {
+          parse: () => ({
+            name: "",
+            ctrl: false,
+            meta: false,
+            shift: false,
+            leader: false,
+          }),
+          match: () => false,
+          print: () => "",
+        },
+        theme: {
+          get current() {
+            return {}
+          },
+        },
+      },
     })
 
     expect(await fs.readFile(tmp.extra.objMarker, "utf8")).toBe("called")

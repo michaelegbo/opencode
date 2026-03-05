@@ -1,0 +1,34 @@
+[01:37:30] [LOG] 'bootstrapping'
+[01:37:30] [LOG] 'resolveSystemTheme'
+[01:37:30] [LOG] '[smoke] init' {
+  label: 'workspace',
+  modal: 'ctrl+shift+m',
+  screen: 'ctrl+shift+o',
+  route: 'workspace-smoke'
+}
+[01:37:30] [LOG] [
+  '#45475a', '#f38ba8',
+  '#a6e3a1', '#f9e2af',
+  '#89b4fa', '#f5c2e7',
+  '#94e2d5', '#a6adc8',
+  '#585b70', '#f37799',
+  '#89d88b', '#ebd391',
+  '#74a8fc', '#f2aede',
+  '#6bd7ca', '#bac2de'
+]
+[01:37:40] [LOG] '[smoke] command' { value: 'plugin.smoke.modal' }
+[01:37:46] [LOG] '[smoke] command' { value: 'plugin.smoke.modal' }
+[01:37:54] [LOG] '[smoke] command' { value: 'plugin.smoke.screen' }
+[01:37:54] [LOG] '[smoke] open' { route: 'workspace-smoke', source: 'command' }
+[01:37:54] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'command' } }
+[01:37:54] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'command' } }
+[01:38:04] [LOG] '[smoke] command' { value: 'plugin.smoke.screen' }
+[01:38:04] [LOG] '[smoke] open' { route: 'workspace-smoke', source: 'command' }
+[01:38:04] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'command' } }
+[01:38:04] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'command' } }
+[01:38:08] [LOG] '[smoke] screen key' { key: 'escape', ctrl: false }
+[01:38:30] [LOG] '[smoke] command' { value: 'plugin.smoke.modal' }
+[01:38:33] [LOG] '[smoke] command' { value: 'plugin.smoke.modal' }
+[01:38:34] [LOG] '[smoke] open' { route: 'workspace-smoke', source: 'modal' }
+[01:38:34] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'modal' } }
+[01:38:34] [LOG] '[smoke] route render' { route: 'workspace-smoke', data: { source: 'modal' } }
