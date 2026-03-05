@@ -2,6 +2,7 @@ import type { Config, McpLocalConfig, McpRemoteConfig, McpStatus } from "@openco
 import { Button } from "@opencode-ai/ui/button"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { Tag } from "@opencode-ai/ui/tag"
+import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { For, Show, createMemo, onMount, type Component } from "solid-js"
@@ -18,6 +19,20 @@ type McpState = McpStatus["status"]
 
 const FEATURED = [
   {
+    name: "playwright",
+    title: "Playwright",
+    description: "Browser automation tools for testing, scraping, and repros.",
+    icon: "window-cursor",
+    panel: "linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(15, 23, 42, 0.04))",
+    glow: "rgba(96, 165, 250, 0.18)",
+    badge: "rgba(37, 99, 235, 0.14)",
+    color: "rgb(37, 99, 235)",
+    config: {
+      type: "local",
+      command: ["npx", "-y", "@playwright/mcp@latest"],
+    },
+  },
+  {
     name: "context7",
     title: "Context7",
     description: "Fresh framework docs and API references in one remote server.",
@@ -32,48 +47,33 @@ const FEATURED = [
     },
   },
   {
-    name: "gh_grep",
-    title: "Grep by Vercel",
-    description: "Search public code snippets on GitHub through grep.app.",
-    icon: "magnifying-glass-menu",
-    panel: "linear-gradient(135deg, rgba(99, 102, 241, 0.14), rgba(30, 41, 59, 0.04))",
-    glow: "rgba(129, 140, 248, 0.18)",
-    badge: "rgba(79, 70, 229, 0.14)",
-    color: "rgb(79, 70, 229)",
+    name: "linear",
+    title: "Linear",
+    description: "Issue and project workflows from your Linear workspace.",
+    icon: "branch",
+    panel: "linear-gradient(135deg, rgba(124, 58, 237, 0.14), rgba(30, 41, 59, 0.04))",
+    glow: "rgba(139, 92, 246, 0.18)",
+    badge: "rgba(109, 40, 217, 0.14)",
+    color: "rgb(109, 40, 217)",
     config: {
       type: "remote",
-      url: "https://mcp.grep.app",
+      url: "https://mcp.linear.app/sse",
+      oauth: {},
     },
   },
   {
-    name: "playwright",
-    title: "Playwright",
-    description: "Browser automation tools for testing, scraping, and repros.",
-    icon: "window-cursor",
-    panel: "linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(15, 23, 42, 0.04))",
-    glow: "rgba(96, 165, 250, 0.18)",
-    badge: "rgba(37, 99, 235, 0.14)",
-    color: "rgb(37, 99, 235)",
+    name: "sentry",
+    title: "Sentry",
+    description: "Error monitoring, traces, and issue triage in one place.",
+    icon: "warning",
+    panel: "linear-gradient(135deg, rgba(14, 116, 144, 0.16), rgba(15, 23, 42, 0.04))",
+    glow: "rgba(6, 182, 212, 0.16)",
+    badge: "rgba(8, 145, 178, 0.14)",
+    color: "rgb(8, 145, 178)",
     config: {
-      type: "local",
-      command: ["npx", "@playwright/mcp@latest"],
-    },
-  },
-  {
-    name: "github",
-    title: "GitHub",
-    description: "Repo, PR, and issue tools powered by your GitHub token.",
-    icon: "github",
-    panel: "linear-gradient(135deg, rgba(71, 85, 105, 0.14), rgba(15, 23, 42, 0.06))",
-    glow: "rgba(100, 116, 139, 0.18)",
-    badge: "rgba(51, 65, 85, 0.14)",
-    color: "rgb(51, 65, 85)",
-    config: {
-      type: "local",
-      command: ["npx", "-y", "@modelcontextprotocol/server-github"],
-      environment: {
-        GITHUB_PERSONAL_ACCESS_TOKEN: "{env:GITHUB_PERSONAL_ACCESS_TOKEN}",
-      },
+      type: "remote",
+      url: "https://mcp.sentry.dev/mcp",
+      oauth: {},
     },
   },
 ] satisfies Array<{
@@ -312,6 +312,31 @@ export const SettingsMcp: Component = () => {
     add(item.name, item.config, `featured:${item.name}`, false)
   }
 
+  const toggle = (name: string, enabled: boolean) => {
+    if (busy()) return
+    const current = (sync.data.config.mcp ?? {})[name]
+    if (!isConfig(current)) return
+
+    const next = {
+      ...(sync.data.config.mcp ?? {}),
+      [name]: {
+        ...current,
+        enabled,
+      },
+    }
+
+    save(
+      next,
+      `toggle:${name}`,
+      () => undefined,
+      lang.t("settings.mcp.toast.updated.title"),
+      lang.t("settings.mcp.toast.updated.description", {
+        name,
+        state: enabled ? lang.t("settings.mcp.state.enabled") : lang.t("settings.mcp.state.disabled"),
+      }),
+    )
+  }
+
   const remove = (name: string) => {
     if (busy()) return
 
@@ -445,6 +470,8 @@ export const SettingsMcp: Component = () => {
                   const current = () => state.status[item.name]?.status
                   const text = () => label(item.name)
                   const problem = () => issue(item.name)
+                  const enabled = () => item.config.enabled !== false
+                  const pendingToggle = () => state.submitting === `toggle:${item.name}`
                   const pending = () => state.submitting === `remove:${item.name}`
 
                   return (
@@ -476,9 +503,28 @@ export const SettingsMcp: Component = () => {
                         </Show>
                       </div>
 
-                      <Button size="large" variant="ghost" disabled={busy()} onClick={() => remove(item.name)}>
-                        {pending() ? spin() : lang.t("settings.mcp.action.remove")}
-                      </Button>
+                      <div class="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                        <div class="flex items-center gap-2 pl-1">
+                          <Show when={pendingToggle()}>
+                            <span class="text-11-regular text-text-weak">{spin()}</span>
+                          </Show>
+                          <Switch
+                            checked={enabled()}
+                            disabled={busy()}
+                            onChange={(next) => toggle(item.name, next)}
+                            hideLabel
+                          >
+                            {item.name}
+                          </Switch>
+                          <span class="text-12-regular text-text-weak">
+                            {enabled() ? lang.t("settings.mcp.state.enabled") : lang.t("settings.mcp.state.disabled")}
+                          </span>
+                        </div>
+
+                        <Button size="large" variant="ghost" disabled={busy()} onClick={() => remove(item.name)}>
+                          {pending() ? spin() : lang.t("settings.mcp.action.remove")}
+                        </Button>
+                      </div>
                     </div>
                   )
                 }}
