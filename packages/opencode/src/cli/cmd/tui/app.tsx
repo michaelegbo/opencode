@@ -231,15 +231,15 @@ function App() {
   const keybind = useKeybind()
   const sdk = useSDK()
   const toast = useToast()
-  const t = useTheme()
-  const { theme, mode, setMode } = t
+  const themeState = useTheme()
+  const { theme, mode, setMode } = themeState
   const sync = useSync()
   const exit = useExit()
   const promptRef = usePromptRef()
   const routes = new Map<string, { key: symbol; render: TuiRouteDefinition["render"] }[]>()
-  const [rev, setRev] = createSignal(0)
-  const view = (name: string) => {
-    rev()
+  const [routeRev, setRouteRev] = createSignal(0)
+  const routeView = (name: string) => {
+    routeRev()
     return routes.get(name)?.at(-1)?.render
   }
 
@@ -260,7 +260,7 @@ function App() {
           list.push({ key, render: item.render })
           routes.set(item.name, list)
         }
-        setRev((x) => x + 1)
+        setRouteRev((x) => x + 1)
         return () => {
           for (const item of input) {
             const list = routes.get(item.name)
@@ -271,7 +271,7 @@ function App() {
             )
             if (!routes.get(item.name)?.length) routes.delete(item.name)
           }
-          setRev((x) => x + 1)
+          setRouteRev((x) => x + 1)
         }
       },
       navigate(name, params) {
@@ -393,22 +393,22 @@ function App() {
         return theme
       },
       get selected() {
-        return t.selected
+        return themeState.selected
       },
       has(name) {
-        return t.has(name)
+        return themeState.has(name)
       },
       set(name) {
-        return t.set(name)
+        return themeState.set(name)
       },
       async install(_jsonPath) {
         throw new Error("theme.install is only available in plugin context")
       },
       mode() {
-        return t.mode()
+        return themeState.mode()
       },
       get ready() {
-        return t.ready
+        return themeState.ready
       },
     },
   }
@@ -957,7 +957,7 @@ function App() {
 
   const plugin = createMemo(() => {
     if (route.data.type !== "plugin") return
-    const render = view(route.data.id)
+    const render = routeView(route.data.id)
     if (!render) return <PluginRouteMissing id={route.data.id} onHome={() => route.navigate({ type: "home" })} />
     return render({ params: route.data.data })
   })

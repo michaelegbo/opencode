@@ -72,8 +72,8 @@ function localDir(file: string) {
   return path.join(dir, ".opencode", "themes")
 }
 
-function scopeDir(meta: TuiConfig.PluginMeta) {
-  if (meta.scope === "local") return localDir(meta.source)
+function scopeDir(pluginMeta: TuiConfig.PluginMeta) {
+  if (pluginMeta.scope === "local") return localDir(pluginMeta.source)
   return path.join(Global.Path.config, "themes")
 }
 
@@ -93,7 +93,7 @@ function themeName(file: string) {
   return path.basename(file, path.extname(file))
 }
 
-function meta(config: TuiConfig.Info, item: Config.PluginSpec) {
+function getPluginMeta(config: TuiConfig.Info, item: Config.PluginSpec) {
   const key = Config.getPluginName(item)
   const value = config.plugin_meta?.[key]
   if (!value) {
@@ -194,7 +194,6 @@ export namespace TuiPlugin {
 
         const loadOne = async (item: (typeof plugins)[number], retry = false) => {
           const spec = Config.pluginSpecifier(item)
-          const level = meta(config, item)
           log.info("loading tui plugin", { path: spec, retry })
           const target = await resolvePluginTarget(spec).catch((error) => {
             log.error("failed to resolve tui plugin", { path: spec, retry, error })
@@ -203,7 +202,7 @@ export namespace TuiPlugin {
           if (!target) return false
 
           const root = pluginRoot(spec, target)
-          const install = makeInstallFn(level, root)
+          const install = makeInstallFn(getPluginMeta(config, item), root)
 
           const mod = await import(target).catch((error) => {
             log.error("failed to load tui plugin", { path: spec, retry, error })

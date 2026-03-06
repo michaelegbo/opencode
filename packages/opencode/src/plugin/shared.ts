@@ -1,9 +1,9 @@
 import { BunProc } from "@/bun"
 
 export function parsePluginSpecifier(spec: string) {
-  const at = spec.lastIndexOf("@")
-  const pkg = at > 0 ? spec.substring(0, at) : spec
-  const version = at > 0 ? spec.substring(at + 1) : "latest"
+  const lastAt = spec.lastIndexOf("@")
+  const pkg = lastAt > 0 ? spec.substring(0, lastAt) : spec
+  const version = lastAt > 0 ? spec.substring(lastAt + 1) : "latest"
   return { pkg, version }
 }
 

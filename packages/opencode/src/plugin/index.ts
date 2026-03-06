@@ -54,7 +54,7 @@ export namespace Plugin {
       plugins = [...BUILTIN, ...plugins]
     }
 
-    async function resolve(spec: string) {
+    async function resolvePlugin(spec: string) {
       const parsed = parsePluginSpecifier(spec)
       const target = await resolvePluginTarget(spec, parsed).catch((err) => {
         const cause = err instanceof Error ? err.cause : err
@@ -87,9 +87,9 @@ export namespace Plugin {
       // ignore old codex plugin since it is supported first party now
       if (spec.includes("opencode-openai-codex-auth") || spec.includes("opencode-copilot-auth")) continue
       log.info("loading plugin", { path: spec })
-      const path = await resolve(spec)
-      if (!path) continue
-      const mod = await import(path).catch((err) => {
+      const target = await resolvePlugin(spec)
+      if (!target) continue
+      const mod = await import(target).catch((err) => {
         const message = err instanceof Error ? err.message : String(err)
         log.error("failed to load plugin", { path: spec, error: message })
         Bus.publish(Session.Event.Error, {
