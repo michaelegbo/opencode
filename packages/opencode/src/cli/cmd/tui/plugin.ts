@@ -83,13 +83,13 @@ function pluginRoot(spec: string, target: string) {
   return target
 }
 
-function source(root: string, file: string) {
+function resolveThemePath(root: string, file: string) {
   if (file.startsWith("file://")) return fileURLToPath(file)
   if (path.isAbsolute(file)) return file
   return path.resolve(root, file)
 }
 
-function name(file: string) {
+function themeName(file: string) {
   return path.basename(file, path.extname(file))
 }
 
@@ -102,10 +102,10 @@ function meta(config: TuiConfig.Info, item: Config.PluginSpec) {
   return value
 }
 
-function install(meta: TuiConfig.PluginMeta, root: string): TuiTheme["install"] {
+function makeInstallFn(meta: TuiConfig.PluginMeta, root: string): TuiTheme["install"] {
   return async (file) => {
-    const src = source(root, file)
-    const theme = name(src)
+    const src = resolveThemePath(root, file)
+    const theme = themeName(src)
     if (hasTheme(theme)) return
 
     const text = await Bun.file(src)
@@ -125,16 +125,6 @@ function install(meta: TuiConfig.PluginMeta, root: string): TuiTheme["install"] 
 
     addTheme(theme, data)
   }
-}
-
-function themeApi(theme: TuiTheme, add: TuiTheme["install"]): TuiTheme {
-  return Object.create(theme, {
-    install: {
-      value: add,
-      configurable: true,
-      enumerable: true,
-    },
-  })
 }
 
 export namespace TuiPlugin {
@@ -213,7 +203,7 @@ export namespace TuiPlugin {
           if (!target) return false
 
           const root = pluginRoot(spec, target)
-          const add = install(level, root)
+          const install = makeInstallFn(level, root)
 
           const mod = await import(target).catch((error) => {
             log.error("failed to load tui plugin", { path: spec, retry, error })
@@ -244,7 +234,13 @@ export namespace TuiPlugin {
                   route: input.api.route,
                   ui: input.api.ui,
                   keybind: input.api.keybind,
-                  theme: themeApi(input.api.theme, add),
+                  theme: Object.create(input.api.theme, {
+                    install: {
+                      value: install,
+                      configurable: true,
+                      enumerable: true,
+                    },
+                  }),
                 },
               },
               Config.pluginOptions(item),
