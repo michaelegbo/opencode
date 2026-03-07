@@ -35,6 +35,7 @@ export function Dialog(
       height={dimensions().height}
       alignItems="center"
       position="absolute"
+      zIndex={3000}
       paddingTop={dimensions().height / 4}
       left={0}
       top={0}
@@ -151,6 +152,7 @@ export function DialogProvider(props: ParentProps) {
       {props.children}
       <box
         position="absolute"
+        zIndex={3000}
         onMouseDown={(evt) => {
           if (!Flag.OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT) return
           if (evt.button !== MouseButton.RIGHT) return
