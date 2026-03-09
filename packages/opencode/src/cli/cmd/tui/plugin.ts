@@ -129,15 +129,6 @@ function makeInstallFn(meta: TuiConfig.PluginMeta, root: string): TuiTheme["inst
   }
 }
 
-function initData(meta: { state: PluginMeta.State; entry: PluginMeta.Entry }): TuiPluginInit {
-  return {
-    state: meta.state,
-    first: meta.state === "new",
-    updated: meta.state === "changed",
-    entry: meta.entry,
-  }
-}
-
 export namespace TuiPlugin {
   const log = Log.create({ service: "tui.plugin" })
   let loaded: Promise<void> | undefined
@@ -225,6 +216,31 @@ export namespace TuiPlugin {
             })
           }
 
+          const now = Date.now()
+          const init: TuiPluginInit = meta
+            ? {
+                state: meta.state,
+                first: meta.state === "new",
+                updated: meta.state === "changed",
+                entry: meta.entry,
+              }
+            : {
+                state: "new",
+                first: true,
+                updated: false,
+                entry: {
+                  name: spec,
+                  source: spec.startsWith("file://") ? "file" : "npm",
+                  spec,
+                  target,
+                  first_time: now,
+                  last_time: now,
+                  time_changed: now,
+                  load_count: 1,
+                  fingerprint: target,
+                },
+              }
+
           const root = pluginRoot(spec, target)
           const install = makeInstallFn(getPluginMeta(config, item), root)
           const mod = await import(target).catch((error) => {
@@ -238,7 +254,7 @@ export namespace TuiPlugin {
             spec,
             mod,
             install,
-            init: meta ? initData(meta) : undefined,
+            init,
           }
         }
 
@@ -293,7 +309,7 @@ export namespace TuiPlugin {
                     }),
                   },
                 },
-                Config.pluginOptions(load.item),
+                Config.pluginOptions(load.item) ?? null,
                 load.init,
               )
             }

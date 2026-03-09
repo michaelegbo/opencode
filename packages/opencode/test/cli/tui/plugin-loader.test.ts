@@ -28,6 +28,7 @@ mock.module("@opentui/solid/jsx-runtime", () => ({
 }))
 const { allThemes, addTheme } = await import("../../../src/cli/cmd/tui/context/theme")
 const { TuiPlugin } = await import("../../../src/cli/cmd/tui/plugin")
+const { PluginMeta } = await import("../../../src/plugin/meta")
 
 async function waitForLog(text: string, timeout = 1000) {
   const start = Date.now()
@@ -281,6 +282,12 @@ export const object_plugin = {
   })
   process.env.OPENCODE_PLUGIN_META_FILE = path.join(tmp.path, "plugin-meta.json")
   if (!process.env.OPENCODE_PLUGIN_META_FILE) throw new Error("missing meta file")
+  await PluginMeta.touch(tmp.extra.localSpec, tmp.extra.localSpec)
+  await PluginMeta.touch(tmp.extra.globalSpec, tmp.extra.globalSpec)
+  await PluginMeta.persist()
+  await Bun.sleep(20)
+  const text = await Bun.file(tmp.extra.globalPluginPath).text()
+  await Bun.write(tmp.extra.globalPluginPath, `${text}\n`)
 
   const cwd = spyOn(process, "cwd").mockImplementation(() => tmp.path)
   let selected = "opencode"
@@ -410,21 +417,21 @@ export const object_plugin = {
     expect(local.depth_after).toBe(1)
     expect(local.open_after).toBe(true)
     expect(local.open_clear).toBe(false)
-    expect(local.init_state).toBe("new")
-    expect(local.init_first).toBe(true)
+    expect(local.init_state).toBe("same")
+    expect(local.init_first).toBe(false)
     expect(local.init_updated).toBe(false)
     expect(local.init_source).toBe("file")
-    expect(local.init_load_count).toBe(1)
+    expect(local.init_load_count).toBe(2)
 
     const global = JSON.parse(await fs.readFile(tmp.extra.globalMarker, "utf8"))
     expect(global.has).toBe(true)
     expect(global.set_installed).toBe(true)
     expect(global.selected).toBe(tmp.extra.globalThemeName)
-    expect(global.init_state).toBe("new")
-    expect(global.init_first).toBe(true)
-    expect(global.init_updated).toBe(false)
+    expect(global.init_state).toBe("changed")
+    expect(global.init_first).toBe(false)
+    expect(global.init_updated).toBe(true)
     expect(global.init_source).toBe("file")
-    expect(global.init_load_count).toBe(1)
+    expect(global.init_load_count).toBe(2)
 
     const preloaded = JSON.parse(await fs.readFile(tmp.extra.preloadedMarker, "utf8"))
     expect(preloaded.before).toBe(true)
@@ -470,9 +477,12 @@ export const object_plugin = {
 
     const meta = JSON.parse(await fs.readFile(path.join(tmp.path, "plugin-meta.json"), "utf8")) as Record<
       string,
-      { spec: string; load_count: number }
+      { name: string; load_count: number }
     >
-    expect(Object.keys(meta).length > 0).toBe(true)
+    const rows = Object.values(meta)
+    expect(rows.find((item) => item.name === "local-plugin")?.load_count).toBe(2)
+    expect(rows.find((item) => item.name === "global-plugin")?.load_count).toBe(2)
+    expect(rows.find((item) => item.name === "preloaded-plugin")?.load_count).toBe(1)
   } finally {
     cwd.mockRestore()
     if (backup === undefined) {

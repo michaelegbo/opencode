@@ -6,12 +6,6 @@ mock.module("@opentui/solid/jsx-runtime", () => ({
   jsxs: () => null,
   jsxDEV: () => null,
 }))
-mock.module("@opentui/solid", () => ({
-  useRenderer: () => ({
-    getPalette: async () => ({ palette: [] as string[] }),
-    clearPaletteCache: () => {},
-  }),
-}))
 
 const { DEFAULT_THEMES, allThemes, addTheme, hasTheme } = await import("../../../src/cli/cmd/tui/context/theme")
 

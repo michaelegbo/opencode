@@ -51,25 +51,6 @@ const cfg = (options: Record<string, unknown> | undefined) => {
   }
 }
 
-const boot = (meta?: TuiPluginInit) => {
-  if (!meta) {
-    return {
-      state: "unknown",
-      first: false,
-      updated: false,
-      count: 0,
-      source: "n/a",
-    }
-  }
-  return {
-    state: meta.state,
-    first: meta.first,
-    updated: meta.updated,
-    count: meta.entry.load_count,
-    source: meta.entry.source,
-  }
-}
-
 const names = (input: ReturnType<typeof cfg>) => {
   return {
     modal: `${input.route}.modal`,
@@ -358,7 +339,7 @@ const Screen = (props: {
   input: ReturnType<typeof cfg>
   route: ReturnType<typeof names>
   keys: Keys
-  meta: ReturnType<typeof boot>
+  meta: TuiPluginInit
   params?: Record<string, unknown>
 }) => {
   const dim = useTerminalDimensions()
@@ -549,9 +530,9 @@ const Screen = (props: {
               <text fg={skin.muted}>plugin state: {props.meta.state}</text>
               <text fg={skin.muted}>
                 first: {props.meta.first ? "yes" : "no"} · updated: {props.meta.updated ? "yes" : "no"} · loads:{" "}
-                {props.meta.count}
+                {props.meta.entry.load_count}
               </text>
-              <text fg={skin.muted}>plugin source: {props.meta.source}</text>
+              <text fg={skin.muted}>plugin source: {props.meta.entry.source}</text>
               <text fg={skin.muted}>source: {value.source}</text>
               <text fg={skin.muted}>note: {value.note || "(none)"}</text>
               <text fg={skin.muted}>selected: {value.selected || "(none)"}</text>
@@ -875,24 +856,23 @@ const reg = (api: TuiApi, input: ReturnType<typeof cfg>, keys: Keys) => {
   ])
 }
 
-const tui = async (input: TuiPluginInput, options?: Record<string, unknown>, meta?: TuiPluginInit) => {
+const tui = async (input: TuiPluginInput, options: Record<string, unknown> | null, meta: TuiPluginInit) => {
   if (options?.enabled === false) return
 
   await input.api.theme.install("./smoke-theme.json")
   input.api.theme.set("smoke-theme")
 
-  const value = cfg(options)
+  const value = cfg(options ?? undefined)
   const route = names(value)
   const keys = input.api.keybind.create(bind, value.keybinds)
   const fx = new VignetteEffect(value.vignette)
-  const info = boot(meta)
   input.renderer.addPostProcessFn(fx.apply.bind(fx))
 
   input.api.route.register([
     {
       name: route.screen,
       render: ({ params }) => (
-        <Screen api={input.api} input={value} route={route} keys={keys} meta={info} params={params} />
+        <Screen api={input.api} input={value} route={route} keys={keys} meta={meta} params={params} />
       ),
     },
     {
