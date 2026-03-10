@@ -1,23 +1,57 @@
-import type { MiddlewareHandler } from "hono"
+import { Hono, type MiddlewareHandler } from "hono"
 import { Flag } from "../flag/flag"
+import { Session } from "../session"
 import { getAdaptor } from "./adaptors"
 import { Workspace } from "./workspace"
-import { WorkspaceContext } from "./workspace-context"
 
-// This middleware forwards all non-GET requests if the workspace is a
-// remote. The remote workspace needs to handle session mutations
+// These are routes that we forward to a workspace, expressed this way
+// because we auto-infer the workspace differently for different
+// routes
+const Router = new Hono()
+  .all("/session", async (c) => {
+    if (c.req.method === "GET") return c.notFound()
+
+    const body = await c.req.json().catch(() => undefined)
+    if (!body || typeof body.workspaceID !== "string") {
+      return c.notFound()
+    }
+    return c.text(body.workspaceID)
+  })
+  .all("/session/status", async (c) => {
+    return c.notFound()
+  })
+  .all("/session/:sessionID/*", async (c) => {
+    if (c.req.method === "GET") return c.notFound()
+
+    const info = await Session.get(c.req.param("sessionID")).catch(() => undefined)
+    if (!info?.workspaceID) return c.notFound()
+    return c.text(info.workspaceID)
+  })
+
 async function routeRequest(req: Request) {
-  // Right now, we need to forward all requests to the workspace
-  // because we don't have syncing. In the future all GET requests
-  // which don't mutate anything will be handled locally
-  //
-  // if (req.method === "GET") return
+  let workspaceID: string | null = null
 
-  if (!WorkspaceContext.workspaceID) return
+  const match = await Router.fetch(req.clone())
+  if (match.ok) {
+    workspaceID = await match.text()
+  } else {
+    // Fallback to a header to force routing
+    //
+    // This header is temporary: we allow the client to force a request
+    // to be forwarded to a workspace with it, regardless of the URL.
+    // This is only needed because we don't sync yet; when we do we can
+    // handle a lot more requests locally and the client won't have to
+    // force this
+    workspaceID = req.headers.get("x-opencode-workspace")
+  }
 
-  const workspace = await Workspace.get(WorkspaceContext.workspaceID)
+  if (workspaceID == null) {
+    return
+  }
+
+  const workspace = await Workspace.get(workspaceID)
   if (!workspace) {
-    return new Response(`Workspace not found: ${WorkspaceContext.workspaceID}`, {
+    return new Response(`Workspace not found: ${workspaceID}`, {
       status: 500,
       headers: {
         "content-type": "text/plain; charset=utf-8",
@@ -26,8 +60,9 @@ async function routeRequest(req: Request) {
   }
 
   const adaptor = await getAdaptor(workspace.type)
+  const url = new URL(req.url)
 
-  return adaptor.fetch(workspace, `${new URL(req.url).pathname}${new URL(req.url).search}`, {
+  return adaptor.fetch(workspace, `${url.pathname}${url.search}`, {
     method: req.method,
     body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
     signal: req.signal,
@@ -36,7 +71,6 @@ async function routeRequest(req: Request) {
 }
 
 export const WorkspaceRouterMiddleware: MiddlewareHandler = async (c, next) => {
-  // Only available in development for now
   if (!Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
     return next()
   }
