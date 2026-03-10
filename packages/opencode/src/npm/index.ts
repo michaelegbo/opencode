@@ -86,7 +86,7 @@ export namespace Npm {
     log.info("installing dependencies", { dir })
     const arb = new Arborist({
       path: dir,
-      binLinks: true,
+      binLinks: false,
       progress: false,
       savePrefix: "",
     })
