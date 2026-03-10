@@ -90,7 +90,8 @@ export namespace Npm {
       progress: false,
       savePrefix: "",
     })
-    await arb.reify()
+    const result = await arb.reify()
+    console.log(result)
   }
 
   export async function which(pkg: string) {
