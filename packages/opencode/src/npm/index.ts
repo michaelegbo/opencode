@@ -52,7 +52,7 @@ export namespace Npm {
 
     const arborist = new Arborist({
       path: dir,
-      binLinks: !(process.platform === "win32" && process.env.CI),
+      binLinks: true,
       progress: false,
       savePrefix: "",
     })
@@ -86,7 +86,7 @@ export namespace Npm {
     log.info("installing dependencies", { dir })
     const arb = new Arborist({
       path: dir,
-      binLinks: false,
+      binLinks: true,
       progress: false,
       savePrefix: "",
     })

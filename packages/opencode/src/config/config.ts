@@ -287,9 +287,7 @@ export namespace Config {
 
     // Install any additional dependencies defined in the package.json
     // This allows local plugins and custom tools to use external packages
-    await Npm.install(dir).catch((err) => {
-      log.warn("failed to install dependencies", { dir, error: err })
-    })
+    await Npm.install(dir)
   }
 
   async function isWritable(dir: string) {
