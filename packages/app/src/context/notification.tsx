@@ -132,6 +132,28 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     const [index, setIndex] = createStore<NotificationIndex>(buildNotificationIndex(store.list))
 
     const meta = { pruned: false, disposed: false }
+    const idleSuppressMs = 5000
+    const idleSuppressedUntilBySession = new Map<string, number>()
+
+    const idleSuppressKey = (directory: string, sessionID?: string) => {
+      if (!sessionID) return
+      return `${directory}:${sessionID}`
+    }
+
+    const markIdleSuppressed = (directory: string, sessionID?: string) => {
+      const key = idleSuppressKey(directory, sessionID)
+      if (!key) return
+      idleSuppressedUntilBySession.set(key, Date.now() + idleSuppressMs)
+    }
+
+    const shouldSuppressIdle = (directory: string, sessionID?: string) => {
+      const key = idleSuppressKey(directory, sessionID)
+      if (!key) return false
+      const until = idleSuppressedUntilBySession.get(key)
+      if (until === undefined) return false
+      idleSuppressedUntilBySession.delete(key)
+      return until > Date.now()
+    }
 
     const updateUnseen = (scope: "session" | "project", key: string, unseen: Notification[]) => {
       setIndex(scope, "unseen", key, unseen)
@@ -290,12 +312,15 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       if (event.type !== "session.idle" && event.type !== "session.error") return
 
       const directory = e.name
-      const time = Date.now()
+      if (event.type === "session.error") {
+        markIdleSuppressed(directory, event.properties.sessionID)
+      }
       if (event.type === "session.idle") {
-        handleSessionIdle(directory, event, time)
+        if (shouldSuppressIdle(directory, event.properties.sessionID)) return
+        handleSessionIdle(directory, event, Date.now())
         return
       }
-      handleSessionError(directory, event, time)
+      handleSessionError(directory, event, Date.now())
     })
     onCleanup(() => {
       meta.disposed = true
