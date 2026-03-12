@@ -1,21 +1,25 @@
-import { beforeEach, expect, mock, test } from "bun:test"
+import { afterEach, expect, mock, spyOn, test } from "bun:test"
 import { Cause, Effect } from "effect"
 import { CurrentLogAnnotations, CurrentLogSpans } from "effect/References"
+
+import * as EffectLog from "../../src/util/effect-log"
+import { Log } from "../../src/util/log"
 
 const debug = mock(() => {})
 const info = mock(() => {})
 const warn = mock(() => {})
 const error = mock(() => {})
-const create = mock(() => ({
+
+const logger = {
   debug,
   info,
   warn,
   error,
   tag() {
-    return this
+    return logger
   },
   clone() {
-    return this
+    return logger
   },
   time() {
     return {
@@ -23,18 +27,9 @@ const create = mock(() => ({
       [Symbol.dispose]() {},
     }
   },
-}))
+}
 
-mock.module("../../src/util/log", () => ({
-  Log: {
-    create,
-  },
-}))
-
-const EffectLog = await import("../../src/util/effect-log")
-
-beforeEach(() => {
-  create.mockClear()
+afterEach(() => {
   debug.mockClear()
   info.mockClear()
   warn.mockClear()
@@ -42,6 +37,8 @@ beforeEach(() => {
 })
 
 test("EffectLog.layer routes info logs through util/log", async () => {
+  using create = spyOn(Log, "create").mockReturnValue(logger)
+
   await Effect.runPromise(Effect.logInfo("hello").pipe(Effect.provide(EffectLog.layer({ service: "effect-test" }))))
 
   expect(create).toHaveBeenCalledWith({ service: "effect-test" })
@@ -49,6 +46,8 @@ test("EffectLog.layer routes info logs through util/log", async () => {
 })
 
 test("EffectLog.layer forwards annotations and spans to util/log", async () => {
+  using create = spyOn(Log, "create").mockReturnValue(logger)
+
   await Effect.runPromise(
     Effect.logInfo("hello").pipe(
       Effect.annotateLogs({ requestId: "req-123" }),
@@ -57,6 +56,7 @@ test("EffectLog.layer forwards annotations and spans to util/log", async () => {
     ),
   )
 
+  expect(create).toHaveBeenCalledWith({ service: "effect-test-meta" })
   expect(info).toHaveBeenCalledWith(
     "hello",
     expect.objectContaining({
@@ -71,9 +71,10 @@ test("EffectLog.layer forwards annotations and spans to util/log", async () => {
 })
 
 test("EffectLog.make formats structured messages and causes for legacy logger", () => {
-  const logger = EffectLog.make({ service: "effect-test-struct" })
+  using create = spyOn(Log, "create").mockReturnValue(logger)
+  const effect = EffectLog.make({ service: "effect-test-struct" })
 
-  logger.log({
+  effect.log({
     message: { hello: "world" },
     logLevel: "Warn",
     cause: Cause.fail(new Error("boom")),
@@ -88,6 +89,7 @@ test("EffectLog.make formats structured messages and causes for legacy logger", 
     date: new Date(),
   } as never)
 
+  expect(create).toHaveBeenCalledWith({ service: "effect-test-struct" })
   expect(warn).toHaveBeenCalledWith(
     '{"hello":"world"}',
     expect.objectContaining({
