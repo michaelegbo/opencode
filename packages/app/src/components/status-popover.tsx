@@ -207,7 +207,7 @@ export function StatusModal(props: { directory: string }) {
         >
           <Tabs.List
             data-slot="tablist"
-            class="bg-transparent border-b border-border-weak-base px-4 pt-2 pb-0 gap-4 h-10"
+            class="bg-transparent border-b border-border-weak-base px-5 pt-2 pb-0 gap-4 h-10"
           >
             <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular" classes={{ button: "!px-0" }}>
               {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
