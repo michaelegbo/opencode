@@ -190,11 +190,11 @@ export function StatusModal(props: { directory: string }) {
   const open = () =>
     dialog.show(() => (
       <Dialog
-        title={language.t("status.popover.trigger")}
+        title={<span class="text-12-medium text-text-weak">{language.t("status.popover.trigger")}</span>}
         position="top"
         style={{ "--dialog-top": "33vh" } as any}
         fit
-        class="!max-h-[33vh] [&_[data-slot=dialog-header]]:bg-background-base"
+        class="!max-h-[33vh] [&_[data-slot=dialog-header]]:bg-background-base [&_[data-slot=dialog-header]]:pb-2"
         transition
       >
         <Tabs
@@ -209,19 +209,19 @@ export function StatusModal(props: { directory: string }) {
             data-slot="tablist"
             class="bg-background-base border-b border-border-weak-base px-5 pt-0 pb-0 gap-7 h-10"
           >
-            <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular" classes={{ button: "!px-0" }}>
+            <Tabs.Trigger value="servers" data-slot="tab" class="text-14-medium" classes={{ button: "!px-0" }}>
               {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
               {language.t("status.popover.tab.servers")}
             </Tabs.Trigger>
-            <Tabs.Trigger value="mcp" data-slot="tab" class="text-12-regular" classes={{ button: "!px-0" }}>
+            <Tabs.Trigger value="mcp" data-slot="tab" class="text-14-medium" classes={{ button: "!px-0" }}>
               {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
               {language.t("status.popover.tab.mcp")}
             </Tabs.Trigger>
-            <Tabs.Trigger value="lsp" data-slot="tab" class="text-12-regular" classes={{ button: "!px-0" }}>
+            <Tabs.Trigger value="lsp" data-slot="tab" class="text-14-medium" classes={{ button: "!px-0" }}>
               {lspCount() > 0 ? `${lspCount()} ` : ""}
               {language.t("status.popover.tab.lsp")}
             </Tabs.Trigger>
-            <Tabs.Trigger value="plugins" data-slot="tab" class="text-12-regular" classes={{ button: "!px-0" }}>
+            <Tabs.Trigger value="plugins" data-slot="tab" class="text-14-medium" classes={{ button: "!px-0" }}>
               {pluginCount() > 0 ? `${pluginCount()} ` : ""}
               {language.t("status.popover.tab.plugins")}
             </Tabs.Trigger>
