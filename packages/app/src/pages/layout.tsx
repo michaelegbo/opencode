@@ -2034,7 +2034,7 @@ export default function Layout(props: ParentProps) {
                       <div class="shrink-0 py-4 px-3">
                         <Button
                           size="large"
-                          icon="plus-small"
+                          icon="new-session"
                           class="w-full"
                           onClick={() => navigateWithSidebarReset(`/${base64Encode(p().worktree)}/session`)}
                         >
