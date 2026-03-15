@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
 import { SessionID, MessageID, PartID } from "./schema"
+import { done } from "./assistant"
 import { MessageV2 } from "./message-v2"
 import { Log } from "../util/log"
 import { SessionRevert } from "./revert"
@@ -465,7 +466,7 @@ export namespace SessionPrompt {
           result,
         )
         assistantMessage.finish = "tool-calls"
-        assistantMessage.time.completed = Date.now()
+        done(assistantMessage)
         await Session.updateMessage(assistantMessage)
         if (result && part.state.status === "running") {
           await Session.updatePart({
@@ -599,90 +600,99 @@ export namespace SessionPrompt {
       })
       using _ = defer(() => InstructionPrompt.clear(processor.message.id))
 
-      // Check if user explicitly invoked an agent via @ in this turn
-      const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
-      const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
+      const format = lastUser.format ?? { type: "text" }
+      const result = await (async () => {
+        const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+        const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
-      const tools = await resolveTools({
-        agent,
-        session,
-        model,
-        tools: lastUser.tools,
-        processor,
-        bypassAgentCheck,
-        messages: msgs,
-      })
-
-      // Inject StructuredOutput tool if JSON schema mode enabled
-      if (lastUser.format?.type === "json_schema") {
-        tools["StructuredOutput"] = createStructuredOutputTool({
-          schema: lastUser.format.schema,
-          onSuccess(output) {
-            structuredOutput = output
-          },
+        const tools = await resolveTools({
+          agent,
+          session,
+          model,
+          tools: lastUser.tools,
+          processor,
+          bypassAgentCheck,
+          messages: msgs,
         })
-      }
 
-      if (step === 1) {
-        SessionSummary.summarize({
-          sessionID: sessionID,
-          messageID: lastUser.id,
-        })
-      }
+        if (format.type === "json_schema") {
+          tools["StructuredOutput"] = createStructuredOutputTool({
+            schema: format.schema,
+            onSuccess(output) {
+              structuredOutput = output
+            },
+          })
+        }
 
-      // Ephemerally wrap queued user messages with a reminder to stay on track
-      if (step > 1 && lastFinished) {
-        for (const msg of msgs) {
-          if (msg.info.role !== "user" || msg.info.id <= lastFinished.id) continue
-          for (const part of msg.parts) {
-            if (part.type !== "text" || part.ignored || part.synthetic) continue
-            if (!part.text.trim()) continue
-            part.text = [
-              "<system-reminder>",
-              "The user sent the following message:",
-              part.text,
-              "",
-              "Please address this message and continue with your tasks.",
-              "</system-reminder>",
-            ].join("\n")
+        if (step === 1) {
+          SessionSummary.summarize({
+            sessionID: sessionID,
+            messageID: lastUser.id,
+          })
+        }
+
+        if (step > 1 && lastFinished) {
+          for (const msg of msgs) {
+            if (msg.info.role !== "user" || msg.info.id <= lastFinished.id) continue
+            for (const part of msg.parts) {
+              if (part.type !== "text" || part.ignored || part.synthetic) continue
+              if (!part.text.trim()) continue
+              part.text = [
+                "<system-reminder>",
+                "The user sent the following message:",
+                part.text,
+                "",
+                "Please address this message and continue with your tasks.",
+                "</system-reminder>",
+              ].join("\n")
+            }
           }
         }
-      }
 
-      await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+        await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-      // Build system prompt, adding structured output instruction if needed
-      const skills = await SystemPrompt.skills(agent)
-      const system = [
-        ...(await SystemPrompt.environment(model)),
-        ...(skills ? [skills] : []),
-        ...(await InstructionPrompt.system()),
-      ]
-      const format = lastUser.format ?? { type: "text" }
-      if (format.type === "json_schema") {
-        system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-      }
+        const skills = await SystemPrompt.skills(agent)
+        const system = [
+          ...(await SystemPrompt.environment(model)),
+          ...(skills ? [skills] : []),
+          ...(await InstructionPrompt.system()),
+        ]
+        if (format.type === "json_schema") {
+          system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+        }
 
-      const result = await processor.process({
-        user: lastUser,
-        agent,
-        abort,
-        sessionID,
-        system,
-        messages: [
-          ...MessageV2.toModelMessages(msgs, model),
-          ...(isLastStep
-            ? [
-                {
-                  role: "assistant" as const,
-                  content: MAX_STEPS,
-                },
-              ]
-            : []),
-        ],
-        tools,
-        model,
-        toolChoice: format.type === "json_schema" ? "required" : undefined,
+        return processor.process({
+          user: lastUser,
+          agent,
+          abort,
+          sessionID,
+          system,
+          messages: [
+            ...MessageV2.toModelMessages(msgs, model),
+            ...(isLastStep
+              ? [
+                  {
+                    role: "assistant" as const,
+                    content: MAX_STEPS,
+                  },
+                ]
+              : []),
+          ],
+          tools,
+          model,
+          toolChoice: format.type === "json_schema" ? "required" : undefined,
+        })
+      })().catch(async (err) => {
+        if (typeof processor.message.time.completed !== "number") {
+          await Session.updateMessage(done(processor.message)).catch((cause) => {
+            log.error("failed to finalize assistant after prompt error", {
+              cause,
+              messageID: processor.message.id,
+              sessionID,
+            })
+          })
+        }
+        throw err
       })
 
       // If structured output was captured, save it and exit immediately
@@ -1697,7 +1707,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     if (aborted) {
       output += "\n\n" + ["<metadata>", "User aborted the command", "</metadata>"].join("\n")
     }
-    msg.time.completed = Date.now()
+    done(msg)
     await Session.updateMessage(msg)
     if (part.state.status === "running") {
       part.state = {

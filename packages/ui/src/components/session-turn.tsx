@@ -195,9 +195,9 @@ export function SessionTurn(
   const pending = createMemo(() => {
     if (typeof props.active === "boolean") return
     const messages = allMessages() ?? emptyMessages
-    return messages.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
-    )
+    const item = messages.findLast((item): item is AssistantMessage => item.role === "assistant")
+    if (!item || typeof item.time.completed === "number") return
+    return item
   })
 
   const pendingUser = createMemo(() => {

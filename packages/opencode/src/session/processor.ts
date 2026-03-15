@@ -14,6 +14,7 @@ import { Config } from "@/config/config"
 import { SessionCompaction } from "./compaction"
 import { PermissionNext } from "@/permission/next"
 import { Question } from "@/question"
+import { done } from "./assistant"
 import { PartID } from "./schema"
 import type { SessionID, MessageID } from "./schema"
 
@@ -416,7 +417,7 @@ export namespace SessionProcessor {
               })
             }
           }
-          input.assistantMessage.time.completed = Date.now()
+          done(input.assistantMessage)
           await Session.updateMessage(input.assistantMessage)
           if (needsCompaction) return "compact"
           if (blocked) return "stop"
