@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
 import { Effect } from "effect"
-import { Discovery, DiscoveryService } from "../../src/skill/discovery"
+import { DiscoveryService } from "../../src/skill/discovery"
+import { Global } from "../../src/global"
 import { Filesystem } from "../../src/util/filesystem"
 import { rm } from "fs/promises"
 import path from "path"
@@ -10,9 +11,10 @@ let server: ReturnType<typeof Bun.serve>
 let downloadCount = 0
 
 const fixturePath = path.join(import.meta.dir, "../fixture/skills")
+const cacheDir = path.join(Global.Path.cache, "skills")
 
 beforeAll(async () => {
-  await rm(Discovery.dir(), { recursive: true, force: true })
+  await rm(cacheDir, { recursive: true, force: true })
 
   server = Bun.serve({
     port: 0,
@@ -41,7 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server?.stop()
-  await rm(Discovery.dir(), { recursive: true, force: true })
+  await rm(cacheDir, { recursive: true, force: true })
 })
 
 describe("Discovery.pull", () => {
@@ -52,7 +54,7 @@ describe("Discovery.pull", () => {
     const dirs = await pull(CLOUDFLARE_SKILLS_URL)
     expect(dirs.length).toBeGreaterThan(0)
     for (const dir of dirs) {
-      expect(dir).toStartWith(Discovery.dir())
+      expect(dir).toStartWith(cacheDir)
       const md = path.join(dir, "SKILL.md")
       expect(await Filesystem.exists(md)).toBe(true)
     }
@@ -94,7 +96,7 @@ describe("Discovery.pull", () => {
 
   test("caches downloaded files on second pull", async () => {
     // clear dir and downloadCount
-    await rm(Discovery.dir(), { recursive: true, force: true })
+    await rm(cacheDir, { recursive: true, force: true })
     downloadCount = 0
 
     // first pull to populate cache

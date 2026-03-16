@@ -1,14 +1,12 @@
-import path from "path"
-import { Effect, Layer, Schema, ServiceMap } from "effect"
+import { NodeFileSystem, NodePath } from "@effect/platform-node"
+import { Effect, FileSystem, Layer, Path, Schema, ServiceMap } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Global } from "../global"
 import { Log } from "../util/log"
-import { Filesystem } from "../util/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 
 class IndexSkill extends Schema.Class<IndexSkill>("IndexSkill")({
   name: Schema.String,
-  description: Schema.String,
   files: Schema.Array(Schema.String),
 }) {}
 
@@ -16,11 +14,8 @@ class Index extends Schema.Class<Index>("Index")({
   skills: Schema.Array(IndexSkill),
 }) {}
 
-export namespace Discovery {
-  export function dir() {
-    return path.join(Global.Path.cache, "skills")
-  }
-}
+const skillConcurrency = 4
+const fileConcurrency = 8
 
 export namespace DiscoveryService {
   export interface Service {
@@ -35,113 +30,89 @@ export class DiscoveryService extends ServiceMap.Service<DiscoveryService, Disco
     DiscoveryService,
     Effect.gen(function* () {
       const log = Log.create({ service: "skill-discovery" })
-      const http = withTransientReadRetry(yield* HttpClient.HttpClient)
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
+      const cache = path.join(Global.Path.cache, "skills")
 
-      const get = Effect.fn("DiscoveryService.get")((url: string, dest: string) =>
-        Effect.gen(function* () {
-          if (yield* Effect.promise(() => Filesystem.exists(dest))) return true
+      const download = Effect.fn("DiscoveryService.download")(function* (url: string, dest: string) {
+        if (yield* fs.exists(dest).pipe(Effect.orDie)) return true
 
-          const req = HttpClientRequest.get(url)
-          const response = yield* http.execute(req).pipe(
-            Effect.catch((err) => {
+        return yield* HttpClientRequest.get(url).pipe(
+          http.execute,
+          Effect.flatMap((res) => res.arrayBuffer),
+          Effect.flatMap((body) =>
+            fs
+              .makeDirectory(path.dirname(dest), { recursive: true })
+              .pipe(Effect.flatMap(() => fs.writeFile(dest, new Uint8Array(body)))),
+          ),
+          Effect.as(true),
+          Effect.catch((err) =>
+            Effect.sync(() => {
               log.error("failed to download", { url, err })
-              return Effect.succeed(null)
+              return false
             }),
-          )
-          if (!response) return false
-
-          const ok = yield* HttpClientResponse.filterStatusOk(response).pipe(
-            Effect.catch(() => {
-              log.error("failed to download", { url, status: response.status })
-              return Effect.succeed(null)
-            }),
-          )
-          if (!ok) return false
-
-          const body = yield* ok.arrayBuffer.pipe(
-            Effect.catch((err) => {
-              log.error("failed to read download body", { url, err })
-              return Effect.succeed(null)
-            }),
-          )
-          if (!body) return false
-
-          yield* Effect.promise(() => Filesystem.write(dest, Buffer.from(body)))
-          return true
-        }),
-      )
+          ),
+        )
+      })
 
       const pull: DiscoveryService.Service["pull"] = Effect.fn("DiscoveryService.pull")(function* (url: string) {
         const base = url.endsWith("/") ? url : `${url}/`
         const index = new URL("index.json", base).href
-        const cache = Discovery.dir()
         const host = base.slice(0, -1)
 
         log.info("fetching index", { url: index })
 
-        const req = HttpClientRequest.get(index).pipe(HttpClientRequest.acceptJson)
-        const response = yield* http.execute(req).pipe(
-          Effect.catch((err) => {
-            log.error("failed to fetch index", { url: index, err })
-            return Effect.succeed(null)
-          }),
+        const data = yield* HttpClientRequest.get(index).pipe(
+          HttpClientRequest.acceptJson,
+          http.execute,
+          Effect.flatMap(HttpClientResponse.schemaBodyJson(Index)),
+          Effect.catch((err) =>
+            Effect.sync(() => {
+              log.error("failed to fetch index", { url: index, err })
+              return null
+            }),
+          ),
         )
-        if (!response) return Array<string>()
 
-        const ok = yield* HttpClientResponse.filterStatusOk(response).pipe(
-          Effect.catch(() => {
-            log.error("failed to fetch index", { url: index, status: response.status })
-            return Effect.succeed(null)
-          }),
-        )
-        if (!ok) return Array<string>()
-
-        const data = yield* HttpClientResponse.schemaBodyJson(Index)(ok).pipe(
-          Effect.catch((err) => {
-            log.error("failed to parse index", { url: index, err })
-            return Effect.succeed(null)
-          }),
-        )
-        if (!data) {
-          log.warn("invalid index format", { url: index })
-          return Array<string>()
-        }
+        if (!data) return []
 
         const list = data.skills.filter((skill) => {
-          if (!skill.name || !Array.isArray(skill.files)) {
-            log.warn("invalid skill entry", { url: index, skill })
+          if (!skill.files.includes("SKILL.md")) {
+            log.warn("skill entry missing SKILL.md", { url: index, skill: skill.name })
             return false
           }
           return true
         })
 
-        const dirs = yield* Effect.all(
-          list.map((skill) =>
+        const dirs = yield* Effect.forEach(
+          list,
+          (skill) =>
             Effect.gen(function* () {
               const root = path.join(cache, skill.name)
 
-              yield* Effect.all(
-                skill.files.map((file) => {
-                  const link = new URL(file, `${host}/${skill.name}/`).href
-                  const dest = path.join(root, file)
-                  return get(link, dest)
-                }),
-                { concurrency: "unbounded" },
+              yield* Effect.forEach(
+                skill.files,
+                (file) => download(new URL(file, `${host}/${skill.name}/`).href, path.join(root, file)),
+                { concurrency: fileConcurrency },
               )
 
               const md = path.join(root, "SKILL.md")
-              return (yield* Effect.promise(() => Filesystem.exists(md))) ? root : null
+              return (yield* fs.exists(md).pipe(Effect.orDie)) ? root : null
             }),
-          ),
-          { concurrency: "unbounded" },
+          { concurrency: skillConcurrency },
         )
 
-        return dirs.filter((dir): dir is string => Boolean(dir))
+        return dirs.filter((dir): dir is string => dir !== null)
       })
 
       return DiscoveryService.of({ pull })
     }),
   )
 
-  static readonly defaultLayer = DiscoveryService.layer.pipe(Layer.provide(FetchHttpClient.layer))
+  static readonly defaultLayer = DiscoveryService.layer.pipe(
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(NodeFileSystem.layer),
+    Layer.provide(NodePath.layer),
+  )
 }
