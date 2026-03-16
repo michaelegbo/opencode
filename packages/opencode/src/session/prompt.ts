@@ -664,6 +664,7 @@ export namespace SessionPrompt {
         return processor.process({
           user: lastUser,
           agent,
+          permission: session.permission,
           abort,
           sessionID,
           system,
