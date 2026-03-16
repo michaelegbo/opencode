@@ -6,13 +6,7 @@ import { useWorkerPool } from "../context/worker-pool"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines } from "../pierre/commented-lines"
 import { fixDiffSelection } from "../pierre/diff-selection"
-import {
-  applyViewerScheme,
-  clearReadyWatcher,
-  createReadyWatcher,
-  notifyShadowReady,
-  observeViewerScheme,
-} from "../pierre/file-runtime"
+import { clearReadyWatcher, createReadyWatcher, notifyShadowReady } from "../pierre/file-runtime"
 import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
 import { File, type DiffFileProps, type FileProps } from "./file"
 
@@ -87,8 +81,6 @@ function DiffSSRViewer<T>(props: SSRDiffFileProps<T>) {
   onMount(() => {
     if (isServer) return
 
-    onCleanup(observeViewerScheme(() => fileDiffRef))
-
     const virtualizer = getVirtualizer()
     fileDiffInstance = virtualizer
       ? new VirtualizedFileDiff<T>(
@@ -109,8 +101,6 @@ function DiffSSRViewer<T>(props: SSRDiffFileProps<T>) {
           },
           workerPool,
         )
-
-    applyViewerScheme(fileDiffRef)
 
     // @ts-expect-error private field required for hydration
     fileDiffInstance.fileContainer = fileDiffRef

@@ -16,20 +16,12 @@ import {
 } from "@pierre/diffs"
 import { type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { createMediaQuery } from "@solid-primitives/media"
-import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
+import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, Show, splitProps } from "solid-js"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
-import {
-  applyViewerScheme,
-  clearReadyWatcher,
-  createReadyWatcher,
-  getViewerHost,
-  getViewerRoot,
-  notifyShadowReady,
-  observeViewerScheme,
-} from "../pierre/file-runtime"
+import { clearReadyWatcher, createReadyWatcher, getViewerRoot, notifyShadowReady } from "../pierre/file-runtime"
 import {
   findCodeSelectionSide,
   findDiffLineNumber,
@@ -154,7 +146,6 @@ function useFileViewer(config: ViewerConfig) {
   const [rendered, setRendered] = createSignal(0)
 
   const getRoot = () => getViewerRoot(container)
-  const getHost = () => getViewerHost(container)
 
   const find = createFileFind({
     wrapper: () => wrapper,
@@ -265,10 +256,6 @@ function useFileViewer(config: ViewerConfig) {
 
   // -- shared effects --
 
-  onMount(() => {
-    onCleanup(observeViewerScheme(getHost))
-  })
-
   createEffect(() => {
     rendered()
     const ranges = config.commentedLines()
@@ -351,7 +338,6 @@ function useFileViewer(config: ViewerConfig) {
     rendered,
     setRendered,
     getRoot,
-    getHost,
     find,
     scheduleSelectionUpdate,
   }
@@ -486,7 +472,6 @@ function renderViewer<I extends RenderTarget>(opts: {
   opts.viewer.container.innerHTML = ""
   opts.draw(next)
 
-  applyViewerScheme(opts.viewer.getHost())
   opts.viewer.setRendered((value) => value + 1)
   opts.onReady()
 }

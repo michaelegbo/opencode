@@ -37,24 +37,17 @@ const unsafeCSS = `
   --diffs-bg-addition-emphasis: var(--diffs-bg-addition-emphasis-override, light-dark(rgb(from var(--diffs-addition-base) r g b / 0.07), rgb(from var(--diffs-addition-base) r g b / 0.1)));
   --diffs-selection-base: var(--surface-warning-strong);
   --diffs-selection-border: var(--border-warning-base);
-  --diffs-selection-number-fg: #1c1917;
+  --diffs-selection-number-fg: light-dark(#1c1917, #fdfbfb);
   /* Use explicit alpha instead of color-mix(..., transparent) to avoid Safari's non-premultiplied interpolation bugs. */
-  --diffs-bg-selection: var(--diffs-bg-selection-override, rgb(from var(--surface-warning-base) r g b / 0.65));
+  --diffs-bg-selection: var(
+    --diffs-bg-selection-override,
+    light-dark(rgb(from var(--surface-warning-base) r g b / 0.65), rgb(from var(--solaris-dark-6) r g b / 0.65))
+  );
   --diffs-bg-selection-number: var(
     --diffs-bg-selection-number-override,
-    rgb(from var(--surface-warning-base) r g b / 0.85)
+    light-dark(rgb(from var(--surface-warning-base) r g b / 0.85), rgb(from var(--solaris-dark-6) r g b / 0.85))
   );
   --diffs-bg-selection-text: rgb(from var(--surface-warning-strong) r g b / 0.2);
-}
-
-:host([data-color-scheme='dark']) [data-diff],
-:host([data-color-scheme='dark']) [data-file] {
-  --diffs-selection-number-fg: #fdfbfb;
-  --diffs-bg-selection: var(--diffs-bg-selection-override, rgb(from var(--solaris-dark-6) r g b / 0.65));
-  --diffs-bg-selection-number: var(
-    --diffs-bg-selection-number-override,
-    rgb(from var(--solaris-dark-6) r g b / 0.85)
-  );
 }
 
 [data-diff] ::selection,
