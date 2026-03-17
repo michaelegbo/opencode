@@ -33,6 +33,7 @@ import { DialogAlert } from "../../ui/dialog-alert"
 import { useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv"
 import { useTextareaKeybindings } from "../textarea-keybindings"
+import { shellPassthrough } from "./key"
 import { DialogSkill } from "../dialog-skill"
 
 export type PromptProps = {
@@ -894,6 +895,10 @@ export function Prompt(props: PromptProps) {
                   return
                 }
                 if (store.mode === "shell") {
+                  if (shellPassthrough(keybind, e, store.mode)) {
+                    e.stopPropagation()
+                    return
+                  }
                   if ((e.name === "backspace" && input.visualCursor.offset === 0) || e.name === "escape") {
                     setStore("mode", "normal")
                     e.preventDefault()
