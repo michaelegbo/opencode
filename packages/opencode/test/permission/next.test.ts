@@ -1005,7 +1005,7 @@ test("ask - abort should clear pending request", async () => {
     fn: async () => {
       const ctl = new AbortController()
       const ask = runtime.runPromise(
-        S.PermissionService.use((svc) =>
+        S.PermissionService.Service.use((svc) =>
           svc.ask({
             sessionID: SessionID.make("session_test"),
             permission: "bash",

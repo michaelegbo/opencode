@@ -3,7 +3,7 @@ import { Log } from "../util/log"
 import { TRUNCATION_DIR } from "./truncation-dir"
 import { Identifier } from "../id/id"
 import type { Agent } from "../agent/agent"
-import { evaluate } from "../permission/evaluate"
+import { PermissionService } from "../permission/service"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Cause, Duration, Effect, FileSystem, Layer, Schedule, ServiceMap } from "effect"
 import { ToolID } from "./schema"
@@ -24,7 +24,7 @@ export interface Options {
 
 function hasTaskTool(agent?: Agent.Info) {
   if (!agent?.permission) return false
-  return evaluate("task", "*", agent.permission).action !== "deny"
+  return PermissionService.evaluate("task", "*", agent.permission).action !== "deny"
 }
 
 export namespace TruncateService {

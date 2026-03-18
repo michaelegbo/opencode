@@ -3,8 +3,7 @@ import { Config } from "@/config/config"
 import { fn } from "@/util/fn"
 import { Wildcard } from "@/util/wildcard"
 import os from "os"
-import { evaluate as run } from "./evaluate"
-import * as S from "./service"
+import { PermissionService as S } from "./service"
 
 export namespace PermissionNext {
   function expand(pattern: string): string {
@@ -27,7 +26,7 @@ export namespace PermissionNext {
   export type Reply = S.Reply
   export const Approval = S.Approval
   export const Event = S.Event
-  export const Service = S.PermissionService
+  export const Service = S.Service
   export const RejectedError = S.RejectedError
   export const CorrectedError = S.CorrectedError
   export const DeniedError = S.DeniedError
@@ -55,19 +54,19 @@ export namespace PermissionNext {
   }
 
   export const ask = fn(S.AskInput, async (input) =>
-    runPromiseInstance(S.PermissionService.use((service) => service.ask(input))),
+    runPromiseInstance(S.Service.use((service) => service.ask(input))),
   )
 
   export const reply = fn(S.ReplyInput, async (input) =>
-    runPromiseInstance(S.PermissionService.use((service) => service.reply(input))),
+    runPromiseInstance(S.Service.use((service) => service.reply(input))),
   )
 
   export async function list() {
-    return runPromiseInstance(S.PermissionService.use((service) => service.list()))
+    return runPromiseInstance(S.Service.use((service) => service.list()))
   }
 
   export function evaluate(permission: string, pattern: string, ...rulesets: Ruleset[]): Rule {
-    return run(permission, pattern, ...rulesets)
+    return S.evaluate(permission, pattern, ...rulesets)
   }
 
   const EDIT_TOOLS = ["edit", "write", "patch", "multiedit"]

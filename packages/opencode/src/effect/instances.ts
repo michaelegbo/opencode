@@ -17,7 +17,7 @@ export { InstanceContext } from "./instance-context"
 
 export type InstanceServices =
   | QuestionService
-  | PermissionService
+  | PermissionService.Service
   | ProviderAuthService
   | FileWatcherService
   | VcsService
