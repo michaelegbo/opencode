@@ -159,6 +159,16 @@ export type AuthOuathResult = { url: string; instructions: string } & (
     }
 )
 
+export type ProviderHook = {
+  id: string
+  models?: {
+    reconcile?: (input: {
+      provider: Provider
+      models: Record<string, Model>
+    }) => Promise<Record<string, Model> | undefined>
+  }
+}
+
 export interface Hooks {
   event?: (input: { event: Event }) => Promise<void>
   config?: (input: Config) => Promise<void>
@@ -166,6 +176,7 @@ export interface Hooks {
     [key: string]: ToolDefinition
   }
   auth?: AuthHook
+  provider?: ProviderHook
   /**
    * Called when a new message is received
    */

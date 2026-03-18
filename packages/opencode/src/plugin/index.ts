@@ -110,9 +110,9 @@ export namespace Plugin {
   })
 
   export async function trigger<
-    Name extends Exclude<keyof Required<Hooks>, "auth" | "event" | "tool">,
-    Input = Parameters<Required<Hooks>[Name]>[0],
-    Output = Parameters<Required<Hooks>[Name]>[1],
+    Name extends Exclude<keyof Required<Hooks>, "auth" | "event" | "tool" | "provider">,
+    Input = Parameters<Extract<Required<Hooks>[Name], (...args: any) => any>>[0],
+    Output = Parameters<Extract<Required<Hooks>[Name], (...args: any) => any>>[1],
   >(name: Name, input: Input, output: Output): Promise<Output> {
     if (!name) return output
     for (const hook of await state().then((x) => x.hooks)) {
