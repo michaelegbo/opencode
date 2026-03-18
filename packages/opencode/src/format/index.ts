@@ -63,17 +63,19 @@ export class FormatService extends ServiceMap.Service<FormatService, FormatServi
             delete formatters[name]
             continue
           }
-          const result = mergeDeep(formatters[name] ?? {}, {
+          const info = mergeDeep(formatters[name] ?? {}, {
             command: [],
             extensions: [],
             ...item,
-          }) as Formatter.Info
+          })
 
-          if (result.command.length === 0) continue
+          if (info.command.length === 0) continue
 
-          result.enabled = async () => true
-          result.name = name
-          formatters[name] = result
+          formatters[name] = {
+            ...info,
+            name,
+            enabled: async () => true,
+          }
         }
       } else {
         log.info("all formatters are disabled")
