@@ -81,7 +81,7 @@ export namespace ToolRegistry {
       })
 
       const loadFiber = yield* load().pipe(
-        Effect.catchCause(() => Effect.void),
+        Effect.catchCause((cause) => Effect.sync(() => log.error("init failed", { cause }))),
         Effect.forkScoped,
       )
 
