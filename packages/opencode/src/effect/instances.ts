@@ -10,6 +10,7 @@ import { ProviderAuth } from "@/provider/auth"
 import { Question } from "@/question"
 import { Skill } from "@/skill/skill"
 import { Snapshot } from "@/snapshot"
+import { Plugin } from "@/plugin"
 import { InstanceContext } from "./instance-context"
 import { registerDisposer } from "./instance-registry"
 
@@ -26,6 +27,7 @@ export type InstanceServices =
   | File.Service
   | Skill.Service
   | Snapshot.Service
+  | Plugin.Service
 
 // NOTE: LayerMap only passes the key (directory string) to lookup, but we need
 // the full instance context (directory, worktree, project). We read from the
@@ -46,6 +48,7 @@ function lookup(_key: string) {
     Layer.fresh(File.layer),
     Layer.fresh(Skill.defaultLayer),
     Layer.fresh(Snapshot.defaultLayer),
+    Layer.fresh(Plugin.layer),
   ).pipe(Layer.provide(ctx))
 }
 

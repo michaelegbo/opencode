@@ -126,7 +126,7 @@ Done now:
 
 Still open and likely worth migrating:
 
-- [ ] `Plugin`
+- [x] `Plugin`
 - [ ] `ToolRegistry`
 - [ ] `Pty`
 - [ ] `Worktree`
