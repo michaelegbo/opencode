@@ -1,4 +1,3 @@
-import os from "os"
 import path from "path"
 import { pathToFileURL } from "url"
 import z from "zod"
@@ -12,6 +11,7 @@ import { runPromiseInstance } from "@/effect/runtime"
 import { Flag } from "@/flag/flag"
 import { Global } from "@/global"
 import { PermissionNext } from "@/permission"
+import { Filesystem } from "@/util/filesystem"
 import { Config } from "../config/config"
 import { ConfigMarkdown } from "../config/markdown"
 import { Log } from "../util/log"
@@ -127,14 +127,17 @@ export namespace Skill {
               symlink: true,
               dot: opts?.dot,
             })
-            .pipe(Effect.orDie)
+            .pipe(
+              Effect.catch((error) => {
+                if (!opts?.scope) return Effect.fail(error)
+                return Effect.sync(() => {
+                  log.error(`failed to scan ${opts.scope} skills`, { dir: root, error })
+                  return [] as string[]
+                })
+              }),
+            )
 
-          yield* Effect.forEach(matches, (match) => add(match), { concurrency: "unbounded" }).pipe(
-            Effect.catch((error) => {
-              if (!opts?.scope) return Effect.die(error)
-              return Effect.sync(() => log.error(`failed to scan ${opts.scope} skills`, { dir: root, error }))
-            }),
-          )
+          yield* Effect.forEach(matches, (match) => add(match), { concurrency: "unbounded" })
         })
 
         const load = Effect.fn("Skill.load")(function* () {
@@ -169,7 +172,7 @@ export namespace Skill {
           // Phase 4: Custom paths
           const cfg = yield* Effect.promise(() => Config.get())
           for (const item of cfg.skills?.paths ?? []) {
-            const expanded = item.startsWith("~/") ? path.join(os.homedir(), item.slice(2)) : item
+            const expanded = Filesystem.expandHome(item)
             const dir = path.isAbsolute(expanded) ? expanded : path.join(instance.directory, expanded)
             if (!(yield* fs.isDir(dir).pipe(Effect.orDie))) {
               log.warn("skill path not found", { path: dir })

@@ -95,9 +95,7 @@ export namespace InstructionPrompt {
     if (config.instructions) {
       for (let instruction of config.instructions) {
         if (instruction.startsWith("https://") || instruction.startsWith("http://")) continue
-        if (instruction.startsWith("~/")) {
-          instruction = path.join(os.homedir(), instruction.slice(2))
-        }
+        instruction = Filesystem.expandHome(instruction)
         const matches = path.isAbsolute(instruction)
           ? await Glob.scan(path.basename(instruction), {
               cwd: path.dirname(instruction),

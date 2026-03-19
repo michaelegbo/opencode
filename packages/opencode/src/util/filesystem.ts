@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, writeFile } from "fs/promises"
 import { createWriteStream, existsSync, statSync } from "fs"
 import { lookup } from "mime-types"
 import { realpathSync } from "fs"
+import os from "os"
 import { dirname, join, relative, resolve as pathResolve } from "path"
 import { Readable } from "stream"
 import { pipeline } from "stream/promises"
@@ -93,6 +94,10 @@ export namespace Filesystem {
     if (mode) {
       await chmod(p, mode)
     }
+  }
+
+  export function expandHome(p: string): string {
+    return p.startsWith("~/") ? join(os.homedir(), p.slice(2)) : p
   }
 
   export function mimeType(p: string): string {
