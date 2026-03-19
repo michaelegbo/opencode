@@ -35,7 +35,7 @@ export type InstanceServices =
 // runPromiseInstance -> Instances.get, which always runs inside Instance.provide.
 // This should go away once the old Instance type is removed and lookup can load
 // the full context directly.
-function lookup(_key: string) {
+function lookup(_key: string): Layer.Layer<InstanceServices> {
   const ctx = Layer.sync(InstanceContext, () => InstanceContext.of(Instance.current))
   return Layer.mergeAll(
     Layer.fresh(Question.layer),
