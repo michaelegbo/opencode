@@ -1,4 +1,5 @@
 import { Effect, Layer, LayerMap, ServiceMap } from "effect"
+import { Command } from "@/command"
 import { File } from "@/file"
 import { FileTime } from "@/file/time"
 import { FileWatcher } from "@/file/watcher"
@@ -16,6 +17,7 @@ import { registerDisposer } from "./instance-registry"
 export { InstanceContext } from "./instance-context"
 
 export type InstanceServices =
+  | Command.Service
   | Question.Service
   | PermissionNext.Service
   | ProviderAuth.Service
@@ -36,6 +38,7 @@ export type InstanceServices =
 function lookup(_key: string) {
   const ctx = Layer.sync(InstanceContext, () => InstanceContext.of(Instance.current))
   return Layer.mergeAll(
+    Layer.fresh(Command.layer),
     Layer.fresh(Question.layer),
     Layer.fresh(PermissionNext.layer),
     Layer.fresh(ProviderAuth.defaultLayer),
