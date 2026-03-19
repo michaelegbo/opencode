@@ -216,7 +216,7 @@ export namespace Skill {
 
         const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
           yield* Fiber.join(loadFiber)
-          const list = Object.values(state.skills)
+          const list = Object.values(state.skills).toSorted((a, b) => a.name.localeCompare(b.name))
           if (!agent) return list
           return list.filter((skill) => PermissionNext.evaluate("skill", skill.name, agent.permission).action !== "deny")
         })
