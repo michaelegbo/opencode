@@ -9,8 +9,10 @@ import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 import { MCP } from "../mcp"
 import { Skill } from "../skill"
+import { Log } from "../util/log"
 
 export namespace Command {
+  const log = Log.create({ service: "command" })
   export const Event = {
     Executed: BusEvent.define(
       "command.executed",
@@ -155,7 +157,7 @@ export namespace Command {
       })
 
       const loadFiber = yield* load().pipe(
-        Effect.catchCause(() => Effect.void),
+        Effect.catchCause((cause) => Effect.sync(() => log.error("init failed", { cause }))),
         Effect.forkScoped,
       )
 
