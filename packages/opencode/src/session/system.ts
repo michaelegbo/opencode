@@ -1,4 +1,4 @@
-import { Ripgrep } from "../file/ripgrep"
+import { Fff } from "../file/fff"
 
 import { Instance } from "../project/instance"
 
@@ -45,7 +45,7 @@ export namespace SystemPrompt {
         `<directories>`,
         `  ${
           project.vcs === "git" && false
-            ? await Ripgrep.tree({
+            ? await Fff.tree({
                 cwd: Instance.directory,
                 limit: 50,
               })

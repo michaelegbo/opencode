@@ -84,28 +84,50 @@ describe("tool.grep", () => {
       },
     })
   })
-})
 
-describe("CRLF regex handling", () => {
-  test("regex correctly splits Unix line endings", () => {
-    const unixOutput = "file1.txt|1|content1\nfile2.txt|2|content2\nfile3.txt|3|content3"
-    const lines = unixOutput.trim().split(/\r?\n/)
-    expect(lines.length).toBe(3)
-    expect(lines[0]).toBe("file1.txt|1|content1")
-    expect(lines[2]).toBe("file3.txt|3|content3")
+  test("broadens multi-word query when exact has no match", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "test.txt"), "upload completed\n")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const grep = await GrepTool.init()
+        const result = await grep.execute(
+          {
+            pattern: "prepare upload",
+            path: tmp.path,
+          },
+          ctx,
+        )
+        expect(result.metadata.matches).toBeGreaterThan(0)
+        expect(result.output).toContain("Broadened query")
+      },
+    })
   })
 
-  test("regex correctly splits Windows CRLF line endings", () => {
-    const windowsOutput = "file1.txt|1|content1\r\nfile2.txt|2|content2\r\nfile3.txt|3|content3"
-    const lines = windowsOutput.trim().split(/\r?\n/)
-    expect(lines.length).toBe(3)
-    expect(lines[0]).toBe("file1.txt|1|content1")
-    expect(lines[2]).toBe("file3.txt|3|content3")
-  })
-
-  test("regex handles mixed line endings", () => {
-    const mixedOutput = "file1.txt|1|content1\nfile2.txt|2|content2\r\nfile3.txt|3|content3"
-    const lines = mixedOutput.trim().split(/\r?\n/)
-    expect(lines.length).toBe(3)
+  test("suggests path when content has no match", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(path.join(dir, "src", "server", "auth.ts"), "export const token = 1\n")
+      },
+    })
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const grep = await GrepTool.init()
+        const result = await grep.execute(
+          {
+            pattern: "src/server/auth.ts",
+            path: tmp.path,
+          },
+          ctx,
+        )
+        expect(result.metadata.matches).toBe(0)
+        expect(result.output).toContain("relevant file path")
+      },
+    })
   })
 })

@@ -3,8 +3,9 @@ import { Tool } from "./tool"
 import * as path from "path"
 import DESCRIPTION from "./ls.txt"
 import { Instance } from "../project/instance"
-import { Ripgrep } from "../file/ripgrep"
+import { Fff } from "../file/fff"
 import { assertExternalDirectory } from "./external-directory"
+import { Glob } from "../util/glob"
 
 export const IGNORE_PATTERNS = [
   "node_modules/",
@@ -55,11 +56,18 @@ export const ListTool = Tool.define("list", {
     })
 
     const ignoreGlobs = IGNORE_PATTERNS.map((p) => `!${p}*`).concat(params.ignore?.map((p) => `!${p}`) || [])
-    const files = []
-    for await (const file of Ripgrep.files({ cwd: searchPath, glob: ignoreGlobs, signal: ctx.abort })) {
-      files.push(file)
-      if (files.length >= LIMIT) break
-    }
+    const rows = (await Glob.scan("**/*", {
+      cwd: searchPath,
+      include: "file",
+      dot: true,
+    }))
+      .map((row) => row.replaceAll("\\", "/"))
+      .filter((row) => {
+        ctx.abort.throwIfAborted()
+        return Fff.allowed({ rel: row, glob: ignoreGlobs, hidden: true })
+      })
+      .toSorted((a, b) => a.localeCompare(b))
+    const files = rows.slice(0, LIMIT)
 
     // Build directory structure
     const dirs = new Set<string>()
@@ -113,7 +121,7 @@ export const ListTool = Tool.define("list", {
       title: path.relative(Instance.worktree, searchPath),
       metadata: {
         count: files.length,
-        truncated: files.length >= LIMIT,
+        truncated: rows.length > LIMIT,
       },
       output,
     }

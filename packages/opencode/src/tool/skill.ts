@@ -3,8 +3,9 @@ import { pathToFileURL } from "url"
 import z from "zod"
 import { Tool } from "./tool"
 import { Skill } from "../skill"
-import { Ripgrep } from "../file/ripgrep"
+import { Fff } from "../file/fff"
 import { iife } from "@/util/iife"
+import { Glob } from "../util/glob"
 
 export const SkillTool = Tool.define("skill", async (ctx) => {
   const list = await Skill.available(ctx?.agent)
@@ -60,22 +61,17 @@ export const SkillTool = Tool.define("skill", async (ctx) => {
 
       const limit = 10
       const files = await iife(async () => {
-        const arr = []
-        for await (const file of Ripgrep.files({
+        ctx.abort.throwIfAborted()
+        return (await Glob.scan("**/*", {
           cwd: dir,
-          follow: false,
-          hidden: true,
-          signal: ctx.abort,
-        })) {
-          if (file.includes("SKILL.md")) {
-            continue
-          }
-          arr.push(path.resolve(dir, file))
-          if (arr.length >= limit) {
-            break
-          }
-        }
-        return arr
+          include: "file",
+          dot: true,
+        }))
+          .map((file) => file.replaceAll("\\", "/"))
+          .filter((file) => Fff.allowed({ rel: file, hidden: true, glob: ["!node_modules/*", "!.git/*"] }))
+          .filter((file) => !file.includes("SKILL.md"))
+          .slice(0, limit)
+          .map((file) => path.resolve(dir, file))
       }).then((f) => f.map((file) => `<file>${file}</file>`).join("\n"))
 
       return {
