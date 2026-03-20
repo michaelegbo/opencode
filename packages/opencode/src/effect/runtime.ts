@@ -18,6 +18,10 @@ export function runPromiseInstance<A, E>(effect: Effect.Effect<A, E, InstanceSer
   return runtime.runPromise(effect.pipe(Effect.provide(Instances.get(Instance.directory))))
 }
 
+export function runSyncInstance<A, E>(effect: Effect.Effect<A, E, InstanceServices>) {
+  return runtime.runSync(effect.pipe(Effect.provide(Instances.get(Instance.directory))))
+}
+
 export function disposeRuntime() {
   return runtime.dispose()
 }

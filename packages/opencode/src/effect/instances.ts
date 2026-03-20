@@ -4,6 +4,7 @@ import { FileTime } from "@/file/time"
 import { FileWatcher } from "@/file/watcher"
 import { Format } from "@/format"
 import { PermissionNext } from "@/permission"
+import { Pty } from "@/pty"
 import { Instance } from "@/project/instance"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
@@ -24,6 +25,7 @@ export type InstanceServices =
   | FileTime.Service
   | Format.Service
   | File.Service
+  | Pty.Service
   | Skill.Service
   | Snapshot.Service
 
@@ -44,6 +46,7 @@ function lookup(_key: string) {
     Layer.fresh(FileTime.layer).pipe(Layer.orDie),
     Layer.fresh(Format.layer),
     Layer.fresh(File.layer),
+    Layer.fresh(Pty.layer),
     Layer.fresh(Skill.defaultLayer),
     Layer.fresh(Snapshot.defaultLayer),
   ).pipe(Layer.provide(ctx))
