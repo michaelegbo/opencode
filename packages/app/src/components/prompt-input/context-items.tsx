@@ -93,7 +93,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                     </div>
                   </div>
                   <Show when={row.item.comment}>
-                    {(comment) => <div class="text-12-regular text-text-strong ml-5 truncate">{comment()}</div>}
+                    {(comment) => <div class="text-base text-text-strong ml-5 truncate">{comment()}</div>}
                   </Show>
                   <button
                     type="button"
