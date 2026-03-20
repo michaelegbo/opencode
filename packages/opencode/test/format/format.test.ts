@@ -55,6 +55,27 @@ describe("Format", () => {
     })
   })
 
+  test("status() includes custom formatters with command from config", async () => {
+    await using tmp = await tmpdir({
+      config: {
+        formatter: {
+          customtool: {
+            command: ["echo", "formatted", "$FILE"],
+            extensions: [".custom"],
+          },
+        },
+      },
+    })
+
+    await withServices(tmp.path, Format.layer, async (rt) => {
+      const statuses = await rt.runPromise(Format.Service.use((s) => s.status()))
+      const custom = statuses.find((s) => s.name === "customtool")
+      expect(custom).toBeDefined()
+      expect(custom!.extensions).toContain(".custom")
+      expect(custom!.enabled).toBe(true)
+    })
+  })
+
   test("service initializes without error", async () => {
     await using tmp = await tmpdir()
 

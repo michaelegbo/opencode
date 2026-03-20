@@ -62,7 +62,7 @@ export namespace Format {
           formatters[name] = {
             ...info,
             name,
-            enabled: async () => info.command,
+            enabled: async (): Promise<string[] | false> => info.command,
           }
         }
       } else {
