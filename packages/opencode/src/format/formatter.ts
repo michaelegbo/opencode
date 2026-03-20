@@ -35,9 +35,6 @@ export const mix: Info = {
 
 export const prettier: Info = {
   name: "prettier",
-  environment: {
-    BUN_BE_BUN: "1",
-  },
   extensions: [
     ".js",
     ".jsx",
@@ -83,9 +80,6 @@ export const prettier: Info = {
 
 export const oxfmt: Info = {
   name: "oxfmt",
-  environment: {
-    BUN_BE_BUN: "1",
-  },
   extensions: [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"],
   async enabled() {
     if (!Flag.OPENCODE_EXPERIMENTAL_OXFMT) return false
@@ -105,9 +99,6 @@ export const oxfmt: Info = {
 
 export const biome: Info = {
   name: "biome",
-  environment: {
-    BUN_BE_BUN: "1",
-  },
   extensions: [
     ".js",
     ".jsx",

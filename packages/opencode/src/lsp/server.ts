@@ -107,7 +107,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -137,7 +136,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -193,11 +191,10 @@ export namespace LSPServer {
         log.info("installed VS Code ESLint server", { serverPath })
       }
 
-      const proc = spawn(await Npm.which("tsx"), [serverPath, "--stdio"], {
+      const proc = spawn("node", [serverPath, "--stdio"], {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
 
@@ -332,7 +329,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
 
@@ -516,7 +512,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1015,7 +1010,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1048,7 +1042,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1298,7 +1291,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1464,7 +1456,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1547,7 +1538,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
@@ -1741,7 +1731,6 @@ export namespace LSPServer {
         cwd: root,
         env: {
           ...process.env,
-          BUN_BE_BUN: "1",
         },
       })
       return {
