@@ -459,7 +459,7 @@ export namespace MCP {
         env: {
           ...process.env,
           ...mcp.environment,
-        },
+        } as any,
       })
       transport.stderr?.on("data", (chunk: Buffer) => {
         log.info(`mcp stderr: ${chunk.toString()}`, { key })
