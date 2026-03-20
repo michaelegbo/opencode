@@ -19,8 +19,8 @@ type PromptImageAttachmentProps = {
 }
 
 const fallbackClass =
-  "size-12 rounded-[6px] bg-background-stronger flex items-center justify-center shadow-xs-border cursor-default"
-const imageClass = "size-12 rounded-[6px] object-cover shadow-xs-border"
+  "size-12 rounded-[6px] bg-background-stronger flex items-center justify-center border border-border-weak-base cursor-default"
+const imageClass = "size-12 rounded-[6px] object-cover border border-border-weak-base"
 const removeClass =
   "absolute top-0 right-0 size-6 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
 const removeIconClass =

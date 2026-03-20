@@ -38,9 +38,9 @@ export const CommentChip: Component<CommentChipProps> = (props) => {
 
   return (
     <div
-      class={`group relative flex flex-col rounded-[6px] cursor-default bg-background-stronger ${
-        variant() === "full" ? "border border-border-weak-base" : "shadow-xs-border"
-      } ${variant() === "full" ? `pl-2 py-1 ${pad()}` : `pl-2 py-1 h-12 ${pad()}`} ${props.class ?? ""}`}
+      class={`group relative flex flex-col rounded-[6px] cursor-default bg-background-stronger border border-border-weak-base ${
+        variant() === "full" ? `pl-2 py-1 ${pad()}` : `pl-2 py-1 h-12 ${pad()}`
+      } ${props.class ?? ""}`}
       onClick={() => props.onOpen?.()}
     >
       <div class="flex items-center gap-1.5 min-w-0">
