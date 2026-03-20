@@ -160,7 +160,7 @@ export namespace Npm {
       ).catch(() => undefined)
       if (pkgJson?.bin) {
         const bin = pkgJson.bin
-        if (typeof bin === "string") return path.basename(bin)
+      if (typeof bin === "string") return unscoped
         const keys = Object.keys(bin)
         if (keys.length === 1) return keys[0]
         const unscoped = pkg.startsWith("@") ? pkg.split("/")[1] : pkg
