@@ -5,7 +5,7 @@ import { ModelID, ProviderID } from "../provider/schema"
 import { generateObject, streamObject, type ModelMessage } from "ai"
 import { SystemPrompt } from "../session/system"
 import { Instance } from "../project/instance"
-import { Truncate } from "../tool/truncate"
+import { Truncate } from "../tool/truncate-effect"
 import { Auth } from "../auth"
 import { ProviderTransform } from "../provider/transform"
 

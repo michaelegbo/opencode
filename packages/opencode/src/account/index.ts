@@ -1,10 +1,11 @@
 import { Option } from "effect"
 import { run } from "@/effect/run"
+import { lazy } from "@/util/lazy"
 import { type AccessToken, AccountID, Info as Model, OrgID } from "./effect"
 
 export { AccessToken, AccountID, OrgID } from "./effect"
 
-const svc = () => import("./effect").then((m) => m.Account.Service)
+const svc = lazy(() => import("./effect").then((m) => m.Account.Service))
 
 export namespace Account {
   export const Info = Model

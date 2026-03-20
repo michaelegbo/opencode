@@ -5,6 +5,7 @@ import { Session } from "."
 import { MessageV2 } from "./message-v2"
 import { Identifier } from "@/id/id"
 import { SessionID, MessageID } from "./schema"
+import { Snapshot as SnapshotService } from "@/snapshot/service"
 import { Snapshot } from "@/snapshot"
 
 import { Storage } from "@/storage/storage"
@@ -126,7 +127,7 @@ export namespace SessionSummary {
       messageID: MessageID.zod.optional(),
     }),
     async (input) => {
-      const diffs = await Storage.read<Snapshot.FileDiff[]>(["session_diff", input.sessionID]).catch(() => [])
+      const diffs = await Storage.read<SnapshotService.FileDiff[]>(["session_diff", input.sessionID]).catch(() => [])
       const next = diffs.map((item) => {
         const file = unquoteGitPath(item.file)
         if (file === item.file) return item

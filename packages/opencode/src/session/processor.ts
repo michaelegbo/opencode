@@ -12,7 +12,8 @@ import type { Provider } from "@/provider/provider"
 import { LLM } from "./llm"
 import { Config } from "@/config/config"
 import { SessionCompaction } from "./compaction"
-import { PermissionNext } from "@/permission"
+import { Permission as PermissionNext } from "@/permission/service"
+import { PermissionNext as PermissionNextApi } from "@/permission"
 import { Question } from "@/question/service"
 import { PartID } from "./schema"
 import type { SessionID, MessageID } from "./schema"
@@ -163,7 +164,7 @@ export namespace SessionProcessor {
                       )
                     ) {
                       const agent = await Agent.get(input.assistantMessage.agent)
-                      await PermissionNext.ask({
+                      await PermissionNextApi.ask({
                         permission: "doom_loop",
                         patterns: [value.toolName],
                         sessionID: input.assistantMessage.sessionID,

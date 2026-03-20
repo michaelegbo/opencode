@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, test } from "bun:test"
 import { tmpdir } from "../fixture/fixture"
 import { withServices } from "../fixture/instance"
-import { Format } from "../../src/format"
+import { Format } from "../../src/format/service"
 import { Instance } from "../../src/project/instance"
 
 describe("Format", () => {

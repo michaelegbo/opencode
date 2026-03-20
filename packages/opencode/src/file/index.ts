@@ -1,20 +1,10 @@
 import { runInstance } from "@/effect/run"
-import { File as S } from "./service"
+import { lazy } from "@/util/lazy"
+import type { File as S } from "./service"
 
-const svc = () => import("./service").then((m) => m.File.Service)
+const svc = lazy(() => import("./service").then((m) => m.File.Service))
 
 export namespace File {
-  export const Info = S.Info
-  export type Info = S.Info
-  export const Node = S.Node
-  export type Node = S.Node
-  export const Content = S.Content
-  export type Content = S.Content
-  export const Event = S.Event
-  export type Interface = S.Interface
-  export const Service = S.Service
-  export const layer = S.layer
-
   export async function init() {
     return runInstance((await svc()).use((s) => s.init()))
   }
@@ -23,7 +13,7 @@ export namespace File {
     return runInstance((await svc()).use((s) => s.status()))
   }
 
-  export async function read(file: string): Promise<Content> {
+  export async function read(file: string): Promise<S.Content> {
     return runInstance((await svc()).use((s) => s.read(file)))
   }
 

@@ -71,8 +71,8 @@ describe("Truncate", () => {
     })
 
     test("uses default MAX_LINES and MAX_BYTES", () => {
-      expect(Truncate.MAX_LINES).toBe(2000)
-      expect(Truncate.MAX_BYTES).toBe(50 * 1024)
+      expect(TruncateSvc.MAX_LINES).toBe(2000)
+      expect(TruncateSvc.MAX_BYTES).toBe(50 * 1024)
     })
 
     test("large single-line file truncates with byte message", async () => {
@@ -81,7 +81,7 @@ describe("Truncate", () => {
 
       expect(result.truncated).toBe(true)
       expect(result.content).toContain("bytes truncated...")
-      expect(Buffer.byteLength(content, "utf-8")).toBeGreaterThan(Truncate.MAX_BYTES)
+      expect(Buffer.byteLength(content, "utf-8")).toBeGreaterThan(TruncateSvc.MAX_BYTES)
     })
 
     test("writes full output to file when truncated", async () => {
@@ -145,10 +145,10 @@ describe("Truncate", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
 
-        yield* fs.makeDirectory(Truncate.DIR, { recursive: true })
+        yield* fs.makeDirectory(TruncateSvc.DIR, { recursive: true })
 
-        const old = path.join(Truncate.DIR, Identifier.create("tool", false, Date.now() - 10 * DAY_MS))
-        const recent = path.join(Truncate.DIR, Identifier.create("tool", false, Date.now() - 3 * DAY_MS))
+        const old = path.join(TruncateSvc.DIR, Identifier.create("tool", false, Date.now() - 10 * DAY_MS))
+        const recent = path.join(TruncateSvc.DIR, Identifier.create("tool", false, Date.now() - 3 * DAY_MS))
 
         yield* writeFileStringScoped(old, "old content")
         yield* writeFileStringScoped(recent, "recent content")

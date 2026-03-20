@@ -7,6 +7,8 @@ import { Installation } from "@/installation"
 import { Truncate } from "@/tool/truncate-effect"
 import { Instance } from "@/project/instance"
 
+export type GlobalServices = Account.Service | Installation.Service | Truncate.Service | Instances | Auth.Service
+
 export const runtime = ManagedRuntime.make(
   Layer.mergeAll(
     Account.defaultLayer,

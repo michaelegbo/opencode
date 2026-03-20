@@ -1,9 +1,10 @@
 import z from "zod"
 import { run } from "@/effect/run"
+import { lazy } from "@/util/lazy"
 
 export { OAUTH_DUMMY_KEY } from "./effect"
 
-const svc = () => import("./effect").then((m) => m.Auth.Service)
+const svc = lazy(() => import("./effect").then((m) => m.Auth.Service))
 
 export namespace Auth {
   export const Oauth = z

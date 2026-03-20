@@ -4,9 +4,9 @@ import { runtime, runPromiseInstance } from "../../src/effect/runtime"
 import { Auth } from "../../src/auth/effect"
 import { Instances } from "../../src/effect/instances"
 import { Instance } from "../../src/project/instance"
-import { ProviderAuth } from "../../src/provider/auth"
+import { ProviderAuth } from "../../src/provider/auth-service"
 import { Vcs } from "../../src/project/vcs"
-import { Question } from "../../src/question"
+import { Question } from "../../src/question/service"
 import { tmpdir } from "../fixture/fixture"
 
 /**

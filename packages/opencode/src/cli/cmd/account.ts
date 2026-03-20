@@ -1,7 +1,7 @@
 import { cmd } from "./cmd"
 import { Duration, Effect, Match, Option } from "effect"
 import { UI } from "../ui"
-import { runtime } from "@/effect/runtime"
+import { run } from "@/effect/run"
 import { AccountID, Account, OrgID, PollExpired, type PollResult } from "@/account/effect"
 import { type AccountError } from "@/account/schema"
 import * as Prompt from "../effect/prompt"
@@ -160,7 +160,7 @@ export const LoginCommand = cmd({
     }),
   async handler(args) {
     UI.empty()
-    await runtime.runPromise(loginEffect(args.url))
+    await run(loginEffect(args.url))
   },
 })
 
@@ -174,7 +174,7 @@ export const LogoutCommand = cmd({
     }),
   async handler(args) {
     UI.empty()
-    await runtime.runPromise(logoutEffect(args.email))
+    await run(logoutEffect(args.email))
   },
 })
 
@@ -183,7 +183,7 @@ export const SwitchCommand = cmd({
   describe: false,
   async handler() {
     UI.empty()
-    await runtime.runPromise(switchEffect())
+    await run(switchEffect())
   },
 })
 
@@ -192,7 +192,7 @@ export const OrgsCommand = cmd({
   describe: false,
   async handler() {
     UI.empty()
-    await runtime.runPromise(orgsEffect())
+    await run(orgsEffect())
   },
 })
 

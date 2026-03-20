@@ -1,13 +1,10 @@
 import type { Agent } from "@/agent/agent"
 import { runInstance } from "@/effect/run"
+import { lazy } from "@/util/lazy"
 
-const svc = () => import("./service").then((m) => m.Skill.Service)
-const mod = () => import("./service").then((m) => m.Skill)
+const svc = lazy(() => import("./service").then((m) => m.Skill.Service))
 
 export namespace Skill {
-  export type Info = import("./service").Skill.Info
-  export type Interface = import("./service").Skill.Interface
-
   export async function get(name: string) {
     return runInstance((await svc()).use((s) => s.get(name)))
   }
@@ -22,9 +19,5 @@ export namespace Skill {
 
   export async function available(agent?: Agent.Info) {
     return runInstance((await svc()).use((s) => s.available(agent)))
-  }
-
-  export async function fmt(list: Info[], opts: { verbose: boolean }) {
-    return (await mod()).fmt(list, opts)
   }
 }

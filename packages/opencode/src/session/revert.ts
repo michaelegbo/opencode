@@ -1,5 +1,6 @@
 import z from "zod"
 import { SessionID, MessageID, PartID } from "./schema"
+import { Snapshot as SnapshotService } from "../snapshot/service"
 import { Snapshot } from "../snapshot"
 import { MessageV2 } from "./message-v2"
 import { Session } from "."
@@ -28,7 +29,7 @@ export namespace SessionRevert {
     const session = await Session.get(input.sessionID)
 
     let revert: Session.Info["revert"]
-    const patches: Snapshot.Patch[] = []
+    const patches: SnapshotService.Patch[] = []
     for (const msg of all) {
       if (msg.info.role === "user") lastUser = msg.info
       const remaining = []

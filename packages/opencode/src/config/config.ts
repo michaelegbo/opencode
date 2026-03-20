@@ -37,8 +37,8 @@ import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
 import { Lock } from "@/util/lock"
 
-const auth = lazy(() => import("../auth").then((x) => x.Auth))
-const account = lazy(() => import("@/account").then((x) => x.Account))
+import { Auth } from "../auth"
+import { Account } from "@/account"
 
 export namespace Config {
   const ModelId = z.string().meta({ $ref: "https://models.dev/model-schema.json#/$defs/Model" })
@@ -77,7 +77,7 @@ export namespace Config {
   }
 
   export const state = Instance.state(async () => {
-    const entries = await (await auth()).all()
+    const entries = await Auth.all()
 
     // Config loading order (low -> high precedence): https://opencode.ai/docs/config#precedence-order
     // 1) Remote .well-known/opencode (org defaults)
@@ -178,11 +178,10 @@ export namespace Config {
       log.debug("loaded custom config from OPENCODE_CONFIG_CONTENT")
     }
 
-    const acct = await account()
-    const active = await acct.active()
+    const active = await Account.active()
     if (active?.active_org_id) {
       try {
-        const [config, token] = await Promise.all([acct.config(active.id, active.active_org_id), acct.token(active.id)])
+        const [config, token] = await Promise.all([Account.config(active.id, active.active_org_id), Account.token(active.id)])
         if (token) {
           process.env["OPENCODE_CONSOLE_TOKEN"] = token
           Env.set("OPENCODE_CONSOLE_TOKEN", token)

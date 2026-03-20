@@ -1,5 +1,6 @@
 import { afterEach, test, expect } from "bun:test"
 import { Question } from "../../src/question"
+import { Question as QuestionService } from "../../src/question/service"
 import { Instance } from "../../src/project/instance"
 import { QuestionID } from "../../src/question/schema"
 import { tmpdir } from "../fixture/fixture"
@@ -181,7 +182,7 @@ test("reject - throws RejectedError", async () => {
       const pending = await Question.list()
       await Question.reject(pending[0].id)
 
-      await expect(askPromise).rejects.toBeInstanceOf(Question.RejectedError)
+      await expect(askPromise).rejects.toBeInstanceOf(QuestionService.RejectedError)
     },
   })
 })

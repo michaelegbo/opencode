@@ -3,6 +3,7 @@ import { pathToFileURL } from "url"
 import z from "zod"
 import { Tool } from "./tool"
 import { Skill } from "../skill"
+import { Skill as SkillService } from "../skill/service"
 import { Ripgrep } from "../file/ripgrep"
 import { iife } from "@/util/iife"
 
@@ -24,7 +25,7 @@ export const SkillTool = Tool.define("skill", async (ctx) => {
           "The following skills provide specialized sets of instructions for particular tasks",
           "Invoke this tool to load a skill when a task matches one of the available skills listed below:",
           "",
-          Skill.fmt(list, { verbose: false }),
+          SkillService.fmt(list, { verbose: false }),
         ].join("\n")
 
   const examples = list

@@ -1,6 +1,7 @@
 import z from "zod"
 import path from "path"
 import { Tool } from "./tool"
+import { Question as QuestionService } from "../question/service"
 import { Question } from "../question"
 import { Session } from "../session"
 import { MessageV2 } from "../session/message-v2"
@@ -39,7 +40,7 @@ export const PlanExitTool = Tool.define("plan_exit", {
     })
 
     const answer = answers[0]?.[0]
-    if (answer === "No") throw new Question.RejectedError()
+    if (answer === "No") throw new QuestionService.RejectedError()
 
     const model = await getLastModel(ctx.sessionID)
 
@@ -97,7 +98,7 @@ export const PlanEnterTool = Tool.define("plan_enter", {
 
     const answer = answers[0]?.[0]
 
-    if (answer === "No") throw new Question.RejectedError()
+    if (answer === "No") throw new QuestionService.RejectedError()
 
     const model = await getLastModel(ctx.sessionID)
 

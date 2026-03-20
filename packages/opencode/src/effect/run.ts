@@ -1,4 +1,7 @@
 import type { Effect } from "effect"
+import type { GlobalServices } from "@/effect/runtime"
+import type { InstanceServices } from "@/effect/instances"
+import { lazy } from "@/util/lazy"
 
 /**
  * Lazy wrappers that defer the import of @/effect/runtime to call time.
@@ -8,14 +11,14 @@ import type { Effect } from "effect"
  * before their dependencies have finished initializing.
  */
 
+const runtime = lazy(() => import("@/effect/runtime"))
+
 /** For global services (Auth, Account, etc.) */
-export async function run<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
-  const { runtime } = await import("@/effect/runtime")
-  return runtime.runPromise(effect)
+export async function run<A, E>(effect: Effect.Effect<A, E, GlobalServices>): Promise<A> {
+  return (await runtime()).runtime.runPromise(effect)
 }
 
 /** For instance-scoped services (Skill, Snapshot, Question, etc.) */
-export async function runInstance<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
-  const { runPromiseInstance } = await import("@/effect/runtime")
-  return runPromiseInstance(effect)
+export async function runInstance<A, E>(effect: Effect.Effect<A, E, InstanceServices>): Promise<A> {
+  return (await runtime()).runPromiseInstance(effect)
 }

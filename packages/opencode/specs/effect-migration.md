@@ -46,35 +46,64 @@ Rules:
 - Export `defaultLayer` only when wiring dependencies is useful
 - Use the direct namespace form once the module is fully migrated
 
-## Temporary mixed-mode pattern
+## Service / Facade split
 
-Prefer a single namespace whenever possible.
+Migrated services are split into two files:
 
-Use a `*Effect` namespace only when there is a real mixed-mode split, usually because a legacy boundary facade still exists or because merging everything immediately would create awkward cycles.
+- **Service module** (`service.ts`, `*-service.ts`, or `*-effect.ts`) — contains `Interface`, `Service`, `layer`, `defaultLayer`, schemas, types, errors, and pure helpers. Must **never** import `@/effect/runtime`.
+- **Facade** (`index.ts`) — thin async wrapper that calls `runInstance()` or `run()` from `@/effect/run`. Contains **only** runtime-backed convenience functions. No re-exports of schemas, types, Service, layer, or anything else.
+
+### Facade rules (critical for bundle safety)
+
+1. **No eager import of `@/effect/runtime`** — use `run()` / `runInstance()` from `@/effect/run` instead, which lazy-imports the runtime.
+2. **No eager import of the service module** if the service is in the circular dependency SCC (auth, account, skill, truncate). Use the lazy `svc()` pattern:
+   ```ts
+   const svc = () => import("./service").then((m) => m.Foo.Service)
+   ```
+3. **No value re-exports** — consumers that need schemas, types, `Service`, or `layer` import from the service module directly.
+4. **Only async wrapper functions** — each function awaits `svc()` and passes an Effect to `run()` / `runInstance()`.
+
+### Why
+
+Bun's bundler flattens all modules into a single file. When a circular dependency exists (`runtime → instances → services → config → auth → runtime`), the bundler picks an arbitrary evaluation order. If a facade eagerly imports `@/effect/runtime` or re-exports values from a service in the SCC, those values may be `undefined` when accessed at module load time — causing `undefined is not an object` crashes.
+
+The lazy `svc()` + `run()` pattern defers all access to call time, when all modules have finished initializing.
+
+### Example facade
 
 ```ts
-export namespace FooEffect {
-  export interface Interface {
-    readonly get: (id: FooID) => Effect.Effect<Foo, FooError>
+// src/question/index.ts (facade)
+import { runInstance } from "@/effect/run"
+import type { Question as S } from "./service"
+
+const svc = () => import("./service").then((m) => m.Question.Service)
+
+export namespace Question {
+  export async function ask(input: { ... }): Promise<S.Answer[]> {
+    return runInstance((await svc()).use((s) => s.ask(input)))
   }
 
-  export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Foo") {}
-
-  export const layer = Layer.effect(...)
+  export async function list() {
+    return runInstance((await svc()).use((s) => s.list()))
+  }
 }
 ```
 
-Then keep the old boundary thin:
+### Current facades
 
-```ts
-export namespace Foo {
-  export function get(id: FooID) {
-    return runtime.runPromise(FooEffect.Service.use((svc) => svc.get(id)))
-  }
-}
-```
-
-Remove the `Effect` suffix when the boundary split is gone.
+| Facade | Service module | Scope |
+|---|---|---|
+| `src/question/index.ts` | `src/question/service.ts` | instance |
+| `src/permission/index.ts` | `src/permission/service.ts` | instance |
+| `src/format/index.ts` | `src/format/service.ts` | instance |
+| `src/file/index.ts` | `src/file/service.ts` | instance |
+| `src/file/time.ts` | `src/file/time-service.ts` | instance |
+| `src/provider/auth.ts` | `src/provider/auth-service.ts` | instance |
+| `src/skill/index.ts` | `src/skill/service.ts` | instance |
+| `src/snapshot/index.ts` | `src/snapshot/service.ts` | instance |
+| `src/auth/index.ts` | `src/auth/effect.ts` | global |
+| `src/account/index.ts` | `src/account/effect.ts` | global |
+| `src/tool/truncate.ts` | `src/tool/truncate-effect.ts` | global |
 
 ## Scheduled Tasks
 

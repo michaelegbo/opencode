@@ -1,15 +1,10 @@
 import { runInstance } from "@/effect/run"
 import type { SessionID } from "@/session/schema"
-import { FileTime as S } from "./time-service"
+import { lazy } from "@/util/lazy"
 
-const svc = () => import("./time-service").then((m) => m.FileTime.Service)
+const svc = lazy(() => import("./time-service").then((m) => m.FileTime.Service))
 
 export namespace FileTime {
-  export type Stamp = S.Stamp
-  export type Interface = S.Interface
-  export const Service = S.Service
-  export const layer = S.layer
-
   export async function read(sessionID: SessionID, file: string) {
     return runInstance((await svc()).use((s) => s.read(sessionID, file)))
   }

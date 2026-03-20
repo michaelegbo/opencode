@@ -5,7 +5,7 @@ import { Bus } from "../../src/bus"
 import { runtime } from "../../src/effect/runtime"
 import { Instances } from "../../src/effect/instances"
 import { PermissionNext } from "../../src/permission"
-import { PermissionNext as S } from "../../src/permission"
+import { Permission as Svc } from "../../src/permission/service"
 import { PermissionID } from "../../src/permission/schema"
 import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
@@ -37,12 +37,12 @@ async function waitForPending(count: number) {
 // fromConfig tests
 
 test("fromConfig - string value becomes wildcard rule", () => {
-  const result = PermissionNext.fromConfig({ bash: "allow" })
+  const result = Svc.fromConfig({ bash: "allow" })
   expect(result).toEqual([{ permission: "bash", pattern: "*", action: "allow" }])
 })
 
 test("fromConfig - object value converts to rules array", () => {
-  const result = PermissionNext.fromConfig({ bash: { "*": "allow", rm: "deny" } })
+  const result = Svc.fromConfig({ bash: { "*": "allow", rm: "deny" } })
   expect(result).toEqual([
     { permission: "bash", pattern: "*", action: "allow" },
     { permission: "bash", pattern: "rm", action: "deny" },
@@ -50,7 +50,7 @@ test("fromConfig - object value converts to rules array", () => {
 })
 
 test("fromConfig - mixed string and object values", () => {
-  const result = PermissionNext.fromConfig({
+  const result = Svc.fromConfig({
     bash: { "*": "allow", rm: "deny" },
     edit: "allow",
     webfetch: "ask",
@@ -64,51 +64,51 @@ test("fromConfig - mixed string and object values", () => {
 })
 
 test("fromConfig - empty object", () => {
-  const result = PermissionNext.fromConfig({})
+  const result = Svc.fromConfig({})
   expect(result).toEqual([])
 })
 
 test("fromConfig - expands tilde to home directory", () => {
-  const result = PermissionNext.fromConfig({ external_directory: { "~/projects/*": "allow" } })
+  const result = Svc.fromConfig({ external_directory: { "~/projects/*": "allow" } })
   expect(result).toEqual([{ permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" }])
 })
 
 test("fromConfig - expands $HOME to home directory", () => {
-  const result = PermissionNext.fromConfig({ external_directory: { "$HOME/projects/*": "allow" } })
+  const result = Svc.fromConfig({ external_directory: { "$HOME/projects/*": "allow" } })
   expect(result).toEqual([{ permission: "external_directory", pattern: `${os.homedir()}/projects/*`, action: "allow" }])
 })
 
 test("fromConfig - expands $HOME without trailing slash", () => {
-  const result = PermissionNext.fromConfig({ external_directory: { $HOME: "allow" } })
+  const result = Svc.fromConfig({ external_directory: { $HOME: "allow" } })
   expect(result).toEqual([{ permission: "external_directory", pattern: os.homedir(), action: "allow" }])
 })
 
 test("fromConfig - does not expand tilde in middle of path", () => {
-  const result = PermissionNext.fromConfig({ external_directory: { "/some/~/path": "allow" } })
+  const result = Svc.fromConfig({ external_directory: { "/some/~/path": "allow" } })
   expect(result).toEqual([{ permission: "external_directory", pattern: "/some/~/path", action: "allow" }])
 })
 
 test("fromConfig - expands exact tilde to home directory", () => {
-  const result = PermissionNext.fromConfig({ external_directory: { "~": "allow" } })
+  const result = Svc.fromConfig({ external_directory: { "~": "allow" } })
   expect(result).toEqual([{ permission: "external_directory", pattern: os.homedir(), action: "allow" }])
 })
 
 test("evaluate - matches expanded tilde pattern", () => {
-  const ruleset = PermissionNext.fromConfig({ external_directory: { "~/projects/*": "allow" } })
-  const result = PermissionNext.evaluate("external_directory", `${os.homedir()}/projects/file.txt`, ruleset)
+  const ruleset = Svc.fromConfig({ external_directory: { "~/projects/*": "allow" } })
+  const result = Svc.evaluate("external_directory", `${os.homedir()}/projects/file.txt`, ruleset)
   expect(result.action).toBe("allow")
 })
 
 test("evaluate - matches expanded $HOME pattern", () => {
-  const ruleset = PermissionNext.fromConfig({ external_directory: { "$HOME/projects/*": "allow" } })
-  const result = PermissionNext.evaluate("external_directory", `${os.homedir()}/projects/file.txt`, ruleset)
+  const ruleset = Svc.fromConfig({ external_directory: { "$HOME/projects/*": "allow" } })
+  const result = Svc.evaluate("external_directory", `${os.homedir()}/projects/file.txt`, ruleset)
   expect(result.action).toBe("allow")
 })
 
 // merge tests
 
 test("merge - simple concatenation", () => {
-  const result = PermissionNext.merge(
+  const result = Svc.merge(
     [{ permission: "bash", pattern: "*", action: "allow" }],
     [{ permission: "bash", pattern: "*", action: "deny" }],
   )
@@ -119,7 +119,7 @@ test("merge - simple concatenation", () => {
 })
 
 test("merge - adds new permission", () => {
-  const result = PermissionNext.merge(
+  const result = Svc.merge(
     [{ permission: "bash", pattern: "*", action: "allow" }],
     [{ permission: "edit", pattern: "*", action: "deny" }],
   )
@@ -130,7 +130,7 @@ test("merge - adds new permission", () => {
 })
 
 test("merge - concatenates rules for same permission", () => {
-  const result = PermissionNext.merge(
+  const result = Svc.merge(
     [{ permission: "bash", pattern: "foo", action: "ask" }],
     [{ permission: "bash", pattern: "*", action: "deny" }],
   )
@@ -141,7 +141,7 @@ test("merge - concatenates rules for same permission", () => {
 })
 
 test("merge - multiple rulesets", () => {
-  const result = PermissionNext.merge(
+  const result = Svc.merge(
     [{ permission: "bash", pattern: "*", action: "allow" }],
     [{ permission: "bash", pattern: "rm", action: "ask" }],
     [{ permission: "edit", pattern: "*", action: "allow" }],
@@ -154,12 +154,12 @@ test("merge - multiple rulesets", () => {
 })
 
 test("merge - empty ruleset does nothing", () => {
-  const result = PermissionNext.merge([{ permission: "bash", pattern: "*", action: "allow" }], [])
+  const result = Svc.merge([{ permission: "bash", pattern: "*", action: "allow" }], [])
   expect(result).toEqual([{ permission: "bash", pattern: "*", action: "allow" }])
 })
 
 test("merge - preserves rule order", () => {
-  const result = PermissionNext.merge(
+  const result = Svc.merge(
     [
       { permission: "edit", pattern: "src/*", action: "allow" },
       { permission: "edit", pattern: "src/secret/*", action: "deny" },
@@ -175,40 +175,40 @@ test("merge - preserves rule order", () => {
 
 test("merge - config permission overrides default ask", () => {
   // Simulates: defaults have "*": "ask", config sets bash: "allow"
-  const defaults: PermissionNext.Ruleset = [{ permission: "*", pattern: "*", action: "ask" }]
-  const config: PermissionNext.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
-  const merged = PermissionNext.merge(defaults, config)
+  const defaults: Svc.Ruleset = [{ permission: "*", pattern: "*", action: "ask" }]
+  const config: Svc.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
+  const merged = Svc.merge(defaults, config)
 
   // Config's bash allow should override default ask
-  expect(PermissionNext.evaluate("bash", "ls", merged).action).toBe("allow")
+  expect(Svc.evaluate("bash", "ls", merged).action).toBe("allow")
   // Other permissions should still be ask (from defaults)
-  expect(PermissionNext.evaluate("edit", "foo.ts", merged).action).toBe("ask")
+  expect(Svc.evaluate("edit", "foo.ts", merged).action).toBe("ask")
 })
 
 test("merge - config ask overrides default allow", () => {
   // Simulates: defaults have bash: "allow", config sets bash: "ask"
-  const defaults: PermissionNext.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
-  const config: PermissionNext.Ruleset = [{ permission: "bash", pattern: "*", action: "ask" }]
-  const merged = PermissionNext.merge(defaults, config)
+  const defaults: Svc.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
+  const config: Svc.Ruleset = [{ permission: "bash", pattern: "*", action: "ask" }]
+  const merged = Svc.merge(defaults, config)
 
   // Config's ask should override default allow
-  expect(PermissionNext.evaluate("bash", "ls", merged).action).toBe("ask")
+  expect(Svc.evaluate("bash", "ls", merged).action).toBe("ask")
 })
 
 // evaluate tests
 
 test("evaluate - exact pattern match", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [{ permission: "bash", pattern: "rm", action: "deny" }])
+  const result = Svc.evaluate("bash", "rm", [{ permission: "bash", pattern: "rm", action: "deny" }])
   expect(result.action).toBe("deny")
 })
 
 test("evaluate - wildcard pattern match", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [{ permission: "bash", pattern: "*", action: "allow" }])
+  const result = Svc.evaluate("bash", "rm", [{ permission: "bash", pattern: "*", action: "allow" }])
   expect(result.action).toBe("allow")
 })
 
 test("evaluate - last matching rule wins", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [
+  const result = Svc.evaluate("bash", "rm", [
     { permission: "bash", pattern: "*", action: "allow" },
     { permission: "bash", pattern: "rm", action: "deny" },
   ])
@@ -216,7 +216,7 @@ test("evaluate - last matching rule wins", () => {
 })
 
 test("evaluate - last matching rule wins (wildcard after specific)", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [
+  const result = Svc.evaluate("bash", "rm", [
     { permission: "bash", pattern: "rm", action: "deny" },
     { permission: "bash", pattern: "*", action: "allow" },
   ])
@@ -224,14 +224,12 @@ test("evaluate - last matching rule wins (wildcard after specific)", () => {
 })
 
 test("evaluate - glob pattern match", () => {
-  const result = PermissionNext.evaluate("edit", "src/foo.ts", [
-    { permission: "edit", pattern: "src/*", action: "allow" },
-  ])
+  const result = Svc.evaluate("edit", "src/foo.ts", [{ permission: "edit", pattern: "src/*", action: "allow" }])
   expect(result.action).toBe("allow")
 })
 
 test("evaluate - last matching glob wins", () => {
-  const result = PermissionNext.evaluate("edit", "src/components/Button.tsx", [
+  const result = Svc.evaluate("edit", "src/components/Button.tsx", [
     { permission: "edit", pattern: "src/*", action: "deny" },
     { permission: "edit", pattern: "src/components/*", action: "allow" },
   ])
@@ -240,7 +238,7 @@ test("evaluate - last matching glob wins", () => {
 
 test("evaluate - order matters for specificity", () => {
   // If more specific rule comes first, later wildcard overrides it
-  const result = PermissionNext.evaluate("edit", "src/components/Button.tsx", [
+  const result = Svc.evaluate("edit", "src/components/Button.tsx", [
     { permission: "edit", pattern: "src/components/*", action: "allow" },
     { permission: "edit", pattern: "src/*", action: "deny" },
   ])
@@ -248,31 +246,27 @@ test("evaluate - order matters for specificity", () => {
 })
 
 test("evaluate - unknown permission returns ask", () => {
-  const result = PermissionNext.evaluate("unknown_tool", "anything", [
-    { permission: "bash", pattern: "*", action: "allow" },
-  ])
+  const result = Svc.evaluate("unknown_tool", "anything", [{ permission: "bash", pattern: "*", action: "allow" }])
   expect(result.action).toBe("ask")
 })
 
 test("evaluate - empty ruleset returns ask", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [])
+  const result = Svc.evaluate("bash", "rm", [])
   expect(result.action).toBe("ask")
 })
 
 test("evaluate - no matching pattern returns ask", () => {
-  const result = PermissionNext.evaluate("edit", "etc/passwd", [
-    { permission: "edit", pattern: "src/*", action: "allow" },
-  ])
+  const result = Svc.evaluate("edit", "etc/passwd", [{ permission: "edit", pattern: "src/*", action: "allow" }])
   expect(result.action).toBe("ask")
 })
 
 test("evaluate - empty rules array returns ask", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [])
+  const result = Svc.evaluate("bash", "rm", [])
   expect(result.action).toBe("ask")
 })
 
 test("evaluate - multiple matching patterns, last wins", () => {
-  const result = PermissionNext.evaluate("edit", "src/secret.ts", [
+  const result = Svc.evaluate("edit", "src/secret.ts", [
     { permission: "edit", pattern: "*", action: "ask" },
     { permission: "edit", pattern: "src/*", action: "allow" },
     { permission: "edit", pattern: "src/secret.ts", action: "deny" },
@@ -281,7 +275,7 @@ test("evaluate - multiple matching patterns, last wins", () => {
 })
 
 test("evaluate - non-matching patterns are skipped", () => {
-  const result = PermissionNext.evaluate("edit", "src/foo.ts", [
+  const result = Svc.evaluate("edit", "src/foo.ts", [
     { permission: "edit", pattern: "*", action: "ask" },
     { permission: "edit", pattern: "test/*", action: "deny" },
     { permission: "edit", pattern: "src/*", action: "allow" },
@@ -290,7 +284,7 @@ test("evaluate - non-matching patterns are skipped", () => {
 })
 
 test("evaluate - exact match at end wins over earlier wildcard", () => {
-  const result = PermissionNext.evaluate("bash", "/bin/rm", [
+  const result = Svc.evaluate("bash", "/bin/rm", [
     { permission: "bash", pattern: "*", action: "allow" },
     { permission: "bash", pattern: "/bin/rm", action: "deny" },
   ])
@@ -298,7 +292,7 @@ test("evaluate - exact match at end wins over earlier wildcard", () => {
 })
 
 test("evaluate - wildcard at end overrides earlier exact match", () => {
-  const result = PermissionNext.evaluate("bash", "/bin/rm", [
+  const result = Svc.evaluate("bash", "/bin/rm", [
     { permission: "bash", pattern: "/bin/rm", action: "deny" },
     { permission: "bash", pattern: "*", action: "allow" },
   ])
@@ -308,24 +302,22 @@ test("evaluate - wildcard at end overrides earlier exact match", () => {
 // wildcard permission tests
 
 test("evaluate - wildcard permission matches any permission", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [{ permission: "*", pattern: "*", action: "deny" }])
+  const result = Svc.evaluate("bash", "rm", [{ permission: "*", pattern: "*", action: "deny" }])
   expect(result.action).toBe("deny")
 })
 
 test("evaluate - wildcard permission with specific pattern", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [{ permission: "*", pattern: "rm", action: "deny" }])
+  const result = Svc.evaluate("bash", "rm", [{ permission: "*", pattern: "rm", action: "deny" }])
   expect(result.action).toBe("deny")
 })
 
 test("evaluate - glob permission pattern", () => {
-  const result = PermissionNext.evaluate("mcp_server_tool", "anything", [
-    { permission: "mcp_*", pattern: "*", action: "allow" },
-  ])
+  const result = Svc.evaluate("mcp_server_tool", "anything", [{ permission: "mcp_*", pattern: "*", action: "allow" }])
   expect(result.action).toBe("allow")
 })
 
 test("evaluate - specific permission and wildcard permission combined", () => {
-  const result = PermissionNext.evaluate("bash", "rm", [
+  const result = Svc.evaluate("bash", "rm", [
     { permission: "*", pattern: "*", action: "deny" },
     { permission: "bash", pattern: "*", action: "allow" },
   ])
@@ -333,7 +325,7 @@ test("evaluate - specific permission and wildcard permission combined", () => {
 })
 
 test("evaluate - wildcard permission does not match when specific exists", () => {
-  const result = PermissionNext.evaluate("edit", "src/foo.ts", [
+  const result = Svc.evaluate("edit", "src/foo.ts", [
     { permission: "*", pattern: "*", action: "deny" },
     { permission: "edit", pattern: "src/*", action: "allow" },
   ])
@@ -341,7 +333,7 @@ test("evaluate - wildcard permission does not match when specific exists", () =>
 })
 
 test("evaluate - multiple matching permission patterns combine rules", () => {
-  const result = PermissionNext.evaluate("mcp_dangerous", "anything", [
+  const result = Svc.evaluate("mcp_dangerous", "anything", [
     { permission: "*", pattern: "*", action: "ask" },
     { permission: "mcp_*", pattern: "*", action: "allow" },
     { permission: "mcp_dangerous", pattern: "*", action: "deny" },
@@ -350,7 +342,7 @@ test("evaluate - multiple matching permission patterns combine rules", () => {
 })
 
 test("evaluate - wildcard permission fallback for unknown tool", () => {
-  const result = PermissionNext.evaluate("unknown_tool", "anything", [
+  const result = Svc.evaluate("unknown_tool", "anything", [
     { permission: "*", pattern: "*", action: "ask" },
     { permission: "bash", pattern: "*", action: "allow" },
   ])
@@ -359,7 +351,7 @@ test("evaluate - wildcard permission fallback for unknown tool", () => {
 
 test("evaluate - permission patterns sorted by length regardless of object order", () => {
   // specific permission listed before wildcard, but specific should still win
-  const result = PermissionNext.evaluate("bash", "rm", [
+  const result = Svc.evaluate("bash", "rm", [
     { permission: "bash", pattern: "*", action: "allow" },
     { permission: "*", pattern: "*", action: "deny" },
   ])
@@ -368,22 +360,22 @@ test("evaluate - permission patterns sorted by length regardless of object order
 })
 
 test("evaluate - merges multiple rulesets", () => {
-  const config: PermissionNext.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
-  const approved: PermissionNext.Ruleset = [{ permission: "bash", pattern: "rm", action: "deny" }]
+  const config: Svc.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
+  const approved: Svc.Ruleset = [{ permission: "bash", pattern: "rm", action: "deny" }]
   // approved comes after config, so rm should be denied
-  const result = PermissionNext.evaluate("bash", "rm", config, approved)
+  const result = Svc.evaluate("bash", "rm", config, approved)
   expect(result.action).toBe("deny")
 })
 
 // disabled tests
 
 test("disabled - returns empty set when all tools allowed", () => {
-  const result = PermissionNext.disabled(["bash", "edit", "read"], [{ permission: "*", pattern: "*", action: "allow" }])
+  const result = Svc.disabled(["bash", "edit", "read"], [{ permission: "*", pattern: "*", action: "allow" }])
   expect(result.size).toBe(0)
 })
 
 test("disabled - disables tool when denied", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash", "edit", "read"],
     [
       { permission: "*", pattern: "*", action: "allow" },
@@ -396,7 +388,7 @@ test("disabled - disables tool when denied", () => {
 })
 
 test("disabled - disables edit/write/apply_patch/multiedit when edit denied", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["edit", "write", "apply_patch", "multiedit", "bash"],
     [
       { permission: "*", pattern: "*", action: "allow" },
@@ -411,7 +403,7 @@ test("disabled - disables edit/write/apply_patch/multiedit when edit denied", ()
 })
 
 test("disabled - does not disable when partially denied", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash"],
     [
       { permission: "bash", pattern: "*", action: "allow" },
@@ -422,14 +414,14 @@ test("disabled - does not disable when partially denied", () => {
 })
 
 test("disabled - does not disable when action is ask", () => {
-  const result = PermissionNext.disabled(["bash", "edit"], [{ permission: "*", pattern: "*", action: "ask" }])
+  const result = Svc.disabled(["bash", "edit"], [{ permission: "*", pattern: "*", action: "ask" }])
   expect(result.size).toBe(0)
 })
 
 test("disabled - does not disable when specific allow after wildcard deny", () => {
   // Tool is NOT disabled because a specific allow after wildcard deny means
   // there's at least some usage allowed
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash"],
     [
       { permission: "bash", pattern: "*", action: "deny" },
@@ -440,7 +432,7 @@ test("disabled - does not disable when specific allow after wildcard deny", () =
 })
 
 test("disabled - does not disable when wildcard allow after deny", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash"],
     [
       { permission: "bash", pattern: "rm *", action: "deny" },
@@ -451,7 +443,7 @@ test("disabled - does not disable when wildcard allow after deny", () => {
 })
 
 test("disabled - disables multiple tools", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash", "edit", "webfetch"],
     [
       { permission: "bash", pattern: "*", action: "deny" },
@@ -465,14 +457,14 @@ test("disabled - disables multiple tools", () => {
 })
 
 test("disabled - wildcard permission denies all tools", () => {
-  const result = PermissionNext.disabled(["bash", "edit", "read"], [{ permission: "*", pattern: "*", action: "deny" }])
+  const result = Svc.disabled(["bash", "edit", "read"], [{ permission: "*", pattern: "*", action: "deny" }])
   expect(result.has("bash")).toBe(true)
   expect(result.has("edit")).toBe(true)
   expect(result.has("read")).toBe(true)
 })
 
 test("disabled - specific allow overrides wildcard deny", () => {
-  const result = PermissionNext.disabled(
+  const result = Svc.disabled(
     ["bash", "edit", "read"],
     [
       { permission: "*", pattern: "*", action: "deny" },
@@ -518,7 +510,7 @@ test("ask - throws RejectedError when action is deny", async () => {
           always: [],
           ruleset: [{ permission: "bash", pattern: "*", action: "deny" }],
         }),
-      ).rejects.toBeInstanceOf(PermissionNext.DeniedError)
+      ).rejects.toBeInstanceOf(Svc.DeniedError)
     },
   })
 })
@@ -588,8 +580,8 @@ test("ask - publishes asked event", async () => {
   await Instance.provide({
     directory: tmp.path,
     fn: async () => {
-      let seen: PermissionNext.Request | undefined
-      const unsub = Bus.subscribe(PermissionNext.Event.Asked, (event) => {
+      let seen: Svc.Request | undefined
+      const unsub = Bus.subscribe(Svc.Event.Asked, (event) => {
         seen = event.properties
       })
 
@@ -672,7 +664,7 @@ test("reply - reject throws RejectedError", async () => {
         reply: "reject",
       })
 
-      await expect(askPromise).rejects.toBeInstanceOf(PermissionNext.RejectedError)
+      await expect(askPromise).rejects.toBeInstanceOf(Svc.RejectedError)
     },
   })
 })
@@ -701,7 +693,7 @@ test("reply - reject with message throws CorrectedError", async () => {
       })
 
       const err = await ask.catch((err) => err)
-      expect(err).toBeInstanceOf(PermissionNext.CorrectedError)
+      expect(err).toBeInstanceOf(Svc.CorrectedError)
       expect(err.message).toContain("Use a safer command")
     },
   })
@@ -788,8 +780,8 @@ test("reply - reject cancels all pending for same session", async () => {
       })
 
       // Both should be rejected
-      expect(await result1).toBeInstanceOf(PermissionNext.RejectedError)
-      expect(await result2).toBeInstanceOf(PermissionNext.RejectedError)
+      expect(await result1).toBeInstanceOf(Svc.RejectedError)
+      expect(await result2).toBeInstanceOf(Svc.RejectedError)
     },
   })
 })
@@ -895,10 +887,10 @@ test("reply - publishes replied event", async () => {
         | {
             sessionID: SessionID
             requestID: PermissionID
-            reply: PermissionNext.Reply
+            reply: Svc.Reply
           }
         | undefined
-      const unsub = Bus.subscribe(PermissionNext.Event.Replied, (event) => {
+      const unsub = Bus.subscribe(Svc.Event.Replied, (event) => {
         seen = event.properties
       })
 
@@ -949,7 +941,7 @@ test("ask - checks all patterns and stops on first deny", async () => {
             { permission: "bash", pattern: "rm *", action: "deny" },
           ],
         }),
-      ).rejects.toBeInstanceOf(PermissionNext.DeniedError)
+      ).rejects.toBeInstanceOf(Svc.DeniedError)
     },
   })
 })
@@ -992,7 +984,7 @@ test("ask - should deny even when an earlier pattern is ask", async () => {
         (err) => err,
       )
 
-      expect(err).toBeInstanceOf(PermissionNext.DeniedError)
+      expect(err).toBeInstanceOf(Svc.DeniedError)
       expect(await PermissionNext.list()).toHaveLength(0)
     },
   })
@@ -1005,7 +997,7 @@ test("ask - abort should clear pending request", async () => {
     fn: async () => {
       const ctl = new AbortController()
       const ask = runtime.runPromise(
-        S.Service.use((svc) =>
+        Svc.Service.use((svc) =>
           svc.ask({
             sessionID: SessionID.make("session_test"),
             permission: "bash",

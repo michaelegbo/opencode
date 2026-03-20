@@ -4,7 +4,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import type { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
-import { Question } from "../../src/question"
+import { Question } from "../../src/question/service"
 
 const sessionID = SessionID.make("session")
 const providerID = ProviderID.make("test")

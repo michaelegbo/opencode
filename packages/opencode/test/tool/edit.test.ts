@@ -81,7 +81,7 @@ describe("tool.edit", () => {
         directory: tmp.path,
         fn: async () => {
           const { Bus } = await import("../../src/bus")
-          const { File } = await import("../../src/file")
+          const { File } = await import("../../src/file/service")
           const { FileWatcher } = await import("../../src/file/watcher")
 
           const events: string[] = []
@@ -301,7 +301,7 @@ describe("tool.edit", () => {
           await FileTime.read(ctx.sessionID, filepath)
 
           const { Bus } = await import("../../src/bus")
-          const { File } = await import("../../src/file")
+          const { File } = await import("../../src/file/service")
           const { FileWatcher } = await import("../../src/file/watcher")
 
           const events: string[] = []
