@@ -716,7 +716,7 @@ export namespace Worktree {
         reset: resetEffect,
       })
     }),
-  )
+  ).pipe(Layer.fresh)
 
   async function run<A, E>(effect: Effect.Effect<A, E, Service>) {
     const { runPromiseInstance } = await import("@/effect/runtime")
