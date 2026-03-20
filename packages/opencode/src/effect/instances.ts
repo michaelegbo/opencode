@@ -1,16 +1,16 @@
 import { Effect, Layer, LayerMap, ServiceMap } from "effect"
 import { Command } from "@/command"
-import { File } from "@/file"
-import { FileTime } from "@/file/time"
+import { File } from "@/file/service"
+import { FileTime } from "@/file/time-service"
 import { FileWatcher } from "@/file/watcher"
-import { Format } from "@/format"
-import { PermissionNext } from "@/permission"
+import { Format } from "@/format/service"
+import { Permission } from "@/permission/service"
 import { Instance } from "@/project/instance"
 import { Vcs } from "@/project/vcs"
-import { ProviderAuth } from "@/provider/auth"
-import { Question } from "@/question"
-import { Skill } from "@/skill/skill"
-import { Snapshot } from "@/snapshot"
+import { ProviderAuth } from "@/provider/auth-service"
+import { Question } from "@/question/service"
+import { Skill } from "@/skill/service"
+import { Snapshot } from "@/snapshot/service"
 import { InstanceContext } from "./instance-context"
 import { registerDisposer } from "./instance-registry"
 
@@ -19,7 +19,7 @@ export { InstanceContext } from "./instance-context"
 export type InstanceServices =
   | Command.Service
   | Question.Service
-  | PermissionNext.Service
+  | Permission.Service
   | ProviderAuth.Service
   | FileWatcher.Service
   | Vcs.Service
@@ -38,17 +38,17 @@ export type InstanceServices =
 function lookup(_key: string) {
   const ctx = Layer.sync(InstanceContext, () => InstanceContext.of(Instance.current))
   return Layer.mergeAll(
-    Layer.fresh(Command.layer),
-    Layer.fresh(Question.layer),
-    Layer.fresh(PermissionNext.layer),
-    Layer.fresh(ProviderAuth.defaultLayer),
-    Layer.fresh(FileWatcher.layer).pipe(Layer.orDie),
-    Layer.fresh(Vcs.layer),
-    Layer.fresh(FileTime.layer).pipe(Layer.orDie),
-    Layer.fresh(Format.layer),
-    Layer.fresh(File.layer),
-    Layer.fresh(Skill.defaultLayer),
-    Layer.fresh(Snapshot.defaultLayer),
+    Command.layer,
+    Question.layer,
+    Permission.layer,
+    ProviderAuth.defaultLayer,
+    FileWatcher.layer,
+    Vcs.layer,
+    FileTime.layer,
+    Format.layer,
+    File.layer,
+    Skill.defaultLayer,
+    Snapshot.defaultLayer,
   ).pipe(Layer.provide(ctx))
 }
 

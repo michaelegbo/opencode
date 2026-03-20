@@ -5,9 +5,9 @@ import path from "path"
 import { Deferred, Effect, Option } from "effect"
 import { tmpdir } from "../fixture/fixture"
 import { watcherConfigLayer, withServices } from "../fixture/instance"
-import { Bus } from "../../src/bus"
 import { FileWatcher } from "../../src/file/watcher"
 import { Instance } from "../../src/project/instance"
+import { GlobalBus } from "../../src/bus/global"
 
 // Native @parcel/watcher bindings aren't reliably available in CI (missing on Linux, flaky on Windows)
 const describeWatcher = FileWatcher.hasNativeBinding() && !process.env.CI ? describe : describe.skip
@@ -16,6 +16,7 @@ const describeWatcher = FileWatcher.hasNativeBinding() && !process.env.CI ? desc
 // Helpers
 // ---------------------------------------------------------------------------
 
+type BusUpdate = { directory?: string; payload: { type: string; properties: Record<string, unknown> } }
 type WatcherEvent = { file: string; event: "add" | "change" | "unlink" }
 
 /** Run `body` with a live FileWatcher service. */
@@ -35,16 +36,21 @@ function withWatcher<E>(directory: string, body: Effect.Effect<void, E>) {
 function listen(directory: string, check: (evt: WatcherEvent) => boolean, hit: (evt: WatcherEvent) => void) {
   let done = false
 
-  const unsub = Bus.subscribe(FileWatcher.Event.Updated, (evt) => {
+  function on(evt: BusUpdate) {
     if (done) return
-    if (!check(evt.properties)) return
-    hit(evt.properties)
-  })
+    if (evt.directory !== directory) return
+    if (evt.payload.type !== FileWatcher.Event.Updated.type) return
+    const props = evt.payload.properties as WatcherEvent
+    if (!check(props)) return
+    hit(props)
+  }
+
+  GlobalBus.on("event", on)
 
   return () => {
     if (done) return
     done = true
-    unsub()
+    GlobalBus.off("event", on)
   }
 }
 
