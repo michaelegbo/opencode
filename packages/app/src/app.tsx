@@ -8,10 +8,11 @@ import { Font } from "@opencode-ai/ui/font"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Navigate, Route, Router } from "@solidjs/router"
+import { type BaseRouterProps, Navigate, Route, Router, useLocation } from "@solidjs/router"
 import { type Duration, Effect } from "effect"
 import {
   type Component,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
@@ -114,6 +115,10 @@ function SessionProviders(props: ParentProps) {
 }
 
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
+  const l = useLocation()
+  createEffect(() => {
+    console.log("pathname", l.pathname)
+  })
   return (
     <AppShellProviders>
       <Suspense fallback={<Loading />}>

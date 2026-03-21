@@ -1,21 +1,22 @@
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
-import type { JSX } from "solid-js"
-import { useSync } from "@/context/sync"
-import { checksum } from "@opencode-ai/util/encode"
-import { findLast } from "@opencode-ai/util/array"
-import { same } from "@/utils/same"
-import { Icon } from "@opencode-ai/ui/icon"
+import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { File } from "@opencode-ai/ui/file"
+import { Icon } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
+import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
+import { findLast } from "@opencode-ai/util/array"
+import { checksum } from "@opencode-ai/util/encode"
+import type { JSX } from "solid-js"
+import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
+import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { getSessionContextMetrics } from "./session-context-metrics"
+import { Optional } from "@/utils/optional"
+import { same } from "@/utils/same"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import { getSessionContextMetrics } from "./session-context-metrics"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -94,7 +95,7 @@ export function SessionContextTab() {
   const language = useLanguage()
   const { params, view } = useSessionLayout()
 
-  const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const info = createMemo(() => Optional.map(params.id, (s) => sync.session.get(s)))
 
   const messages = createMemo(
     () => {

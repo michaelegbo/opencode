@@ -1,30 +1,31 @@
-import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { createMediaQuery } from "@solid-primitives/media"
-import { Tabs } from "@opencode-ai/ui/tabs"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
-import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import { Mark } from "@opencode-ai/ui/logo"
-import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
-import type { DragEvent } from "@thisbeyond/solid-dnd"
-import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Mark } from "@opencode-ai/ui/logo"
+import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
+import { Tabs } from "@opencode-ai/ui/tabs"
+import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
+import { createMediaQuery } from "@solid-primitives/media"
+import type { DragEvent } from "@thisbeyond/solid-dnd"
+import { closestCenter, DragDropProvider, DragDropSensors, DragOverlay, SortableProvider } from "@thisbeyond/solid-dnd"
+import { createEffect, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
+import { DialogSelectFile } from "@/components/dialog-select-file"
 
 import FileTree from "@/components/file-tree"
+import { FileVisual, SessionContextTab, SortableTab } from "@/components/session"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { DialogSelectFile } from "@/components/dialog-select-file"
-import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
 import { useCommand } from "@/context/command"
-import { useFile, type SelectedLineRange } from "@/context/file"
+import { type SelectedLineRange, useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
-import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
+import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { Optional } from "@/utils/optional"
+import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 
 export function SessionSidePanel(props: {
   reviewPanel: () => JSX.Element
@@ -54,14 +55,13 @@ export function SessionSidePanel(props: {
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 
-  const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
-  const diffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
+  const info = createMemo(() => Optional.map(params.id, (id) => sync.session.get(id)))
+  const diffs = createMemo(() => Optional.map(params.id, (id) => sync.data.session_diff[id]) ?? [])
   const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
   const hasReview = createMemo(() => reviewCount() > 0)
   const diffsReady = createMemo(() => {
     const id = params.id
-    if (!id) return true
-    if (!hasReview()) return true
+    if (!id || !hasReview()) return true
     return sync.data.session_diff[id] !== undefined
   })
 

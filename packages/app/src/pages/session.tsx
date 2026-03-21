@@ -1,44 +1,44 @@
 import type { Project, UserMessage } from "@opencode-ai/sdk/v2"
+import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import {
-  batch,
-  onCleanup,
-  Show,
-  Match,
-  Switch,
-  createMemo,
-  createEffect,
-  createComputed,
-  on,
-  onMount,
-  untrack,
-} from "solid-js"
-import { createMediaQuery } from "@solid-primitives/media"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { useLocal } from "@/context/local"
-import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
-import { createStore } from "solid-js/store"
+import { createAutoScroll } from "@opencode-ai/ui/hooks"
+import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Select } from "@opencode-ai/ui/select"
 import { Tabs } from "@opencode-ai/ui/tabs"
-import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
-import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode, checksum } from "@opencode-ai/util/encode"
+import { createMediaQuery } from "@solid-primitives/media"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useNavigate, useSearchParams } from "@solidjs/router"
+import {
+  batch,
+  createComputed,
+  createEffect,
+  createMemo,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js"
+import { createStore } from "solid-js/store"
+import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
-import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
+import { type FileSelection, type SelectedLineRange, selectionFromLines, useFile } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
+import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useLocal } from "@/context/local"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
 import { createOpenReviewFile, createSessionTabs, createSizing, focusTerminalById } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
@@ -76,6 +76,8 @@ type SessionHistoryWindowInput = {
  * small batches while scrolling upward, and prefetches older history near top.
  */
 function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
+  const { params } = useSessionLayout()
+
   const turnInit = 10
   const turnBatch = 8
   const turnScrollThreshold = 200
@@ -93,7 +95,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
   const initialTurnStart = (len: number) => (len > turnInit ? len - turnInit : 0)
 
   const turnStart = createMemo(() => {
-    const id = input.sessionID()
+    const id = params.id
     const len = input.visibleUserMessages().length
     if (!id || len <= 0) return 0
     if (state.turnID !== id) return initialTurnStart(len)
@@ -103,7 +105,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
   })
 
   const setTurnStart = (start: number) => {
-    const id = input.sessionID()
+    const id = params.id
     const next = start > 0 ? start : 0
     if (!id) {
       setState({ turnID: undefined, turnStart: next })
@@ -153,7 +155,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
 
   /** Button path: reveal all cached turns, fetch older history, reveal one batch. */
   const loadAndReveal = async () => {
-    const id = input.sessionID()
+    const id = params.id
     if (!id) return
 
     const start = turnStart()
@@ -169,7 +171,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
 
     while (true) {
       await input.loadMore(id)
-      if (input.sessionID() !== id) return
+      if (params.id !== id) return
 
       afterVisible = input.visibleUserMessages().length
       const nextLoaded = input.loaded()
@@ -195,7 +197,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
 
   /** Scroll/prefetch path: fetch older history from server. */
   const fetchOlderMessages = async (opts?: { prefetch?: boolean }) => {
-    const id = input.sessionID()
+    const id = params.id
     if (!id) return
     if (!input.historyMore() || input.historyLoading()) return
 
@@ -215,7 +217,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
 
     while (true) {
       await input.loadMore(id)
-      if (input.sessionID() !== id) return
+      if (params.id !== id) return
 
       const nextLoaded = input.loaded()
       const raw = nextLoaded - loaded
@@ -279,7 +281,7 @@ function createSessionHistoryWindow(input: SessionHistoryWindowInput) {
 
   createEffect(
     on(
-      () => [input.sessionID(), input.messagesReady()] as const,
+      () => [params.id, input.messagesReady()] as const,
       ([id, ready]) => {
         if (!id || !ready) return
         setTurnStart(initialTurnStart(input.visibleUserMessages().length))

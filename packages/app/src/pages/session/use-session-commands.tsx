@@ -1,8 +1,15 @@
-import { useNavigate } from "@solidjs/router"
-import { useCommand, type CommandOption } from "@/context/command"
+import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
-import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
+import { showToast } from "@opencode-ai/ui/toast"
+import { findLast } from "@opencode-ai/util/array"
+import { useNavigate } from "@solidjs/router"
+import { DialogFork } from "@/components/dialog-fork"
+import { DialogSelectFile } from "@/components/dialog-select-file"
+import { DialogSelectMcp } from "@/components/dialog-select-mcp"
+import { DialogSelectModel } from "@/components/dialog-select-model"
+import { type CommandOption, useCommand } from "@/context/command"
+import { type FileSelection, type SelectedLineRange, selectionFromLines, useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
@@ -11,16 +18,10 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { DialogSelectFile } from "@/components/dialog-select-file"
-import { DialogSelectModel } from "@/components/dialog-select-model"
-import { DialogSelectMcp } from "@/components/dialog-select-mcp"
-import { DialogFork } from "@/components/dialog-fork"
-import { showToast } from "@opencode-ai/ui/toast"
-import { findLast } from "@opencode-ai/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
-import { extractPromptFromParts } from "@/utils/prompt"
-import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { Optional } from "@/utils/optional"
+import { extractPromptFromParts } from "@/utils/prompt"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -51,11 +52,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const navigate = useNavigate()
   const { params, tabs, view } = useSessionLayout()
 
-  const info = () => {
-    const id = params.id
-    if (!id) return
-    return sync.session.get(id)
-  }
+  const info = () => Optional.map(params.id, (id) => sync.session.get(id))
+
   const hasReview = () => {
     const id = params.id
     if (!id) return false
@@ -76,12 +74,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const closableTab = tabState.closableTab
 
   const idle = { type: "idle" as const }
-  const status = () => sync.data.session_status[params.id ?? ""] ?? idle
-  const messages = () => {
-    const id = params.id
-    if (!id) return []
-    return sync.data.message[id] ?? []
-  }
+  const status = () => Optional.map(params.id, (id) => sync.data.session_status[id]) ?? idle
+  const messages = () => Optional.map(params.id, (id) => sync.data.message[id]) ?? []
+
   const userMessages = () => messages().filter((m) => m.role === "user") as UserMessage[]
   const visibleUserMessages = () => {
     const revert = info()?.revert?.messageID
@@ -97,7 +92,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const selectionPreview = (path: string, selection: FileSelection) => {
     const content = file.get(path)?.content?.content
     if (!content) return undefined
-    return previewSelectedLines(content, { start: selection.startLine, end: selection.endLine })
+    return previewSelectedLines(content, {
+      start: selection.startLine,
+      end: selection.endLine,
+    })
   }
 
   const addSelectionToContext = (path: string, selection: FileSelection) => {
@@ -128,8 +126,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
   const isAutoAcceptActive = () => {
-    const sessionID = params.id
-    if (sessionID) return permission.isAutoAccepting(sessionID, sdk.directory)
+    const id = params.id
+    if (id) return permission.isAutoAccepting(id, sdk.directory)
     return permission.isAutoAcceptingDirectory(sdk.directory)
   }
   command.register("session", () => {
@@ -148,7 +146,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
               slash: "share",
               disabled: !params.id,
               onSelect: async () => {
-                if (!params.id) return
+                const id = params.id
+                if (!id) return
 
                 const write = (value: string) => {
                   const body = typeof document === "undefined" ? undefined : document.body
@@ -200,7 +199,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
                 }
 
                 const url = await sdk.client.session
-                  .share({ sessionID: params.id })
+                  .share({ sessionID: id })
                   .then((res) => res.data?.share?.url)
                   .catch(() => undefined)
                 if (!url) {
@@ -222,9 +221,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
               slash: "unshare",
               disabled: !params.id || !info()?.share?.url,
               onSelect: async () => {
-                if (!params.id) return
+                const id = params.id
+                if (!id) return
                 await sdk.client.session
-                  .unshare({ sessionID: params.id })
+                  .unshare({ sessionID: id })
                   .then(() =>
                     showToast({
                       title: language.t("toast.session.unshare.success.title"),
@@ -391,12 +391,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keybind: "mod+shift+a",
         disabled: false,
         onSelect: () => {
-          const sessionID = params.id
-          if (sessionID) permission.toggleAutoAccept(sessionID, sdk.directory)
+          const id = params.id
+          if (id) permission.toggleAutoAccept(id, sdk.directory)
           else permission.toggleAutoAcceptDirectory(sdk.directory)
 
-          const active = sessionID
-            ? permission.isAutoAccepting(sessionID, sdk.directory)
+          const active = id
+            ? permission.isAutoAccepting(id, sdk.directory)
             : permission.isAutoAcceptingDirectory(sdk.directory)
           showToast({
             title: active
@@ -415,18 +415,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         slash: "undo",
         disabled: !params.id || visibleUserMessages().length === 0,
         onSelect: async () => {
-          const sessionID = params.id
-          if (!sessionID) return
+          const id = params.id
+          if (!id) return
           if (status().type !== "idle") {
-            await sdk.client.session.abort({ sessionID }).catch(() => {})
+            await sdk.client.session.abort({ sessionID: id }).catch(() => {})
           }
           const revert = info()?.revert?.messageID
           const message = findLast(userMessages(), (x) => !revert || x.id < revert)
           if (!message) return
-          await sdk.client.session.revert({ sessionID, messageID: message.id })
+          await sdk.client.session.revert({
+            sessionID: id,
+            messageID: message.id,
+          })
           const parts = sync.data.part[message.id]
           if (parts) {
-            const restored = extractPromptFromParts(parts, { directory: sdk.directory })
+            const restored = extractPromptFromParts(parts, {
+              directory: sdk.directory,
+            })
             prompt.set(restored)
           }
           const priorMessage = findLast(userMessages(), (x) => x.id < message.id)
@@ -440,19 +445,22 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         slash: "redo",
         disabled: !params.id || !info()?.revert?.messageID,
         onSelect: async () => {
-          const sessionID = params.id
-          if (!sessionID) return
+          const id = params.id
+          if (!id) return
           const revertMessageID = info()?.revert?.messageID
           if (!revertMessageID) return
           const nextMessage = userMessages().find((x) => x.id > revertMessageID)
           if (!nextMessage) {
-            await sdk.client.session.unrevert({ sessionID })
+            await sdk.client.session.unrevert({ sessionID: id })
             prompt.reset()
             const lastMsg = findLast(userMessages(), (x) => x.id >= revertMessageID)
             setActiveMessage(lastMsg)
             return
           }
-          await sdk.client.session.revert({ sessionID, messageID: nextMessage.id })
+          await sdk.client.session.revert({
+            sessionID: id,
+            messageID: nextMessage.id,
+          })
           const priorMsg = findLast(userMessages(), (x) => x.id < nextMessage.id)
           setActiveMessage(priorMsg)
         },
@@ -464,8 +472,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         slash: "compact",
         disabled: !params.id || visibleUserMessages().length === 0,
         onSelect: async () => {
-          const sessionID = params.id
-          if (!sessionID) return
+          const id = params.id
+          if (!id) return
           const model = local.model.current()
           if (!model) {
             showToast({
@@ -475,7 +483,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             return
           }
           await sdk.client.session.summarize({
-            sessionID,
+            sessionID: id,
             modelID: model.id,
             providerID: model.provider.id,
           })

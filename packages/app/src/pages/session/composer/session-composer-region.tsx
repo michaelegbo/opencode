@@ -1,18 +1,19 @@
-import { Show, createEffect, createMemo, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { createStore } from "solid-js/store"
 import { PromptInput } from "@/components/prompt-input"
+import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
-import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
-import { useSessionKey } from "@/pages/session/session-layout"
+import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
+import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
-import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
-import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
-import type { FollowupDraft } from "@/components/prompt-input/submit"
+import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
+
+import { useSessionKey } from "@/pages/session/session-layout"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -194,7 +195,6 @@ export function SessionComposerRegion(props: {
               >
                 <div ref={(el) => setStore("body", el)}>
                   <SessionTodoDock
-                    sessionID={route.params.id}
                     todos={props.state.todos()}
                     collapseLabel={language.t("session.todo.collapse")}
                     expandLabel={language.t("session.todo.expand")}

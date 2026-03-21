@@ -1,60 +1,59 @@
-import {
-  Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  onMount,
-  Show,
-  Switch,
-  onCleanup,
-  Index,
-  type JSX,
-} from "solid-js"
-import { createStore } from "solid-js/store"
-import stripAnsi from "strip-ansi"
-import { Dynamic } from "solid-js/web"
-import {
+import type {
   AgentPart,
   AssistantMessage,
   FilePart,
   Message as MessageType,
   Part as PartType,
-  ReasoningPart,
-  TextPart,
-  ToolPart,
-  UserMessage,
-  Todo,
   QuestionAnswer,
   QuestionInfo,
+  ReasoningPart,
+  TextPart,
+  Todo,
+  ToolPart,
+  UserMessage,
 } from "@opencode-ai/sdk/v2"
+import { checksum } from "@opencode-ai/util/encode"
+import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/util/path"
+import { useLocation } from "@solidjs/router"
+import { animate } from "motion"
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Index,
+  type JSX,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from "solid-js"
+import { createStore } from "solid-js/store"
+import { Dynamic } from "solid-js/web"
+import stripAnsi from "strip-ansi"
 import { useData } from "../context"
-import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
+import { useFileComponent } from "../context/file"
 import { type UiI18n, useI18n } from "../context/i18n"
-import { BasicTool, GenericTool } from "./basic-tool"
 import { Accordion } from "./accordion"
-import { StickyAccordionHeader } from "./sticky-accordion-header"
-import { Card } from "./card"
+import { BasicTool, GenericTool } from "./basic-tool"
+import { Checkbox } from "./checkbox"
 import { Collapsible } from "./collapsible"
+import { DiffChanges } from "./diff-changes"
 import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
-import { ToolErrorCard } from "./tool-error-card"
-import { Checkbox } from "./checkbox"
-import { DiffChanges } from "./diff-changes"
-import { Markdown } from "./markdown"
-import { ImagePreview } from "./image-preview"
-import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/util/path"
-import { checksum } from "@opencode-ai/util/encode"
-import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
+import { ImagePreview } from "./image-preview"
+import { Markdown } from "./markdown"
+import { attached, inline, kind } from "./message-file"
+import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { TextShimmer } from "./text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
+import { ToolErrorCard } from "./tool-error-card"
 import { ToolStatusTitle } from "./tool-status-title"
-import { animate } from "motion"
-import { useLocation } from "@solidjs/router"
-import { attached, inline, kind } from "./message-file"
+import { Tooltip } from "./tooltip"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
   let widthRef: HTMLSpanElement | undefined
@@ -1087,10 +1086,18 @@ function HighlightedText(props: { text: string; references: FilePart[]; agents: 
     const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
       ...props.references
         .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
-        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: "file" as const })),
+        .map((r) => ({
+          start: r.source!.text!.start,
+          end: r.source!.text!.end,
+          type: "file" as const,
+        })),
       ...props.agents
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
-        .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
+        .map((a) => ({
+          start: a.source!.start,
+          end: a.source!.end,
+          type: "agent" as const,
+        })),
     ].sort((a, b) => a.start - b.start)
 
     const result: HighlightSegment[] = []
@@ -1334,7 +1341,10 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
           : -1
     if (!(ms >= 0)) return ""
     const total = Math.round(ms / 1000)
-    if (total < 60) return i18n.t("ui.message.duration.seconds", { count: numfmt().format(total) })
+    if (total < 60)
+      return i18n.t("ui.message.duration.seconds", {
+        count: numfmt().format(total),
+      })
     const minutes = Math.floor(total / 60)
     const seconds = total % 60
     return i18n.t("ui.message.duration.minutesSeconds", {
@@ -1475,7 +1485,10 @@ ToolRegistry.register({
       <BasicTool
         {...props}
         icon="bullet-list"
-        trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(props.input.path || "/") }}
+        trigger={{
+          title: i18n.t("ui.tool.list"),
+          subtitle: getDirectory(props.input.path || "/"),
+        }}
       >
         <Show when={props.output}>
           <div data-component="tool-output" data-scrollable>
@@ -1974,7 +1987,12 @@ ToolRegistry.register({
                             <Accordion.Trigger>
                               <div data-slot="apply-patch-trigger-content">
                                 <div data-slot="apply-patch-file-info">
-                                  <FileIcon node={{ path: file.relativePath, type: "file" }} />
+                                  <FileIcon
+                                    node={{
+                                      path: file.relativePath,
+                                      type: "file",
+                                    }}
+                                  />
                                   <div data-slot="apply-patch-file-name-container">
                                     <Show when={file.relativePath.includes("/")}>
                                       <span data-slot="apply-patch-directory">{`\u202A${getDirectory(file.relativePath)}\u202C`}</span>
@@ -2000,7 +2018,12 @@ ToolRegistry.register({
                                       </span>
                                     </Match>
                                     <Match when={true}>
-                                      <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
+                                      <DiffChanges
+                                        changes={{
+                                          additions: file.additions,
+                                          deletions: file.deletions,
+                                        }}
+                                      />
                                     </Match>
                                   </Switch>
                                   <Icon name="chevron-grabber-vertical" size="small" />
@@ -2014,8 +2037,14 @@ ToolRegistry.register({
                                 <Dynamic
                                   component={fileComponent}
                                   mode="diff"
-                                  before={{ name: file.filePath, contents: file.before }}
-                                  after={{ name: file.movePath ?? file.filePath, contents: file.after }}
+                                  before={{
+                                    name: file.filePath,
+                                    contents: file.before,
+                                  }}
+                                  after={{
+                                    name: file.movePath ?? file.filePath,
+                                    contents: file.after,
+                                  }}
                                 />
                               </div>
                             </Show>
@@ -2054,7 +2083,12 @@ ToolRegistry.register({
                 </div>
                 <div data-slot="message-part-actions">
                   <Show when={!pending()}>
-                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
+                    <DiffChanges
+                      changes={{
+                        additions: single()!.additions,
+                        deletions: single()!.deletions,
+                      }}
+                    />
                   </Show>
                 </div>
               </div>
@@ -2080,7 +2114,12 @@ ToolRegistry.register({
                     </span>
                   </Match>
                   <Match when={true}>
-                    <DiffChanges changes={{ additions: single()!.additions, deletions: single()!.deletions }} />
+                    <DiffChanges
+                      changes={{
+                        additions: single()!.additions,
+                        deletions: single()!.deletions,
+                      }}
+                    />
                   </Match>
                 </Switch>
               }
@@ -2089,8 +2128,14 @@ ToolRegistry.register({
                 <Dynamic
                   component={fileComponent}
                   mode="diff"
-                  before={{ name: single()!.filePath, contents: single()!.before }}
-                  after={{ name: single()!.movePath ?? single()!.filePath, contents: single()!.after }}
+                  before={{
+                    name: single()!.filePath,
+                    contents: single()!.before,
+                  }}
+                  after={{
+                    name: single()!.movePath ?? single()!.filePath,
+                    contents: single()!.after,
+                  }}
                 />
               </div>
             </ToolFileAccordion>

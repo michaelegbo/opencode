@@ -1,34 +1,35 @@
-import { For, createEffect, createMemo, on, onCleanup, Show, Index, type JSX } from "solid-js"
-import { createStore, produce } from "solid-js/store"
-import { useNavigate } from "@solidjs/router"
+import { Popover as KobaltePopover } from "@kobalte/core/popover"
+import type { AssistantMessage, Message as MessageType, Part, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { SessionTurn } from "@opencode-ai/ui/session-turn"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
-import type { AssistantMessage, Message as MessageType, Part, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/util/binary"
 import { getFilename } from "@opencode-ai/util/path"
-import { Popover as KobaltePopover } from "@kobalte/core/popover"
-import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
+import { useNavigate } from "@solidjs/router"
+import { createEffect, createMemo, For, Index, type JSX, on, onCleanup, Show } from "solid-js"
+import { createStore, produce } from "solid-js/store"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useLanguage } from "@/context/language"
-import { useSessionKey } from "@/pages/session/session-layout"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
+import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
+import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "@/pages/session/message-gesture"
+import { useSessionKey } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
+import { Optional } from "@/utils/optional"
 
 type MessageComment = {
   path: string
@@ -230,22 +231,13 @@ export function MessageTimeline(props: {
   const platform = usePlatform()
 
   const rendered = createMemo(() => props.renderedUserMessages.map((message) => message.id))
-  const sessionID = createMemo(() => params.id)
-  const sessionMessages = createMemo(() => {
-    const id = sessionID()
-    if (!id) return emptyMessages
-    return sync.data.message[id] ?? emptyMessages
-  })
+  const sessionMessages = createMemo(() => Optional.map(params.id, (id) => sync.data.message[id]) ?? emptyMessages)
   const pending = createMemo(() =>
     sessionMessages().findLast(
       (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
     ),
   )
-  const sessionStatus = createMemo(() => {
-    const id = sessionID()
-    if (!id) return idle
-    return sync.data.session_status[id] ?? idle
-  })
+  const sessionStatus = createMemo(() => Optional.map(params.id, (id) => sync.data.session_status[id]) ?? idle)
   const working = createMemo(() => !!pending() || sessionStatus().type !== "idle")
   const tint = createMemo(() => messageAgentColor(sessionMessages(), sync.data.agent))
 
@@ -300,11 +292,7 @@ export function MessageTimeline(props: {
 
     return undefined
   })
-  const info = createMemo(() => {
-    const id = sessionID()
-    if (!id) return
-    return sync.session.get(id)
-  })
+  const info = createMemo(() => Optional.map(params.id, (id) => sync.session.get(id)))
   const titleValue = createMemo(() => info()?.title)
   const shareUrl = createMemo(() => info()?.share?.url)
   const shareEnabled = createMemo(() => sync.data.config.share !== "disabled")
@@ -338,7 +326,7 @@ export function MessageTimeline(props: {
   const [req, setReq] = createStore({ share: false, unshare: false })
 
   const shareSession = () => {
-    const id = sessionID()
+    const id = params.id
     if (!id || req.share) return
     if (!shareEnabled()) return
     setReq("share", true)
@@ -353,7 +341,7 @@ export function MessageTimeline(props: {
   }
 
   const unshareSession = () => {
-    const id = sessionID()
+    const id = params.id
     if (!id || req.unshare) return
     if (!shareEnabled()) return
     setReq("unshare", true)
@@ -399,7 +387,7 @@ export function MessageTimeline(props: {
   )
 
   const openTitleEditor = () => {
-    if (!sessionID()) return
+    if (!params.id) return
     setTitle({ editing: true, draft: titleValue() ?? "" })
     requestAnimationFrame(() => {
       titleRef?.focus()
@@ -413,7 +401,7 @@ export function MessageTimeline(props: {
   }
 
   const saveTitleEditor = async () => {
-    const id = sessionID()
+    const id = params.id
     if (!id) return
     if (title.saving) return
 
@@ -444,17 +432,17 @@ export function MessageTimeline(props: {
       })
   }
 
-  const navigateAfterSessionRemoval = (sessionID: string, parentID?: string, nextSessionID?: string) => {
-    if (params.id !== sessionID) return
+  const navigateAfterSessionRemoval = (id: string, parentID?: string, nextSessionID?: string) => {
+    if (params.id !== id) return
     if (parentID) {
-      navigate(`/${params.dir}/session/${parentID}`)
+      navigate(`../${parentID}`)
       return
     }
     if (nextSessionID) {
-      navigate(`/${params.dir}/session/${nextSessionID}`)
+      navigate(`../${nextSessionID}`)
       return
     }
-    navigate(`/${params.dir}/session`)
+    navigate("../")
   }
 
   const archiveSession = async (sessionID: string) => {
@@ -547,7 +535,7 @@ export function MessageTimeline(props: {
   const navigateParent = () => {
     const id = parentID()
     if (!id) return
-    navigate(`/${params.dir}/session/${id}`)
+    navigate(`../${id}`)
   }
 
   function DialogDeleteSession(props: { sessionID: string }) {
@@ -734,7 +722,7 @@ export function MessageTimeline(props: {
                       </Show>
                     </div>
                   </div>
-                  <Show when={sessionID()}>
+                  <Show when={params.id}>
                     {(id) => (
                       <div class="shrink-0 flex items-center gap-3">
                         <SessionContextUsage placement="bottom" />
@@ -999,7 +987,7 @@ export function MessageTimeline(props: {
                         </div>
                       </Show>
                       <SessionTurn
-                        sessionID={sessionID() ?? ""}
+                        sessionID={params.id ?? ""}
                         messageID={messageID}
                         actions={props.actions}
                         active={active()}

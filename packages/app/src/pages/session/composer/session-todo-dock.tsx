@@ -6,10 +6,11 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
-import { Index, createEffect, createMemo, on, onCleanup } from "solid-js"
+import { createEffect, createMemo, Index, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { composerEnabled, composerProbe } from "@/testing/session-composer"
 import { useLanguage } from "@/context/language"
+import { composerEnabled, composerProbe } from "@/testing/session-composer"
+import { useSessionLayout } from "../session-layout"
 
 const doneToken = "\u0000done\u0000"
 const totalToken = "\u0000total\u0000"
@@ -40,7 +41,6 @@ function dot(status: Todo["status"]) {
 }
 
 export function SessionTodoDock(props: {
-  sessionID?: string
   todos: Todo[]
   collapseLabel: string
   expandLabel: string
@@ -51,6 +51,7 @@ export function SessionTodoDock(props: {
     collapsed: false,
     height: 320,
   })
+  const { params } = useSessionLayout()
 
   const toggle = () => setStore("collapsed", (value) => !value)
 
@@ -81,7 +82,7 @@ export function SessionTodoDock(props: {
   const turn = createMemo(() => Math.max(0, Math.min(1, value())))
   const full = createMemo(() => Math.max(78, store.height))
   const e2e = composerEnabled()
-  const probe = composerProbe(props.sessionID)
+  const probe = composerProbe(params.id)
   let contentRef: HTMLDivElement | undefined
 
   createEffect(() => {

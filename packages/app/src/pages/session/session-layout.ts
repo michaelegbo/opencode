@@ -3,7 +3,7 @@ import { createMemo } from "solid-js"
 import { useLayout } from "@/context/layout"
 
 export const useSessionKey = () => {
-  const params = useParams()
+  const params = useParams<{ dir: string; id: string & { __brand: "SessionID" } }>()
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
   return { params, sessionKey }
 }

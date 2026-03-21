@@ -2,6 +2,7 @@ import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
+import { useSessionLayout } from "./session-layout"
 
 export const useSessionHashScroll = (input: {
   sessionKey: () => string
@@ -28,6 +29,7 @@ export const useSessionHashScroll = (input: {
 
   const location = useLocation()
   const navigate = useNavigate()
+  const { params } = useSessionLayout()
 
   const frames = new Set<number>()
   const queue = (fn: () => void) => {
@@ -142,13 +144,13 @@ export const useSessionHashScroll = (input: {
   createEffect(() => {
     const hash = location.hash
     if (!hash) clearing = false
-    if (!input.sessionID() || !input.messagesReady()) return
+    if (!params.id || !input.messagesReady()) return
     cancel()
     queue(() => applyHash("auto"))
   })
 
   createEffect(() => {
-    if (!input.sessionID() || !input.messagesReady()) return
+    if (!params.id || !input.messagesReady()) return
 
     visibleUserMessages()
     input.turnStart()

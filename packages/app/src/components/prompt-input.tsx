@@ -1,61 +1,62 @@
-import { useFilteredList } from "@opencode-ai/ui/hooks"
-import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { createEffect, on, Component, Show, onCleanup, createMemo, createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
-import { useLocal } from "@/context/local"
-import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
-import {
-  ContentPart,
-  DEFAULT_PROMPT,
-  isPromptEqual,
-  Prompt,
-  usePrompt,
-  ImageAttachmentPart,
-  AgentPart,
-  FileAttachmentPart,
-} from "@/context/prompt"
-import { useLayout } from "@/context/layout"
-import { useSDK } from "@/context/sdk"
-import { useSync } from "@/context/sync"
-import { useComments } from "@/context/comments"
 import { Button } from "@opencode-ai/ui/button"
-import { DockShellForm, DockTray } from "@opencode-ai/ui/dock-surface"
-import { Icon } from "@opencode-ai/ui/icon"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DockShellForm, DockTray } from "@opencode-ai/ui/dock-surface"
+import { useFilteredList } from "@opencode-ai/ui/hooks"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { Select } from "@opencode-ai/ui/select"
+import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
+import { type Component, createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
+import { createStore } from "solid-js/store"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
-import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
-import { Persist, persisted } from "@/utils/persist"
-import { usePermission } from "@/context/permission"
+import { useComments } from "@/context/comments"
+import { type SelectedLineRange, selectionFromLines, useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
+import { useLocal } from "@/context/local"
+import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
-import { useSessionLayout } from "@/pages/session/session-layout"
+import {
+  type AgentPart,
+  type ContentPart,
+  DEFAULT_PROMPT,
+  type FileAttachmentPart,
+  type ImageAttachmentPart,
+  isPromptEqual,
+  type Prompt,
+  usePrompt,
+} from "@/context/prompt"
+import { useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
+import { useProviders } from "@/hooks/use-providers"
 import { createSessionTabs } from "@/pages/session/helpers"
+import { useSessionLayout } from "@/pages/session/session-layout"
 import { promptEnabled, promptProbe } from "@/testing/prompt"
-import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
+import { Optional } from "@/utils/optional"
+import { Persist, persisted } from "@/utils/persist"
 import { createPromptAttachments } from "./prompt-input/attachments"
+import { PromptContextItems } from "./prompt-input/context-items"
+import { PromptDragOverlay } from "./prompt-input/drag-overlay"
+import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
 import { ACCEPTED_FILE_TYPES } from "./prompt-input/files"
 import {
   canNavigateHistoryAtCursor,
   navigatePromptHistory,
-  prependHistoryEntry,
   type PromptHistoryComment,
   type PromptHistoryEntry,
   type PromptHistoryStoredEntry,
+  prependHistoryEntry,
   promptLength,
 } from "./prompt-input/history"
-import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
-import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
-import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
-import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
+import { type AtOption, PromptPopover, type SlashCommand } from "./prompt-input/slash-popover"
+import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 
 interface PromptInputProps {
   class?: string
@@ -171,10 +172,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }).activeFileTab
 
   const commentInReview = (path: string) => {
-    const sessionID = params.id
-    if (!sessionID) return false
+    const id = params.id
+    if (!id) return false
 
-    const diffs = sync.data.session_diff[sessionID]
+    const diffs = sync.data.session_diff[id]
     if (!diffs) return false
     return diffs.some((diff) => diff.file === path)
   }
@@ -236,10 +237,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     return paths
   })
-  const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const info = createMemo(() => Optional.map(params.id, (s) => sync.session.get(s)))
   const status = createMemo(
     () =>
-      sync.data.session_status[params.id ?? ""] ?? {
+      Optional.map(params.id, (id) => sync.data.session_status[id]) ?? {
         type: "idle",
       },
   )
@@ -283,7 +284,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     applyingHistory: false,
   })
 
-  const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
+  const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), {
+    visualDuration: 0.2,
+    bounce: 0,
+  })
   const motion = (value: number) => ({
     opacity: value,
     transform: `scale(${0.95 + value * 0.05})`,
@@ -306,9 +310,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   const hasUserPrompt = createMemo(() => {
-    const sessionID = params.id
-    if (!sessionID) return false
-    const messages = sync.data.message[sessionID]
+    const id = params.id
+    if (!id) return false
+    const messages = sync.data.message[id]
     if (!messages) return false
     return messages.some((m) => m.role === "user")
   })
@@ -510,9 +514,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   createEffect(() => {
-    params.id
-    if (params.id) return
-    if (!suggest()) return
+    if (params.id || !suggest()) return
     const interval = setInterval(() => {
       setStore("placeholder", (prev) => (prev + 1) % EXAMPLES.length)
     }, 6500)
@@ -542,16 +544,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const agentList = createMemo(() =>
     sync.data.agent
       .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name })),
+      .map(
+        (agent): AtOption => ({
+          type: "agent",
+          name: agent.name,
+          display: agent.name,
+        }),
+      ),
   )
   const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
 
   const handleAtSelect = (option: AtOption | undefined) => {
     if (!option) return
     if (option.type === "agent") {
-      addPart({ type: "agent", name: option.name, content: "@" + option.name, start: 0, end: 0 })
+      addPart({
+        type: "agent",
+        name: option.name,
+        content: "@" + option.name,
+        start: 0,
+        end: 0,
+      })
     } else {
-      addPart({ type: "file", path: option.path, content: "@" + option.path, start: 0, end: 0 })
+      addPart({
+        type: "file",
+        path: option.path,
+        content: "@" + option.path,
+        start: 0,
+        end: 0,
+      })
     }
   }
 
@@ -571,7 +591,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const agents = agentList()
       const open = recent()
       const seen = new Set(open)
-      const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
+      const pinned: AtOption[] = open.map((path) => ({
+        type: "file",
+        path,
+        display: path,
+        recent: true,
+      }))
       const paths = await files.searchFilesAndDirectories(query)
       const fileOptions: AtOption[] = paths
         .filter((path) => !seen.has(path))
@@ -780,7 +805,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (content.includes("\u200B")) content = content.replace(/\u200B/g, "")
       buffer = ""
       if (!content) return
-      parts.push({ type: "text", content, start: position, end: position + content.length })
+      parts.push({
+        type: "text",
+        content,
+        start: position,
+        end: position + content.length,
+      })
       position += content.length
     }
 
@@ -1057,20 +1087,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const variants = createMemo(() => ["default", ...local.model.variant.list()])
   const accepting = createMemo(() => {
-    const id = params.id
-    if (!id) return permission.isAutoAcceptingDirectory(sdk.directory)
-    return permission.isAutoAccepting(id, sdk.directory)
+    if (!params.id) return permission.isAutoAcceptingDirectory(sdk.directory)
+    return permission.isAutoAccepting(params.id, sdk.directory)
   })
   const acceptLabel = createMemo(() =>
     language.t(accepting() ? "command.permissions.autoaccept.disable" : "command.permissions.autoaccept.enable"),
   )
   const toggleAccept = () => {
-    if (!params.id) {
-      permission.toggleAutoAcceptDirectory(sdk.directory)
-      return
-    }
-
-    permission.toggleAutoAccept(params.id, sdk.directory)
+    const id = params.id
+    if (!id) permission.toggleAutoAcceptDirectory(sdk.directory)
+    else permission.toggleAutoAccept(id, sdk.directory)
   }
 
   const { abort, handleSubmit } = createPromptSubmit({
@@ -1503,7 +1529,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             <ProviderIcon
                               id={local.model.current()!.provider.id}
                               class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                              style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+                              style={{
+                                "will-change": "opacity",
+                                transform: "translateZ(0)",
+                              }}
                             />
                           </Show>
                           <span class="truncate">
@@ -1535,7 +1564,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           <ProviderIcon
                             id={local.model.current()!.provider.id}
                             class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                            style={{ "will-change": "opacity", transform: "translateZ(0)" }}
+                            style={{
+                              "will-change": "opacity",
+                              transform: "translateZ(0)",
+                            }}
                           />
                         </Show>
                         <span class="truncate">
