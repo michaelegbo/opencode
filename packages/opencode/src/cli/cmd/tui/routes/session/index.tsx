@@ -16,7 +16,7 @@ import { Dynamic } from "solid-js/web"
 import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useSync } from "@tui/context/sync"
-import { SplitBorder } from "@tui/component/border"
+import { EmptyBorder, SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { selectedForeground, useTheme } from "@tui/context/theme"
 import {
@@ -1046,7 +1046,12 @@ export function Session() {
       }}
     >
       <box flexDirection="row">
-        <box flexGrow={1} gap={1}>
+        <box
+          flexGrow={1}
+          gap={1}
+          paddingX={sidebarVisible() && wide() ? 2 : 0}
+          paddingY={sidebarVisible() && wide() ? 1 : 0}
+        >
           <Show when={session()}>
             <Show when={showHeader() && (!sidebarVisible() || !wide())}>
               <Header />
@@ -1057,7 +1062,7 @@ export function Session() {
                 paddingRight: showScrollbar() ? 1 : 0,
               }}
               verticalScrollbarOptions={{
-                paddingLeft: 1,
+                paddingLeft: 0,
                 visible: showScrollbar(),
                 trackOptions: {
                   backgroundColor: theme.backgroundElement,
@@ -1262,9 +1267,15 @@ function UserMessage(props: {
             onMouseUp={props.onMouseUp}
             paddingTop={1}
             paddingBottom={1}
-            paddingLeft={2}
-            backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
+            backgroundColor={hover() ? theme.backgroundMenu : theme.backgroundMenu}
+            paddingLeft={1}
             flexShrink={0}
+            border={["left"]}
+            borderColor={color()}
+            customBorderChars={{
+              ...EmptyBorder,
+              vertical: "▎",
+            }}
           >
             <text fg={theme.text}>{text()?.text}</text>
             <Show when={files().length}>
@@ -1733,11 +1744,12 @@ function BlockTool(props: {
   return (
     <box
       paddingTop={1}
+      marginTop={1}
       paddingBottom={1}
       paddingLeft={2}
-      marginTop={1}
+      paddingRight={2}
       gap={1}
-      backgroundColor={hover() ? theme.backgroundMenu : undefined}
+      backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
       onMouseOver={() => props.onClick && setHover(true)}
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {

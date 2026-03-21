@@ -819,8 +819,14 @@ export function Prompt(props: PromptProps) {
         visible={props.visible !== false}
         backgroundColor={theme.backgroundElement}
         paddingBottom={1}
-        paddingLeft={2}
+        paddingLeft={1}
         paddingRight={2}
+        border={["left"]}
+        borderColor={highlight()}
+        customBorderChars={{
+          ...EmptyBorder,
+          vertical: "▎",
+        }}
       >
         <box paddingTop={1} flexShrink={0} flexGrow={1}>
           <textarea
