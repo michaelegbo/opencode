@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
 import { attachmentMime } from "./files"
+import { wouldExceedAttachmentLimit } from "./limit"
 import { normalizePaste, pasteMode } from "./paste"
 
 function dataUrl(file: File, mime: string) {
@@ -44,18 +45,27 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
   }
 
-  const add = async (file: File, toast = true) => {
+  const warnLimit = () => {
+    showToast({
+      title: language.t("prompt.toast.attachmentLimit.title"),
+      description: language.t("prompt.toast.attachmentLimit.description"),
+    })
+  }
+
+  const add = async (file: File) => {
     const mime = await attachmentMime(file)
     if (!mime) {
-      if (toast) warn()
-      return false
+      return "unsupported" as const
     }
 
     const editor = input.editor()
-    if (!editor) return false
+    if (!editor) return "failed" as const
+
+    const images = prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image")
+    if (wouldExceedAttachmentLimit(images, file, mime)) return "limit" as const
 
     const url = await dataUrl(file, mime)
-    if (!url) return false
+    if (!url) return "failed" as const
 
     const attachment: ImageAttachmentPart = {
       type: "image",
@@ -66,22 +76,26 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     }
     const cursor = prompt.cursor() ?? getCursorPosition(editor)
     prompt.set([...prompt.current(), attachment], cursor)
-    return true
+    return "added" as const
   }
 
-  const addAttachment = (file: File) => add(file)
-
-  const addAttachments = async (files: File[], toast = true) => {
-    let found = false
-
-    for (const file of files) {
-      const ok = await add(file, false)
-      if (ok) found = true
+  const addAttachments = async (list: File[]) => {
+    const result = { added: false, limit: false, unsupported: false }
+    for (const file of list) {
+      const state = await add(file)
+      result.added = result.added || state === "added"
+      result.limit = result.limit || state === "limit"
+      result.unsupported = result.unsupported || state === "unsupported"
     }
-
-    if (!found && files.length > 0 && toast) warn()
-    return found
+    if (result.limit) {
+      warnLimit()
+      return result.added
+    }
+    if (!result.added && result.unsupported) warn()
+    return result.added
   }
+
+  const addAttachment = (file: File) => addAttachments([file])
 
   const removeAttachment = (id: string) => {
     const current = prompt.current()

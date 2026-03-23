@@ -281,6 +281,8 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
 
+  "prompt.toast.attachmentLimit.title": "Attachment limit reached",
+  "prompt.toast.attachmentLimit.description": "Attachments can total up to 5 MB. Try smaller or fewer files.",
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",

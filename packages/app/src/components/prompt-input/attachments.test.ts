@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { attachmentMime } from "./files"
+import { MAX_ATTACHMENT_BYTES, estimateAttachment, totalAttachments, wouldExceedAttachmentLimit } from "./limit"
 import { pasteMode } from "./paste"
 
 describe("attachmentMime", () => {
@@ -40,5 +41,21 @@ describe("pasteMode", () => {
 
   test("uses manual paste for large text", () => {
     expect(pasteMode("x".repeat(8000))).toBe("manual")
+  })
+})
+
+describe("attachment limit", () => {
+  test("estimates encoded attachment size", () => {
+    expect(estimateAttachment({ size: 3 }, "image/png")).toBe("data:image/png;base64,".length + 4)
+  })
+
+  test("totals current attachments", () => {
+    expect(totalAttachments([{ dataUrl: "abc" }, { dataUrl: "de" }])).toBe(5)
+  })
+
+  test("flags uploads that exceed the total limit", () => {
+    const list = [{ dataUrl: "a".repeat(MAX_ATTACHMENT_BYTES - 4) }]
+    expect(wouldExceedAttachmentLimit(list, { size: 3 }, "image/png")).toBe(true)
+    expect(wouldExceedAttachmentLimit([], { size: 3 }, "image/png")).toBe(false)
   })
 })
