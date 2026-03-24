@@ -1,0 +1,8 @@
+# Session diff
+# 4 turns
+# Instance A: port 4096
+# Instance B: port 4096
+# A messages: 11
+# B messages: 11
+--- instance A
++++ instance B

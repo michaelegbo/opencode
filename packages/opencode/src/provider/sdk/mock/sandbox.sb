@@ -1,0 +1,17 @@
+(version 1)
+
+;; Start permissive, then lock down network and filesystem
+(allow default)
+
+;; ── Network: deny all, allow localhost ──
+(deny network*)
+(allow network* (local ip "localhost:*"))
+(allow network* (remote ip "localhost:*"))
+
+;; ── Filesystem writes: deny all, then allow temp dirs ──
+(deny file-write*)
+
+;; ── Filesystem reads: deny sensitive dirs ──
+(deny file-read*
+  (subpath (string-append (param "HOME") "/.local"))
+  (subpath (string-append (param "HOME") "/.config")))

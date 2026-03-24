@@ -30,6 +30,7 @@ import { createOpenAI } from "@ai-sdk/openai"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { createOpenRouter, type LanguageModelV2 } from "@openrouter/ai-sdk-provider"
 import { createOpenaiCompatible as createGitHubCopilotOpenAICompatible } from "./sdk/copilot"
+import { createMock } from "./sdk/mock"
 import { createXai } from "@ai-sdk/xai"
 import { createMistral } from "@ai-sdk/mistral"
 import { createGroq } from "@ai-sdk/groq"
@@ -132,6 +133,7 @@ export namespace Provider {
     "gitlab-ai-provider": createGitLab,
     // @ts-ignore (TODO: kill this code so we dont have to maintain it)
     "@ai-sdk/github-copilot": createGitHubCopilotOpenAICompatible,
+    "@opencode/mock": createMock as any,
   }
 
   type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>) => Promise<any>
@@ -150,6 +152,11 @@ export namespace Provider {
   }
 
   const CUSTOM_LOADERS: Record<string, CustomLoader> = {
+    async mock() {
+      return {
+        autoload: true,
+      }
+    },
     async anthropic() {
       return {
         autoload: false,
@@ -919,6 +926,42 @@ export namespace Provider {
     const config = await Config.get()
     const modelsDev = await ModelsDev.get()
     const database = mapValues(modelsDev, fromModelsDevProvider)
+
+    // Register the built-in mock provider for testing
+    database["mock"] = {
+      id: "mock",
+      name: "Mock",
+      source: "custom",
+      env: [],
+      options: {},
+      models: {
+        "mock-model": {
+          id: "mock-model",
+          providerID: "mock",
+          name: "Mock Model",
+          api: {
+            id: "mock-model",
+            url: "",
+            npm: "@opencode/mock",
+          },
+          status: "active",
+          capabilities: {
+            temperature: false,
+            reasoning: false,
+            attachment: false,
+            toolcall: true,
+            input: { text: true, audio: false, image: false, video: false, pdf: false },
+            output: { text: true, audio: false, image: false, video: false, pdf: false },
+            interleaved: false,
+          },
+          cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+          limit: { context: 128000, output: 4096 },
+          options: {},
+          headers: {},
+          release_date: "2025-01-01",
+        },
+      },
+    }
 
     const disabled = new Set(config.disabled_providers ?? [])
     const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null

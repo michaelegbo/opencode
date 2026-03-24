@@ -1,0 +1,210 @@
+[
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"write\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"alpha src test\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user] steps=2"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "write",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The write tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"content\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"filePath\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool] steps=2"
+      },
+      {
+        "type": "text",
+        "text": "alpha src test"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"lib lib hello qux src foo tmp gamma alpha\"},{\"type\":\"text\",\"content\":\"gamma bar gamma test src beta\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user] steps=1"
+      },
+      {
+        "type": "reasoning",
+        "text": "lib lib hello qux src foo tmp gamma alpha"
+      },
+      {
+        "type": "text",
+        "text": "gamma bar gamma test src beta"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"grep\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"todowrite\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"test alpha alpha\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user] steps=2"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "grep",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The grep tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-1",
+        "tool": "todowrite",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The todowrite tool was called with invalid arguments: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"todos\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool] steps=2"
+      },
+      {
+        "type": "text",
+        "text": "test alpha alpha"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"test baz lib tmp beta delta qux\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool,assistant,user] steps=2"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool,assistant,user,assistant,tool] steps=2"
+      },
+      {
+        "type": "text",
+        "text": "test baz lib tmp beta delta qux"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  }
+]

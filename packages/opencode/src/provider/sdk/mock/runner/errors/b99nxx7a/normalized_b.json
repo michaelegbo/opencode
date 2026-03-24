@@ -1,0 +1,143 @@
+[
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"webfetch\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"alpha tmp beta\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user] steps=2"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-1",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-2",
+        "tool": "webfetch",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The webfetch tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"url\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema."
+        }
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool] steps=2"
+      },
+      {
+        "type": "text",
+        "text": "alpha tmp beta"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"hello test baz delta src\"},{\"type\":\"text\",\"content\":\"tmp foo qux\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user] steps=1"
+      },
+      {
+        "type": "reasoning",
+        "text": "hello test baz delta src"
+      },
+      {
+        "type": "text",
+        "text": "tmp foo qux"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"alpha baz gamma\"},{\"type\":\"text\",\"content\":\"src src lib foo src alpha qux delta foo\"}]]}"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "step-start"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user] steps=1"
+      },
+      {
+        "type": "reasoning",
+        "text": "alpha baz gamma"
+      },
+      {
+        "type": "text",
+        "text": "src src lib foo src alpha qux delta foo"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop"
+      }
+    ]
+  }
+]

@@ -26,13 +26,15 @@ export namespace Global {
   }
 }
 
-await Promise.all([
-  fs.mkdir(Global.Path.data, { recursive: true }),
-  fs.mkdir(Global.Path.config, { recursive: true }),
-  fs.mkdir(Global.Path.state, { recursive: true }),
-  fs.mkdir(Global.Path.log, { recursive: true }),
-  fs.mkdir(Global.Path.bin, { recursive: true }),
-])
+try {
+  await Promise.all([
+    fs.mkdir(Global.Path.data, { recursive: true }),
+    fs.mkdir(Global.Path.config, { recursive: true }),
+    fs.mkdir(Global.Path.state, { recursive: true }),
+    fs.mkdir(Global.Path.log, { recursive: true }),
+    fs.mkdir(Global.Path.bin, { recursive: true }),
+  ])
+} catch (err) {}
 
 const CACHE_VERSION = "21"
 

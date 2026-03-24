@@ -1,0 +1,716 @@
+[
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379582422
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143c3d5001KT7T04r8FyRvjS",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"write\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"alpha src test\"}]]}",
+        "id": "prt_d2143c3d6001SGxGr1RY3wObHC",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3d5001KT7T04r8FyRvjS"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379582423,
+        "completed": 1774379582445
+      },
+      "parentID": "msg_d2143c3d5001KT7T04r8FyRvjS",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "tool-calls",
+      "id": "msg_d2143c3d7001769e2U0WPHNSTE",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143c3e2001CObsaU2q0Y53qL",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3d7001769e2U0WPHNSTE"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user] steps=2",
+        "time": {
+          "start": 1774379582434,
+          "end": 1774379582434
+        },
+        "id": "prt_d2143c3e2002aF1YmpGhj0Mwha",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3d7001769e2U0WPHNSTE"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "write",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The write tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"content\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  },\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"filePath\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379582441,
+            "end": 1774379582442
+          }
+        },
+        "id": "prt_d2143c3e3001IEEo3tnjUPs15a",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3d7001769e2U0WPHNSTE"
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143c3ea001bqur0mrFj2phlQ",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3d7001769e2U0WPHNSTE"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379582446,
+        "completed": 1774379582450
+      },
+      "parentID": "msg_d2143c3d5001KT7T04r8FyRvjS",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143c3ee0010AYXnrOaS99ZOQ",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143c3f0001v8F3QQ0oX4S2rg",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3ee0010AYXnrOaS99ZOQ"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool] steps=2",
+        "time": {
+          "start": 1774379582448,
+          "end": 1774379582448
+        },
+        "id": "prt_d2143c3f000204hd55JZ8otMEp",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3ee0010AYXnrOaS99ZOQ"
+      },
+      {
+        "type": "text",
+        "text": "alpha src test",
+        "time": {
+          "start": 1774379582449,
+          "end": 1774379582449
+        },
+        "id": "prt_d2143c3f1001xS7OWBZ033y8l6",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3ee0010AYXnrOaS99ZOQ"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143c3f100229kD2ReqThCFSt",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c3ee0010AYXnrOaS99ZOQ"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379583480
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143c7f8001C6ROv8OzFHTCZM",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"lib lib hello qux src foo tmp gamma alpha\"},{\"type\":\"text\",\"content\":\"gamma bar gamma test src beta\"}]]}",
+        "id": "prt_d2143c7f8002dYy3UaNalp5BbL",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7f8001C6ROv8OzFHTCZM"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379583483,
+        "completed": 1774379583488
+      },
+      "parentID": "msg_d2143c7f8001C6ROv8OzFHTCZM",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143c7fb001we6hPbzshkzrNy",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143c7fe001TeFm1JF8iNEjwl",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7fb001we6hPbzshkzrNy"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user] steps=1",
+        "time": {
+          "start": 1774379583487,
+          "end": 1774379583487
+        },
+        "id": "prt_d2143c7fe002qY6Re5hhZKnN5C",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7fb001we6hPbzshkzrNy"
+      },
+      {
+        "type": "reasoning",
+        "text": "lib lib hello qux src foo tmp gamma alpha",
+        "time": {
+          "start": 1774379583487,
+          "end": 1774379583487
+        },
+        "id": "prt_d2143c7ff001vrJUyBL0kPYNCQ",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7fb001we6hPbzshkzrNy"
+      },
+      {
+        "type": "text",
+        "text": "gamma bar gamma test src beta",
+        "time": {
+          "start": 1774379583487,
+          "end": 1774379583487
+        },
+        "id": "prt_d2143c7ff0023EdYEmu7mV0nO5",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7fb001we6hPbzshkzrNy"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143c7ff003uV89tAjBWj79ko",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143c7fb001we6hPbzshkzrNy"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379584507
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143cbfb001gAL4NWFXdZgjKs",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"grep\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"todowrite\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"test alpha alpha\"}]]}",
+        "id": "prt_d2143cbfb002hFQRFJx8dUCsxJ",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfb001gAL4NWFXdZgjKs"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379584508,
+        "completed": 1774379584515
+      },
+      "parentID": "msg_d2143cbfb001gAL4NWFXdZgjKs",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "tool-calls",
+      "id": "msg_d2143cbfc001JzvvQ9J0gr9qRg",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143cc00001dev0B2qo3KPN8O",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfc001JzvvQ9J0gr9qRg"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user] steps=2",
+        "time": {
+          "start": 1774379584512,
+          "end": 1774379584512
+        },
+        "id": "prt_d2143cc00002umrLwBNdirT4qx",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfc001JzvvQ9J0gr9qRg"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "grep",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The grep tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379584513,
+            "end": 1774379584513
+          }
+        },
+        "id": "prt_d2143cc00003YdloL2qv1oAuo8",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfc001JzvvQ9J0gr9qRg"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-1",
+        "tool": "todowrite",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The todowrite tool was called with invalid arguments: [\n  {\n    \"expected\": \"array\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"todos\"\n    ],\n    \"message\": \"Invalid input: expected array, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379584513,
+            "end": 1774379584514
+          }
+        },
+        "id": "prt_d2143cc010015Xy8V1X3KU3hRZ",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfc001JzvvQ9J0gr9qRg"
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143cc02001mQ04qR4P4mtb8l",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cbfc001JzvvQ9J0gr9qRg"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379584515,
+        "completed": 1774379584519
+      },
+      "parentID": "msg_d2143cbfb001gAL4NWFXdZgjKs",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143cc03001sYIyyLHeLCbCeM",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143cc05001EWqrxaAjSmxgUi",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cc03001sYIyyLHeLCbCeM"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool] steps=2",
+        "time": {
+          "start": 1774379584517,
+          "end": 1774379584517
+        },
+        "id": "prt_d2143cc05002MtOf0RA6dgYkXp",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cc03001sYIyyLHeLCbCeM"
+      },
+      {
+        "type": "text",
+        "text": "test alpha alpha",
+        "time": {
+          "start": 1774379584518,
+          "end": 1774379584518
+        },
+        "id": "prt_d2143cc060016gbI2vMS7R5jU1",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cc03001sYIyyLHeLCbCeM"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143cc06002O5FGgKAePaaGm0",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cc03001sYIyyLHeLCbCeM"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379585461
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143cfb5001PPQoIRtGeviy3c",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"test baz lib tmp beta delta qux\"}]]}",
+        "id": "prt_d2143cfb50027EsruWcB94okp9",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfb5001PPQoIRtGeviy3c"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379585463,
+        "completed": 1774379585475
+      },
+      "parentID": "msg_d2143cfb5001PPQoIRtGeviy3c",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "tool-calls",
+      "id": "msg_d2143cfb7001QuAkgD4erkOK2t",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143cfbd001bAWzjeTU0hd34Q",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfb7001QuAkgD4erkOK2t"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool,assistant,user] steps=2",
+        "time": {
+          "start": 1774379585470,
+          "end": 1774379585470
+        },
+        "id": "prt_d2143cfbd0021XodVrKNZennQd",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfb7001QuAkgD4erkOK2t"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379585471,
+            "end": 1774379585472
+          }
+        },
+        "id": "prt_d2143cfbf001hch9QVAuVVKeHX",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfb7001QuAkgD4erkOK2t"
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143cfc1001qdMuYmXs9sKr7o",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfb7001QuAkgD4erkOK2t"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379585476,
+        "completed": 1774379585479
+      },
+      "parentID": "msg_d2143cfb5001PPQoIRtGeviy3c",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143cfc400106KBhqYfWCTNFn",
+      "sessionID": "ses_2debc400dfferXmjJLga0kv53B"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143cfc6001oMJV4hwqWbigpS",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfc400106KBhqYfWCTNFn"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool,assistant,user,assistant,user,assistant,tool,assistant,user,assistant,tool] steps=2",
+        "time": {
+          "start": 1774379585478,
+          "end": 1774379585478
+        },
+        "id": "prt_d2143cfc6002GJauPaAdD5zXhQ",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfc400106KBhqYfWCTNFn"
+      },
+      {
+        "type": "text",
+        "text": "test baz lib tmp beta delta qux",
+        "time": {
+          "start": 1774379585478,
+          "end": 1774379585478
+        },
+        "id": "prt_d2143cfc6003glU1XL5UB35LJX",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfc400106KBhqYfWCTNFn"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143cfc700106w94xd70qzIrD",
+        "sessionID": "ses_2debc400dfferXmjJLga0kv53B",
+        "messageID": "msg_d2143cfc400106KBhqYfWCTNFn"
+      }
+    ]
+  }
+]

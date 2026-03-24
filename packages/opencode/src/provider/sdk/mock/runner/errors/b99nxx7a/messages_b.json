@@ -1,0 +1,465 @@
+[
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379593974
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143f0f6001W06kLQkLc0Avmt",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"glob\",\"input\":{}},{\"type\":\"tool_call\",\"name\":\"webfetch\",\"input\":{}}],[{\"type\":\"text\",\"content\":\"alpha tmp beta\"}]]}",
+        "id": "prt_d2143f0f6002f7aHc9lHE9QNyB",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f0f6001W06kLQkLc0Avmt"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379594061,
+        "completed": 1774379594073
+      },
+      "parentID": "msg_d2143f0f6001W06kLQkLc0Avmt",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "tool-calls",
+      "id": "msg_d2143f14d001THhEKu7ayFlx3Z",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143f154001PVSKjmtsV3DLJe",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user] steps=2",
+        "time": {
+          "start": 1774379594069,
+          "end": 1774379594069
+        },
+        "id": "prt_d2143f154002GsJ9lRNwVenp7X",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-0",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379594070,
+            "end": 1774379594070
+          }
+        },
+        "id": "prt_d2143f155001i3kutYi3KNE5wz",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-1",
+        "tool": "glob",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The glob tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"pattern\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379594071,
+            "end": 1774379594071
+          }
+        },
+        "id": "prt_d2143f156001R2TvLMCOOGpph6",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      },
+      {
+        "type": "tool",
+        "callID": "mock-call-2",
+        "tool": "webfetch",
+        "state": {
+          "status": "error",
+          "input": {},
+          "error": "The webfetch tool was called with invalid arguments: [\n  {\n    \"expected\": \"string\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"url\"\n    ],\n    \"message\": \"Invalid input: expected string, received undefined\"\n  }\n].\nPlease rewrite the input so it satisfies the expected schema.",
+          "time": {
+            "start": 1774379594071,
+            "end": 1774379594072
+          }
+        },
+        "id": "prt_d2143f157001gNlwORHT1lN5PV",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      },
+      {
+        "type": "step-finish",
+        "reason": "tool-calls",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143f158001FRPSA8RbDrqAZw",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f14d001THhEKu7ayFlx3Z"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379594074,
+        "completed": 1774379594078
+      },
+      "parentID": "msg_d2143f0f6001W06kLQkLc0Avmt",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143f15a001JjvWPtfcpPMziU",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143f15c0010jDTWHviMVLv1n",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f15a001JjvWPtfcpPMziU"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=1 roles=[system,user,assistant,tool] steps=2",
+        "time": {
+          "start": 1774379594076,
+          "end": 1774379594076
+        },
+        "id": "prt_d2143f15c002JSe7fs2ISI0UEp",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f15a001JjvWPtfcpPMziU"
+      },
+      {
+        "type": "text",
+        "text": "alpha tmp beta",
+        "time": {
+          "start": 1774379594077,
+          "end": 1774379594077
+        },
+        "id": "prt_d2143f15d001O2Tn3oWjYJtf5A",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f15a001JjvWPtfcpPMziU"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143f15d002dGtu4Z2ZRqqE9I",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f15a001JjvWPtfcpPMziU"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379595311
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143f62f001QX3387NAQuBWSk",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"hello test baz delta src\"},{\"type\":\"text\",\"content\":\"tmp foo qux\"}]]}",
+        "id": "prt_d2143f62f002tVsYdvhHZygvUd",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f62f001QX3387NAQuBWSk"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379595323,
+        "completed": 1774379595332
+      },
+      "parentID": "msg_d2143f62f001QX3387NAQuBWSk",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143f63b001A6xJFFicEmTzJx",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143f6410016Hh0Sm1mRmt3X5",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f63b001A6xJFFicEmTzJx"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user] steps=1",
+        "time": {
+          "start": 1774379595330,
+          "end": 1774379595330
+        },
+        "id": "prt_d2143f641002ufYzrb5QanYeYN",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f63b001A6xJFFicEmTzJx"
+      },
+      {
+        "type": "reasoning",
+        "text": "hello test baz delta src",
+        "time": {
+          "start": 1774379595330,
+          "end": 1774379595330
+        },
+        "id": "prt_d2143f642001QkVKO6KVAImQYz",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f63b001A6xJFFicEmTzJx"
+      },
+      {
+        "type": "text",
+        "text": "tmp foo qux",
+        "time": {
+          "start": 1774379595331,
+          "end": 1774379595331
+        },
+        "id": "prt_d2143f642002MLHz0uIaPAkeZ4",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f63b001A6xJFFicEmTzJx"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143f6430012waVXZMFXu3TC8",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143f63b001A6xJFFicEmTzJx"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "user",
+      "time": {
+        "created": 1774379596713
+      },
+      "summary": {
+        "diffs": []
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "mock",
+        "modelID": "mock-model"
+      },
+      "id": "msg_d2143fba9001XAh8JaW5JvpJlv",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "text",
+        "text": "{\"steps\":[[{\"type\":\"thinking\",\"content\":\"alpha baz gamma\"},{\"type\":\"text\",\"content\":\"src src lib foo src alpha qux delta foo\"}]]}",
+        "id": "prt_d2143fba9002dHYnp8GsUaBqDt",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fba9001XAh8JaW5JvpJlv"
+      }
+    ]
+  },
+  {
+    "info": {
+      "role": "assistant",
+      "time": {
+        "created": 1774379596722,
+        "completed": 1774379596748
+      },
+      "parentID": "msg_d2143fba9001XAh8JaW5JvpJlv",
+      "modelID": "mock-model",
+      "providerID": "mock",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/Users/james/projects/opencode/packages/opencode",
+        "root": "/"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 30,
+        "input": 10,
+        "output": 20,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "finish": "stop",
+      "id": "msg_d2143fbb2001XNDThR5D7TmNly",
+      "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ"
+    },
+    "parts": [
+      {
+        "type": "step-start",
+        "id": "prt_d2143fbc6001W6cc2hnRvnzsik",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fbb2001XNDThR5D7TmNly"
+      },
+      {
+        "type": "text",
+        "text": "[mock-debug] round=0 roles=[system,user,assistant,tool,assistant,user,assistant,user] steps=1",
+        "time": {
+          "start": 1774379596744,
+          "end": 1774379596744
+        },
+        "id": "prt_d2143fbc7001N4GUWfPV2xT08C",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fbb2001XNDThR5D7TmNly"
+      },
+      {
+        "type": "reasoning",
+        "text": "alpha baz gamma",
+        "time": {
+          "start": 1774379596744,
+          "end": 1774379596745
+        },
+        "id": "prt_d2143fbc80019Ts62MVwF52nIT",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fbb2001XNDThR5D7TmNly"
+      },
+      {
+        "type": "text",
+        "text": "src src lib foo src alpha qux delta foo",
+        "time": {
+          "start": 1774379596747,
+          "end": 1774379596747
+        },
+        "id": "prt_d2143fbca001ho24JWb5CDEzHB",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fbb2001XNDThR5D7TmNly"
+      },
+      {
+        "type": "step-finish",
+        "reason": "stop",
+        "cost": 0,
+        "tokens": {
+          "total": 30,
+          "input": 10,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "id": "prt_d2143fbcb001SvHn89K0x3NFNQ",
+        "sessionID": "ses_2debc1358ffeJw4radOUd2jQXZ",
+        "messageID": "msg_d2143fbb2001XNDThR5D7TmNly"
+      }
+    ]
+  }
+]
