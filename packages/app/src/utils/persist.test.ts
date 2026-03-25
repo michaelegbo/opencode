@@ -112,4 +112,11 @@ describe("persist localStorage resilience", () => {
     expect(result.endsWith(".dat")).toBeTrue()
     expect(/[:\\/]/.test(result)).toBeFalse()
   })
+
+  test("workspace storage treats slash variants as the same workspace", () => {
+    const a = persistTesting.workspaceStorage("C:\\Users\\foo\\bar\\")
+    const b = persistTesting.workspaceStorage("C:/Users/foo/bar")
+
+    expect(a).toBe(b)
+  })
 })

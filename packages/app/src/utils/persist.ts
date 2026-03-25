@@ -1,4 +1,5 @@
 import { Platform, usePlatform } from "@/context/platform"
+import { workspaceKey } from "@/utils/workspace"
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@opencode-ai/util/encode"
 import { createResource, type Accessor } from "solid-js"
@@ -209,8 +210,9 @@ function normalize(defaults: unknown, raw: string, migrate?: (value: unknown) =>
 }
 
 function workspaceStorage(dir: string) {
-  const head = (dir.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
-  const sum = checksum(dir) ?? "0"
+  const key = workspaceKey(dir)
+  const head = (key.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
+  const sum = checksum(key) ?? "0"
   return `opencode.workspace.${head}.${sum}.dat`
 }
 

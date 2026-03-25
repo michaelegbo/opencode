@@ -7,6 +7,7 @@ import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
 import { modelEnabled, modelProbe } from "@/testing/model-selection"
 import { Persist, persisted } from "@/utils/persist"
+import { workspaceKey } from "@/utils/workspace"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
@@ -26,7 +27,7 @@ type Saved = {
 const WORKSPACE_KEY = "__workspace__"
 const handoff = new Map<string, State>()
 
-const handoffKey = (dir: string, id: string) => `${dir}\n${id}`
+const handoffKey = (dir: string, id: string) => `${workspaceKey(dir)}\n${id}`
 
 const migrate = (value: unknown) => {
   if (!value || typeof value !== "object") return { session: {} }
@@ -364,7 +365,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const next = clone(snapshot())
           if (!next) return
 
-          if (dir === sdk.directory) {
+          if (workspaceKey(dir) === workspaceKey(sdk.directory)) {
             setSaved("session", session, next)
             setStore("draft", undefined)
             return
