@@ -26,6 +26,26 @@ const root = dir
 const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN
 if (!token) throw new Error("GH_TOKEN or GITHUB_TOKEN is required")
 
+type Asset = {
+  name: string
+  url: string
+}
+
+type Release = {
+  assets?: Asset[]
+}
+
+const rel = await fetch(`https://api.github.com/repos/${repo}/releases/tags/v${version}`, {
+  headers: {
+    Authorization: `token ${token}`,
+    Accept: "application/vnd.github+json",
+  },
+})
+if (!rel.ok) throw new Error(`Failed to fetch release: ${rel.status} ${rel.statusText}`)
+
+const assets = ((await rel.json()) as Release).assets ?? []
+const amap = new Map(assets.map((item) => [item.name, item]))
+
 type Item = {
   url: string
 }
@@ -93,12 +113,18 @@ function lkey(arch: string, raw: string | undefined) {
 }
 
 async function sign(url: string, key: string) {
-  const res = await fetch(url, {
-    headers: { Authorization: `token ${token}` },
-  })
-  if (!res.ok) throw new Error(`Failed to fetch file: ${res.status} ${res.statusText}`)
-
   const name = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? key)
+  const asset = amap.get(name)
+  const res = await fetch(asset?.url ?? url, {
+    headers: {
+      Authorization: `token ${token}`,
+      ...(asset ? { Accept: "application/octet-stream" } : {}),
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to fetch file ${name}: ${res.status} ${res.statusText} (${asset?.url ?? url})`)
+  }
+
   const tmp = process.env.RUNNER_TEMP ?? "/tmp"
   const file = path.join(tmp, name)
   await Bun.write(file, await res.arrayBuffer())
