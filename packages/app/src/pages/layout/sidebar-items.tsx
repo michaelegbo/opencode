@@ -4,12 +4,12 @@ import { HoverCard } from "@opencode-ai/ui/hover-card"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { MessageNav } from "@opencode-ai/ui/message-nav"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { Pendulum } from "@/components/pendulum"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
@@ -121,7 +121,10 @@ const SessionRow = (props: {
     >
       <Switch fallback={<Icon name="dash" size="small" class="text-icon-weak" />}>
         <Match when={props.isWorking()}>
-          <Spinner class="size-[15px]" />
+          <Pendulum
+            class="inline-flex w-full items-center justify-center overflow-hidden font-mono text-[9px] leading-none text-current select-none"
+            cols={3}
+          />
         </Match>
         <Match when={props.hasPermissions()}>
           <div class="size-1.5 rounded-full bg-surface-warning-strong" />

@@ -9,7 +9,6 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { SessionTurn } from "@opencode-ai/ui/session-turn"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { TextField } from "@opencode-ai/ui/text-field"
@@ -18,6 +17,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/util/binary"
 import { getFilename } from "@opencode-ai/util/path"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
+import { Pendulum } from "@/components/pendulum"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -670,7 +670,11 @@ export function MessageTimeline(props: {
                             class="transition-opacity duration-200 ease-out"
                             classList={{ "opacity-0": workingStatus() === "hiding" }}
                           >
-                            <Spinner class="size-4" style={{ color: tint() ?? "var(--icon-interactive-base)" }} />
+                            <Pendulum
+                              cols={2}
+                              class="inline-flex w-4 items-center justify-center overflow-hidden font-mono text-[9px] leading-none select-none"
+                              style={{ color: tint() ?? "var(--icon-interactive-base)" }}
+                            />
                           </div>
                         </Show>
                       </div>
