@@ -9,12 +9,12 @@ import { base64Encode } from "@opencode-ai/util/encode"
 import { getFilename } from "@opencode-ai/util/path"
 import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
-import { Pendulum } from "@/components/pendulum"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
+import { SpinnerLabHeader } from "@/pages/session/spinner-lab"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { hasProjectPermissions } from "./helpers"
@@ -115,29 +115,36 @@ const SessionRow = (props: {
       props.clearHoverProjectSoon()
     }}
   >
-    <div
-      class="shrink-0 size-6 flex items-center justify-center"
-      style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
+    <Show
+      when={props.isWorking()}
+      fallback={
+        <>
+          <div
+            class="shrink-0 size-6 flex items-center justify-center"
+            style={{ color: props.tint() ?? "var(--icon-interactive-base)" }}
+          >
+            <Switch fallback={<Icon name="dash" size="small" class="text-icon-weak" />}>
+              <Match when={props.hasPermissions()}>
+                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+              </Match>
+              <Match when={props.hasError()}>
+                <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
+              </Match>
+              <Match when={props.unseenCount() > 0}>
+                <div class="size-1.5 rounded-full bg-text-interactive-base" />
+              </Match>
+            </Switch>
+          </div>
+          <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{props.session.title}</span>
+        </>
+      }
     >
-      <Switch fallback={<Icon name="dash" size="small" class="text-icon-weak" />}>
-        <Match when={props.isWorking()}>
-          <Pendulum
-            class="inline-flex w-full items-center justify-center overflow-hidden font-mono text-[9px] leading-none text-current select-none"
-            cols={3}
-          />
-        </Match>
-        <Match when={props.hasPermissions()}>
-          <div class="size-1.5 rounded-full bg-surface-warning-strong" />
-        </Match>
-        <Match when={props.hasError()}>
-          <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
-        </Match>
-        <Match when={props.unseenCount() > 0}>
-          <div class="size-1.5 rounded-full bg-text-interactive-base" />
-        </Match>
-      </Switch>
-    </div>
-    <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{props.session.title}</span>
+      <SpinnerLabHeader
+        title={props.session.title}
+        tint={props.tint() ?? "var(--icon-interactive-base)"}
+        class="min-w-0 flex-1"
+      />
+    </Show>
   </A>
 )
 

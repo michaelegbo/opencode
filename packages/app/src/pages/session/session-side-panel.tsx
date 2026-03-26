@@ -2,6 +2,7 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCle
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -28,6 +29,7 @@ import { FileTabContent } from "@/pages/session/file-tabs"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { selectSpinnerLab, useSpinnerLab } from "@/pages/session/spinner-lab"
 
 const fixedTabs = ["spinners"]
 const defs = [
@@ -210,6 +212,108 @@ const defs = [
     cols: 6,
     speed: 1.8,
   },
+  {
+    id: "pendulum-overlay",
+    name: "Pendulum Overlay",
+    note: "Wave pass rides directly on top of the title text",
+    kind: "pendulum" as const,
+    color: "#FFE865",
+    overlay: true,
+    cols: 6,
+    speed: 1.9,
+  },
+  {
+    id: "compress-overlay",
+    name: "Compress Overlay",
+    note: "Compression shimmer glides over the title without replacing it",
+    kind: "compress" as const,
+    color: "#FFE865",
+    overlay: true,
+    cols: 6,
+    speed: 2,
+  },
+  {
+    id: "sort-overlay",
+    name: "Sort Overlay",
+    note: "Settling sort shimmer passes over the title text",
+    kind: "sort" as const,
+    color: "#FFE865",
+    overlay: true,
+    cols: 6,
+    speed: 1.8,
+  },
+  {
+    id: "pendulum-glow-overlay",
+    name: "Pendulum Glow Overlay",
+    note: "Softer pendulum pass layered directly over the title",
+    kind: "pendulum" as const,
+    color: "#FFE865",
+    overlay: true,
+    cols: 6,
+    speed: 1.4,
+  },
+  {
+    id: "sort-spark-overlay",
+    name: "Sort Spark Overlay",
+    note: "Brighter noisy pass that floats over the title text",
+    kind: "sort" as const,
+    color: "#FFE865",
+    overlay: true,
+    cols: 6,
+    speed: 2.4,
+  },
+  {
+    id: "pendulum-frame",
+    name: "Pendulum Frame",
+    note: "A pendulum spinner sits before the title and fills the rest of the row after it",
+    kind: "pendulum" as const,
+    color: "#FFE865",
+    frame: true,
+    cols: 6,
+    speed: 1.8,
+  },
+  {
+    id: "compress-frame",
+    name: "Compress Frame",
+    note: "A compression spinner brackets the title with a long animated tail",
+    kind: "compress" as const,
+    color: "#FFE865",
+    frame: true,
+    cols: 6,
+    speed: 1.9,
+  },
+  {
+    id: "compress-tail",
+    name: "Compress Tail",
+    note: "A continuous compress spinner starts after the title and fills the rest of the row",
+    kind: "compress" as const,
+    color: "#FFE865",
+    trail: true,
+    cols: 6,
+    speed: 1.9,
+  },
+  {
+    id: "sort-frame",
+    name: "Sort Frame",
+    note: "A noisy sort spinner wraps the title with a giant animated frame",
+    kind: "sort" as const,
+    color: "#FFE865",
+    frame: true,
+    cols: 6,
+    speed: 1.8,
+  },
+  {
+    id: "square-wave",
+    name: "Square Wave",
+    note: "A 4-row field of tiny squares shimmers behind the entire title row",
+    color: "#FFE865",
+    square: true,
+    speed: 1.8,
+    size: 2,
+    gap: 1,
+    low: 0.08,
+    high: 0.72,
+  },
 ] as const
 
 type Def = (typeof defs)[number]
@@ -218,6 +322,25 @@ type DefId = Def["id"]
 const defsById = new Map(defs.map((row) => [row.id, row]))
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const adjustable = (row: Def) => "kind" in row || "square" in row
+const moving = (row: Def) => "shimmer" in row || "replace" in row || "overlay" in row || "square" in row
+const trailFrames = (cols: number) => {
+  let s = 17
+  const rnd = () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff
+    return (s >>> 0) / 0xffffffff
+  }
+  return Array.from({ length: 120 }, () =>
+    Array.from({ length: cols }, () => {
+      let mask = 0
+      for (let bit = 0; bit < 8; bit++) {
+        if (rnd() > 0.45) mask |= 1 << bit
+      }
+      if (!mask) mask = 1 << Math.floor(rnd() * 8)
+      return String.fromCharCode(0x2800 + mask)
+    }).join(""),
+  )
+}
 
 const SpinnerTitle = (props: {
   title: string
@@ -225,7 +348,8 @@ const SpinnerTitle = (props: {
   color: string
   fx?: string
   cols: number
-  rate: number
+  anim: number
+  move: number
 }) => {
   const [x, setX] = createSignal(-18)
 
@@ -233,7 +357,7 @@ const SpinnerTitle = (props: {
     if (typeof window === "undefined") return
     setX(-18)
     const id = window.setInterval(() => {
-      setX((x) => (x > 112 ? -18 : x + Math.max(0.5, props.rate)))
+      setX((x) => (x > 112 ? -18 : x + Math.max(0.5, props.move)))
     }, 32)
     onCleanup(() => window.clearInterval(id))
   })
@@ -246,7 +370,7 @@ const SpinnerTitle = (props: {
           <Braille
             kind={props.kind}
             cols={props.cols}
-            rate={props.rate}
+            rate={props.anim}
             class={`inline-flex items-center justify-center overflow-hidden font-mono text-[12px] leading-none font-semibold opacity-80 drop-shadow-[0_0_10px_currentColor] select-none ${props.fx ?? ""}`}
             style={{ color: props.color }}
           />
@@ -256,7 +380,14 @@ const SpinnerTitle = (props: {
   )
 }
 
-const ReplaceTitle = (props: { title: string; kind: BrailleKind; color: string; cols: number; rate: number }) => {
+const ReplaceTitle = (props: {
+  title: string
+  kind: BrailleKind
+  color: string
+  cols: number
+  anim: number
+  move: number
+}) => {
   const chars = createMemo(() => Array.from(props.title))
   const frames = createMemo(() => getBrailleFrames(props.kind, props.cols).map((frame) => Array.from(frame)))
   const [state, setState] = createStore({ pos: 0, idx: 0 })
@@ -268,13 +399,13 @@ const ReplaceTitle = (props: { title: string; kind: BrailleKind; color: string; 
       () => {
         setState("idx", (idx) => (idx + 1) % frames().length)
       },
-      Math.max(16, Math.round(42 / Math.max(0.4, props.rate))),
+      Math.max(16, Math.round(42 / Math.max(0.4, props.anim))),
     )
     const slide = window.setInterval(
       () => {
         setState("pos", (pos) => (pos >= chars().length - 1 ? 0 : pos + 1))
       },
-      Math.max(90, Math.round(260 / Math.max(0.4, props.rate))),
+      Math.max(90, Math.round(260 / Math.max(0.4, props.move))),
     )
     onCleanup(() => {
       window.clearInterval(anim)
@@ -302,11 +433,240 @@ const ReplaceTitle = (props: { title: string; kind: BrailleKind; color: string; 
   )
 }
 
-const SpinnerConcept = (props: { row: Def; order: JSX.Element; controls: JSX.Element; children: JSX.Element }) => {
+const OverlayTitle = (props: {
+  title: string
+  kind: BrailleKind
+  color: string
+  cols: number
+  anim: number
+  move: number
+}) => {
+  let root: HTMLDivElement | undefined
+  let fx: HTMLDivElement | undefined
+  const [state, setState] = createStore({ pos: 0, max: 0, dark: false })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    setState({ pos: 0 })
+    const id = window.setInterval(
+      () => setState("pos", (pos) => (pos >= state.max ? 0 : Math.min(state.max, pos + 8))),
+      Math.max(90, Math.round(260 / Math.max(0.4, props.move))),
+    )
+    onCleanup(() => window.clearInterval(id))
+  })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    if (!root || !fx) return
+    const sync = () => setState("max", Math.max(0, root!.clientWidth - fx!.clientWidth))
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(root)
+    observer.observe(fx)
+    onCleanup(() => observer.disconnect())
+  })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    const query = window.matchMedia("(prefers-color-scheme: dark)")
+    const sync = () => setState("dark", query.matches)
+    sync()
+    query.addEventListener("change", sync)
+    onCleanup(() => query.removeEventListener("change", sync))
+  })
+
   return (
-    <div class="rounded-lg border border-border-weaker-base bg-background-stronger px-3 py-3">
+    <div ref={root} class="relative min-w-0 flex-1 overflow-hidden py-0.5">
+      <div class="truncate whitespace-nowrap text-14-medium text-text-strong">{props.title}</div>
+      <div class="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div ref={fx} class="absolute top-1/2 -translate-y-1/2" style={{ left: `${state.pos}px` }}>
+          <Braille
+            kind={props.kind}
+            cols={props.cols}
+            rate={props.anim}
+            class="inline-flex items-center justify-center overflow-hidden rounded-sm px-0.5 py-2 font-mono text-[12px] leading-none font-semibold select-none"
+            style={{ color: props.color, "background-color": state.dark ? "#151515" : "#FCFCFC" }}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const FrameTitle = (props: { title: string; kind: BrailleKind; color: string; cols: number; anim: number }) => {
+  const head = createMemo(() => getBrailleFrames(props.kind, props.cols))
+  const tail = createMemo(() => getBrailleFrames(props.kind, 64))
+  const [state, setState] = createStore({ idx: 0 })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    setState({ idx: 0 })
+    const id = window.setInterval(
+      () => {
+        setState("idx", (idx) => (idx + 1) % head().length)
+      },
+      Math.max(16, Math.round(42 / Math.max(0.4, props.anim))),
+    )
+    onCleanup(() => window.clearInterval(id))
+  })
+
+  const left = createMemo(() => head()[state.idx] ?? "")
+  const right = createMemo(() => tail()[state.idx] ?? "")
+
+  return (
+    <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden py-0.5">
+      <div class="shrink-0 font-mono text-[12px] font-semibold leading-none" style={{ color: props.color }}>
+        {left()}
+      </div>
+      <div class="shrink-0 truncate text-14-medium text-text-strong">{props.title}</div>
+      <div
+        class="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono text-[12px] font-semibold leading-none"
+        style={{ color: props.color }}
+      >
+        {right()}
+      </div>
+    </div>
+  )
+}
+
+const TrailTitle = (props: { title: string; kind: BrailleKind; color: string; cols: number; anim: number }) => {
+  const tail = createMemo(() => trailFrames(Math.max(24, props.cols * 12)))
+  const [state, setState] = createStore({ idx: 0 })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    setState({ idx: 0 })
+    const id = window.setInterval(
+      () => {
+        setState("idx", (idx) => (idx + 1) % tail().length)
+      },
+      Math.max(16, Math.round(42 / Math.max(0.4, props.anim))),
+    )
+    onCleanup(() => window.clearInterval(id))
+  })
+
+  return (
+    <div class="flex w-full min-w-0 flex-1 items-center gap-2 overflow-hidden py-0.5">
+      <div class="min-w-0 max-w-[55%] flex-[0_1_auto] truncate text-14-medium text-text-strong">{props.title}</div>
+      <div
+        class="min-w-[10ch] basis-0 flex-[1_1_0%] overflow-hidden whitespace-nowrap font-mono text-[12px] font-semibold leading-none"
+        style={{ color: props.color }}
+      >
+        {tail()[state.idx] ?? ""}
+      </div>
+    </div>
+  )
+}
+
+const SquareWaveTitle = (props: {
+  title: string
+  color: string
+  anim: number
+  move: number
+  size: number
+  gap: number
+  low: number
+  high: number
+}) => {
+  const cols = createMemo(() => Math.max(96, Math.ceil(Array.from(props.title).length * 4.5)))
+  const cells = createMemo(() =>
+    Array.from({ length: cols() * 4 }, (_, idx) => ({
+      row: Math.floor(idx / cols()),
+      col: idx % cols(),
+    })),
+  )
+  const [state, setState] = createStore({ pos: 0, phase: 0 })
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    setState({ pos: 0, phase: 0 })
+    const anim = window.setInterval(
+      () => {
+        setState("phase", (phase) => phase + 0.45)
+      },
+      Math.max(16, Math.round(44 / Math.max(0.4, props.anim))),
+    )
+    const slide = window.setInterval(
+      () => {
+        setState("pos", (pos) => (pos >= cols() + 10 ? 0 : pos + 1))
+      },
+      Math.max(40, Math.round(160 / Math.max(0.4, props.move))),
+    )
+    onCleanup(() => {
+      window.clearInterval(anim)
+      window.clearInterval(slide)
+    })
+  })
+
+  return (
+    <div class="relative min-w-0 flex-1 overflow-hidden py-2">
+      <div
+        class="pointer-events-none absolute inset-0 grid content-center overflow-hidden"
+        aria-hidden="true"
+        style={{
+          "grid-template-columns": `repeat(${cols()}, ${props.size}px)`,
+          "grid-auto-rows": `${props.size}px`,
+          gap: `${props.gap}px`,
+        }}
+      >
+        <For each={cells()}>
+          {(cell) => {
+            const opacity = () => {
+              const wave = (Math.cos((cell.col - state.pos) * 0.32 - state.phase + cell.row * 0.55) + 1) / 2
+              return props.low + (props.high - props.low) * wave * wave
+            }
+
+            return (
+              <div
+                style={{
+                  width: `${props.size}px`,
+                  height: `${props.size}px`,
+                  "background-color": props.color,
+                  opacity: `${opacity()}`,
+                }}
+              />
+            )
+          }}
+        </For>
+      </div>
+      <div class="relative z-10 truncate px-2 text-14-medium text-text-strong">
+        <span class="bg-background-stronger">{props.title}</span>
+      </div>
+    </div>
+  )
+}
+
+const SpinnerConcept = (props: {
+  row: Def
+  order: JSX.Element
+  controls: JSX.Element
+  children: JSX.Element
+  active: boolean
+  color: string
+  onSelect: () => void
+}) => {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={props.onSelect}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        props.onSelect()
+      }}
+      class="w-full rounded-lg border border-border-weaker-base bg-background-stronger px-3 py-3 text-left transition-colors"
+      classList={{
+        "border-border-strong-base": props.active,
+      }}
+    >
       <div class="flex min-w-0 items-center gap-3 px-3 py-2">
         <div class="flex min-w-0 flex-1 items-center gap-3">{props.children}</div>
+        <Show when={props.active}>
+          <div class="shrink-0">
+            <Icon name="check" size="small" style={{ color: props.color }} />
+          </div>
+        </Show>
         <div class="shrink-0">{props.order}</div>
         <div class="ml-auto shrink-0">{props.controls}</div>
       </div>
@@ -327,6 +687,7 @@ export function SessionSidePanel(props: {
   const language = useLanguage()
   const command = useCommand()
   const dialog = useDialog()
+  const spinnerLab = useSpinnerLab()
   const { params, sessionKey, tabs, view } = useSessionLayout()
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -360,16 +721,6 @@ export function SessionSidePanel(props: {
     return "session.review.noChanges"
   })
   const title = createMemo(() => info()?.title?.trim() || language.t("command.session.new"))
-  const [tune, setTune] = createStore(
-    defs.reduce<Record<string, { cols: number; speed: number; color: string }>>((acc, row) => {
-      acc[row.id] = {
-        cols: "kind" in row ? row.cols : 3,
-        speed: "kind" in row ? row.speed : 1,
-        color: row.color,
-      }
-      return acc
-    }, {}),
-  )
   const [spinner, setSpinner] = createStore({
     order: defs.map((row) => row.id) as DefId[],
   })
@@ -475,7 +826,11 @@ export function SessionSidePanel(props: {
           icon="arrow-up"
           variant="ghost"
           class="h-6 w-6"
-          onClick={() => shift(row.id, -1)}
+          onPointerDown={(event: PointerEvent) => event.stopPropagation()}
+          onClick={(event: MouseEvent) => {
+            event.stopPropagation()
+            shift(row.id, -1)
+          }}
           disabled={idx === 0}
           aria-label={`Move ${row.name} up`}
         />
@@ -483,7 +838,11 @@ export function SessionSidePanel(props: {
           icon="arrow-down-to-line"
           variant="ghost"
           class="h-6 w-6"
-          onClick={() => shift(row.id, 1)}
+          onPointerDown={(event: PointerEvent) => event.stopPropagation()}
+          onClick={(event: MouseEvent) => {
+            event.stopPropagation()
+            shift(row.id, 1)
+          }}
           disabled={idx === spinner.order.length - 1}
           aria-label={`Move ${row.name} down`}
         />
@@ -504,56 +863,138 @@ export function SessionSidePanel(props: {
           <DropdownMenu.Content class="w-52 p-2">
             <div class="flex flex-col gap-2">
               {"kind" in row && (
-                <div class="flex items-center gap-2 rounded-md border border-border-weaker-base px-2 py-1">
-                  <div class="text-11-regular text-text-weaker">Chars</div>
-                  <button
-                    type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-text-weak hover:bg-surface-panel"
-                    onClick={() => setTune(row.id, "cols", (value) => clamp(value - 1, 2, 12))}
-                    aria-label={`Decrease ${row.name} characters`}
-                  >
-                    -
-                  </button>
-                  <div class="w-7 text-center text-11-regular text-text-strong">{tune[row.id].cols}</div>
-                  <button
-                    type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-text-weak hover:bg-surface-panel"
-                    onClick={() => setTune(row.id, "cols", (value) => clamp(value + 1, 2, 12))}
-                    aria-label={`Increase ${row.name} characters`}
-                  >
-                    +
-                  </button>
-                </div>
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Chars</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].cols}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="2"
+                    max="12"
+                    step="1"
+                    value={spinnerLab.tune[row.id].cols}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "cols", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} characters`}
+                  />
+                </label>
               )}
-              {"kind" in row && (
-                <div class="flex items-center gap-2 rounded-md border border-border-weaker-base px-2 py-1">
-                  <div class="text-11-regular text-text-weaker">Speed</div>
-                  <button
-                    type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-text-weak hover:bg-surface-panel"
-                    onClick={() => setTune(row.id, "speed", (value) => clamp(Number((value - 0.2).toFixed(1)), 0.4, 4))}
-                    aria-label={`Decrease ${row.name} speed`}
-                  >
-                    -
-                  </button>
-                  <div class="w-9 text-center text-11-regular text-text-strong">{tune[row.id].speed.toFixed(1)}</div>
-                  <button
-                    type="button"
-                    class="flex h-5 w-5 items-center justify-center rounded text-text-weak hover:bg-surface-panel"
-                    onClick={() => setTune(row.id, "speed", (value) => clamp(Number((value + 0.2).toFixed(1)), 0.4, 4))}
-                    aria-label={`Increase ${row.name} speed`}
-                  >
-                    +
-                  </button>
-                </div>
+              {adjustable(row) && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Animate</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].anim.toFixed(1)}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.4"
+                    max="12"
+                    step="0.1"
+                    value={spinnerLab.tune[row.id].anim}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "anim", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} animation speed`}
+                  />
+                </label>
+              )}
+              {adjustable(row) && moving(row) && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Move</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].move.toFixed(1)}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.4"
+                    max="12"
+                    step="0.1"
+                    value={spinnerLab.tune[row.id].move}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "move", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} movement speed`}
+                  />
+                </label>
+              )}
+              {"square" in row && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Square</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].size}px</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="6"
+                    step="1"
+                    value={spinnerLab.tune[row.id].size}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "size", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} square size`}
+                  />
+                </label>
+              )}
+              {"square" in row && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Gap</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].gap}px</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="4"
+                    step="1"
+                    value={spinnerLab.tune[row.id].gap}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "gap", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} square gap`}
+                  />
+                </label>
+              )}
+              {"square" in row && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Base</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].low.toFixed(2)}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.6"
+                    step="0.01"
+                    value={spinnerLab.tune[row.id].low}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "low", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} base opacity`}
+                  />
+                </label>
+              )}
+              {"square" in row && (
+                <label class="flex flex-col gap-1 rounded-md border border-border-weaker-base px-2 py-1.5">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="text-11-regular text-text-weaker">Peak</div>
+                    <div class="text-11-regular text-text-strong">{spinnerLab.tune[row.id].high.toFixed(2)}</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.2"
+                    max="1"
+                    step="0.01"
+                    value={spinnerLab.tune[row.id].high}
+                    class="w-full"
+                    onInput={(event) => spinnerLab.setTune(row.id, "high", Number(event.currentTarget.value))}
+                    aria-label={`${row.name} peak opacity`}
+                  />
+                </label>
               )}
               <label class="flex items-center gap-2 rounded-md border border-border-weaker-base px-2 py-1">
                 <div class="text-11-regular text-text-weaker">Color</div>
                 <input
                   type="color"
-                  value={tune[row.id].color}
+                  value={spinnerLab.tune[row.id].color}
                   class="ml-auto h-5 w-7 cursor-pointer rounded border-none bg-transparent p-0"
-                  onInput={(event) => setTune(row.id, "color", event.currentTarget.value)}
+                  onInput={(event) => spinnerLab.setTune(row.id, "color", event.currentTarget.value)}
                   aria-label={`${row.name} color`}
                 />
               </label>
@@ -571,30 +1012,75 @@ export function SessionSidePanel(props: {
             Current session title with adjustable loading treatments.
           </div>
           <div class="mt-1 text-11-regular text-text-weaker">
-            Use the arrows beside each concept to reorder the list.
+            Click a concept to try it in the session header. Use the arrows beside each concept to reorder the list.
           </div>
         </div>
-        <div class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        <div class="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-[200px]">
           <div class="flex flex-col gap-2">
             <For each={rows()}>
               {(row, idx) => (
-                <SpinnerConcept row={row} order={order(row, idx())} controls={controls(row, idx())}>
-                  {"kind" in row ? (
+                <SpinnerConcept
+                  row={row}
+                  order={order(row, idx())}
+                  controls={controls(row, idx())}
+                  active={spinnerLab.isActive(row.id)}
+                  color={spinnerLab.tune[row.id].color}
+                  onSelect={() => selectSpinnerLab(row.id)}
+                >
+                  {"square" in row ? (
+                    <SquareWaveTitle
+                      title={preview(row.name)}
+                      color={spinnerLab.tune[row.id].color}
+                      anim={spinnerLab.tune[row.id].anim}
+                      move={spinnerLab.tune[row.id].move}
+                      size={spinnerLab.tune[row.id].size}
+                      gap={spinnerLab.tune[row.id].gap}
+                      low={Math.min(spinnerLab.tune[row.id].low, spinnerLab.tune[row.id].high - 0.05)}
+                      high={Math.max(spinnerLab.tune[row.id].high, spinnerLab.tune[row.id].low + 0.05)}
+                    />
+                  ) : "kind" in row ? (
                     "replace" in row ? (
                       <ReplaceTitle
                         title={preview(row.name)}
                         kind={row.kind}
-                        cols={tune[row.id].cols}
-                        rate={tune[row.id].speed}
-                        color={tune[row.id].color}
+                        cols={spinnerLab.tune[row.id].cols}
+                        anim={spinnerLab.tune[row.id].anim}
+                        move={spinnerLab.tune[row.id].move}
+                        color={spinnerLab.tune[row.id].color}
+                      />
+                    ) : "trail" in row ? (
+                      <TrailTitle
+                        title={preview(row.name)}
+                        kind={row.kind}
+                        cols={spinnerLab.tune[row.id].cols}
+                        anim={spinnerLab.tune[row.id].anim}
+                        color={spinnerLab.tune[row.id].color}
+                      />
+                    ) : "frame" in row ? (
+                      <FrameTitle
+                        title={preview(row.name)}
+                        kind={row.kind}
+                        cols={spinnerLab.tune[row.id].cols}
+                        anim={spinnerLab.tune[row.id].anim}
+                        color={spinnerLab.tune[row.id].color}
+                      />
+                    ) : "overlay" in row ? (
+                      <OverlayTitle
+                        title={preview(row.name)}
+                        kind={row.kind}
+                        cols={spinnerLab.tune[row.id].cols}
+                        anim={spinnerLab.tune[row.id].anim}
+                        move={spinnerLab.tune[row.id].move}
+                        color={spinnerLab.tune[row.id].color}
                       />
                     ) : "shimmer" in row ? (
                       <SpinnerTitle
                         title={preview(row.name)}
                         kind={row.kind}
-                        cols={tune[row.id].cols}
-                        rate={tune[row.id].speed}
-                        color={tune[row.id].color}
+                        cols={spinnerLab.tune[row.id].cols}
+                        anim={spinnerLab.tune[row.id].anim}
+                        move={spinnerLab.tune[row.id].move}
+                        color={spinnerLab.tune[row.id].color}
                         fx={"fx" in row ? row.fx : undefined}
                       />
                     ) : (
@@ -602,10 +1088,10 @@ export function SessionSidePanel(props: {
                         <div class="flex h-6 w-6 shrink-0 items-center justify-center">
                           <Braille
                             kind={row.kind}
-                            cols={tune[row.id].cols}
-                            rate={tune[row.id].speed}
+                            cols={spinnerLab.tune[row.id].cols}
+                            rate={spinnerLab.tune[row.id].anim}
                             class="inline-flex w-5 items-center justify-center overflow-hidden font-mono text-[11px] leading-none font-semibold select-none"
-                            style={{ color: tune[row.id].color }}
+                            style={{ color: spinnerLab.tune[row.id].color }}
                           />
                         </div>
                         <div class="min-w-0 truncate text-14-medium text-text-strong">{preview(row.name)}</div>
@@ -614,7 +1100,7 @@ export function SessionSidePanel(props: {
                   ) : (
                     <>
                       <div class="flex h-5 w-5 shrink-0 items-center justify-center">
-                        <Spinner class="size-4" style={{ color: tune[row.id].color }} />
+                        <Spinner class="size-4" style={{ color: spinnerLab.tune[row.id].color }} />
                       </div>
                       <div class="min-w-0 truncate text-14-medium text-text-strong">{preview(row.name)}</div>
                     </>

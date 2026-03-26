@@ -17,8 +17,8 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/util/binary"
 import { getFilename } from "@opencode-ai/util/path"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
-import { Pendulum } from "@/components/pendulum"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
+import { SpinnerLabHeader } from "@/pages/session/spinner-lab"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
@@ -657,37 +657,31 @@ export function MessageTimeline(props: {
                       />
                     </Show>
                     <div class="flex items-center min-w-0 grow-1">
-                      <div
-                        class="shrink-0 flex items-center justify-center overflow-hidden transition-[width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
-                        style={{
-                          width: working() ? "16px" : "0px",
-                          "margin-right": working() ? "8px" : "0px",
-                        }}
-                        aria-hidden="true"
-                      >
-                        <Show when={workingStatus() !== "hidden"}>
-                          <div
-                            class="transition-opacity duration-200 ease-out"
-                            classList={{ "opacity-0": workingStatus() === "hiding" }}
-                          >
-                            <Pendulum
-                              cols={2}
-                              class="inline-flex w-4 items-center justify-center overflow-hidden font-mono text-[9px] leading-none select-none"
-                              style={{ color: tint() ?? "var(--icon-interactive-base)" }}
-                            />
-                          </div>
-                        </Show>
-                      </div>
                       <Show when={titleValue() || title.editing}>
                         <Show
                           when={title.editing}
                           fallback={
-                            <h1
-                              class="text-14-medium text-text-strong truncate grow-1 min-w-0"
-                              onDblClick={openTitleEditor}
+                            <Show
+                              when={workingStatus() !== "hidden"}
+                              fallback={
+                                <h1
+                                  class="text-14-medium text-text-strong truncate grow-1 min-w-0"
+                                  onDblClick={openTitleEditor}
+                                >
+                                  {titleValue()}
+                                </h1>
+                              }
                             >
-                              {titleValue()}
-                            </h1>
+                              <div
+                                class="min-w-0 grow-1 transition-opacity duration-200 ease-out"
+                                classList={{ "opacity-0": workingStatus() === "hiding" }}
+                              >
+                                <SpinnerLabHeader
+                                  title={titleValue() ?? ""}
+                                  tint={tint() ?? "var(--icon-interactive-base)"}
+                                />
+                              </div>
+                            </Show>
                           }
                         >
                           <InlineInput
