@@ -27,7 +27,7 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
         },
       }),
       async (c) => {
-        return c.json(Pty.list())
+        return c.json(await Pty.list())
       },
     )
     .post(
@@ -74,7 +74,7 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
       }),
       validator("param", z.object({ ptyID: PtyID.zod })),
       async (c) => {
-        const info = Pty.get(c.req.valid("param").ptyID)
+        const info = await Pty.get(c.req.valid("param").ptyID)
         if (!info) {
           throw new NotFoundError({ message: "Session not found" })
         }
@@ -149,7 +149,7 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
         },
       }),
       validator("param", z.object({ ptyID: PtyID.zod })),
-      upgradeWebSocket((c) => {
+      upgradeWebSocket(async (c) => {
         const id = PtyID.zod.parse(c.req.param("ptyID"))
         const cursor = (() => {
           const value = c.req.query("cursor")
@@ -158,8 +158,8 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
           if (!Number.isSafeInteger(parsed) || parsed < -1) return
           return parsed
         })()
-        let handler: ReturnType<typeof Pty.connect>
-        if (!Pty.get(id)) throw new Error("Session not found")
+        let handler: Awaited<ReturnType<typeof Pty.connect>>
+        if (!(await Pty.get(id))) throw new Error("Session not found")
 
         type Socket = {
           readyState: number
@@ -175,17 +175,27 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket) {
           return typeof (value as { readyState?: unknown }).readyState === "number"
         }
 
+        const pending: string[] = []
+        let ready = false
+
         return {
-          onOpen(_event, ws) {
+          async onOpen(_event, ws) {
             const socket = ws.raw
             if (!isSocket(socket)) {
               ws.close()
               return
             }
-            handler = Pty.connect(id, socket, cursor)
+            handler = await Pty.connect(id, socket, cursor)
+            ready = true
+            for (const msg of pending) handler?.onMessage(msg)
+            pending.length = 0
           },
           onMessage(event) {
             if (typeof event.data !== "string") return
+            if (!ready) {
+              pending.push(event.data)
+              return
+            }
             handler?.onMessage(event.data)
           },
           onClose() {

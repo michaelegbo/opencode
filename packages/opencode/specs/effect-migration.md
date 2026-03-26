@@ -4,18 +4,18 @@ Practical reference for new and migrated Effect code in `packages/opencode`.
 
 ## Choose scope
 
-Use the shared runtime for process-wide services with one lifecycle for the whole app.
+Use `InstanceState` (from `src/effect/instance-state.ts`) for services that need per-directory state, per-instance cleanup, or project-bound background work. InstanceState uses a `ScopedCache` keyed by directory, so each open project gets its own copy of the state that is automatically cleaned up on disposal.
 
-Use `src/effect/instances.ts` for services that are created per directory or need `InstanceContext`, per-project state, or per-instance cleanup.
+Use `makeRuntime` (from `src/effect/run-service.ts`) to create a per-service `ManagedRuntime` that lazily initializes and shares layers via a global `memoMap`. Returns `{ runPromise, runFork, runCallback }`.
 
-- Shared runtime: config readers, stateless helpers, global clients
-- Instance-scoped: watchers, per-project caches, session state, project-bound background work
+- Global services (no per-directory state): Account, Auth, Installation, Truncate
+- Instance-scoped (per-directory state via InstanceState): File, FileTime, FileWatcher, Format, Permission, Question, Skill, Snapshot, Vcs, ProviderAuth
 
-Rule of thumb: if two open directories should not share one copy of the service, it belongs in `Instances`.
+Rule of thumb: if two open directories should not share one copy of the service, it needs `InstanceState`.
 
 ## Service shape
 
-For a fully migrated module, use the public namespace directly:
+Every service follows the same pattern — a single namespace with the service definition, layer, `runPromise`, and async facade functions:
 
 ```ts
 export namespace Foo {
@@ -28,53 +28,124 @@ export namespace Foo {
   export const layer = Layer.effect(
     Service,
     Effect.gen(function* () {
-      return Service.of({
-        get: Effect.fn("Foo.get")(function* (id) {
-          return yield* ...
-        }),
+      // For instance-scoped services:
+      const state = yield* InstanceState.make<State>(
+        Effect.fn("Foo.state")(() => Effect.succeed({ ... })),
+      )
+
+      const get = Effect.fn("Foo.get")(function* (id: FooID) {
+        const s = yield* InstanceState.get(state)
+        // ...
       })
+
+      return Service.of({ get })
     }),
   )
 
-  export const defaultLayer = layer.pipe(Layer.provide(FooRepo.defaultLayer))
+  // Optional: wire dependencies
+  export const defaultLayer = layer.pipe(Layer.provide(FooDep.layer))
+
+  // Per-service runtime (inside the namespace)
+  const { runPromise } = makeRuntime(Service, defaultLayer)
+
+  // Async facade functions
+  export async function get(id: FooID) {
+    return runPromise((svc) => svc.get(id))
+  }
 }
 ```
 
 Rules:
 
-- Keep `Interface`, `Service`, `layer`, and `defaultLayer` on the owning namespace
-- Export `defaultLayer` only when wiring dependencies is useful
-- Use the direct namespace form once the module is fully migrated
+- Keep everything in one namespace, one file — no separate `service.ts` / `index.ts` split
+- `runPromise` goes inside the namespace (not exported unless tests need it)
+- Facade functions are plain `async function` — no `fn()` wrappers
+- Use `Effect.fn("Namespace.method")` for all Effect functions (for tracing)
+- No `Layer.fresh` — InstanceState handles per-directory isolation
 
-## Temporary mixed-mode pattern
+## Schema → Zod interop
 
-Prefer a single namespace whenever possible.
-
-Use a `*Effect` namespace only when there is a real mixed-mode split, usually because a legacy boundary facade still exists or because merging everything immediately would create awkward cycles.
-
-```ts
-export namespace FooEffect {
-  export interface Interface {
-    readonly get: (id: FooID) => Effect.Effect<Foo, FooError>
-  }
-
-  export class Service extends ServiceMap.Service<Service, Interface>()("@opencode/Foo") {}
-
-  export const layer = Layer.effect(...)
-}
-```
-
-Then keep the old boundary thin:
+When a service uses Effect Schema internally but needs Zod schemas for the HTTP layer, derive Zod from Schema using the `zod()` helper from `@/util/effect-zod`:
 
 ```ts
-export namespace Foo {
-  export function get(id: FooID) {
-    return runtime.runPromise(FooEffect.Service.use((svc) => svc.get(id)))
-  }
-}
+import { zod } from "@/util/effect-zod"
+
+export const ZodInfo = zod(Info) // derives z.ZodType from Schema.Union
 ```
 
-Remove the `Effect` suffix when the boundary split is gone.
+See `Auth.ZodInfo` for the canonical example.
+
+## InstanceState init patterns
+
+The `InstanceState.make` init callback receives a `Scope`, so you can use `Effect.acquireRelease`, `Effect.addFinalizer`, and `Effect.forkScoped` inside it. Resources acquired this way are automatically cleaned up when the instance is disposed or invalidated by `ScopedCache`. This makes it the right place for:
+
+- **Subscriptions**: Yield `Bus.Service` at the layer level, then use `Stream` + `forkScoped` inside the init closure. The fiber is automatically interrupted when the instance scope closes:
+
+```ts
+const bus = yield * Bus.Service
+
+const cache =
+  yield *
+  InstanceState.make<State>(
+    Effect.fn("Foo.state")(function* (ctx) {
+      // ... load state ...
+
+      yield* bus.subscribeAll().pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            /* handle */
+          }),
+        ),
+        Effect.forkScoped,
+      )
+
+      return {
+        /* state */
+      }
+    }),
+  )
+```
+
+- **Resource cleanup**: Use `Effect.acquireRelease` or `Effect.addFinalizer` for resources that need teardown (native watchers, process handles, etc.):
+
+```ts
+yield *
+  Effect.acquireRelease(
+    Effect.sync(() => nativeAddon.watch(dir)),
+    (watcher) => Effect.sync(() => watcher.close()),
+  )
+```
+
+- **Background fibers**: Use `Effect.forkScoped` — the fiber is interrupted on disposal.
+- **Side effects at init**: Config notification, event wiring, etc. all belong in the init closure. Callers just do `InstanceState.get(cache)` to trigger everything, and `ScopedCache` deduplicates automatically.
+
+The key insight: don't split init into a separate method with a `started` flag. Put everything in the `InstanceState.make` closure and let `ScopedCache` handle the run-once semantics.
+
+## Effect.cached for deduplication
+
+Use `Effect.cached` when multiple concurrent callers should share a single in-flight computation. It memoizes the result and deduplicates concurrent fibers — second caller joins the first caller's fiber instead of starting a new one.
+
+```ts
+// Inside the layer — yield* to initialize the memo
+let cached = yield * Effect.cached(loadExpensive())
+
+const get = Effect.fn("Foo.get")(function* () {
+  return yield* cached // concurrent callers share the same fiber
+})
+
+// To invalidate: swap in a fresh memo
+const invalidate = Effect.fn("Foo.invalidate")(function* () {
+  cached = yield* Effect.cached(loadExpensive())
+})
+```
+
+Prefer `Effect.cached` over these patterns:
+
+- Storing a `Fiber.Fiber | undefined` with manual check-and-fork (e.g. `file/index.ts` `ensure`)
+- Storing a `Promise<void>` task for deduplication (e.g. `skill/index.ts` `ensure`)
+- `let cached: X | undefined` with check-and-load (races when two callers see `undefined` before either resolves)
+
+`Effect.cached` handles the run-once + concurrent-join semantics automatically. For invalidatable caches, reassign with `yield* Effect.cached(...)` — the old memo is discarded.
 
 ## Scheduled Tasks
 
@@ -107,38 +178,39 @@ That is fine for leaf files like `schema.ts`. Keep the service surface in the ow
 
 ## Migration checklist
 
-Done now:
+Fully migrated (single namespace, InstanceState where needed, flattened facade):
 
-- [x] `AccountEffect` (mixed-mode)
-- [x] `AuthEffect` (mixed-mode)
-- [x] `TruncateEffect` (mixed-mode)
-- [x] `Question`
-- [x] `PermissionNext`
-- [x] `ProviderAuth`
-- [x] `FileWatcher`
-- [x] `FileTime`
-- [x] `Format`
-- [x] `Vcs`
-- [x] `Skill`
-- [x] `Discovery`
-- [x] `File`
-- [x] `Snapshot`
+- [x] `Account` — `account/index.ts`
+- [x] `Auth` — `auth/index.ts` (uses `zod()` helper for Schema→Zod interop)
+- [x] `File` — `file/index.ts`
+- [x] `FileTime` — `file/time.ts`
+- [x] `FileWatcher` — `file/watcher.ts`
+- [x] `Format` — `format/index.ts`
+- [x] `Installation` — `installation/index.ts`
+- [x] `Permission` — `permission/index.ts`
+- [x] `ProviderAuth` — `provider/auth.ts`
+- [x] `Question` — `question/index.ts`
+- [x] `Skill` — `skill/index.ts`
+- [x] `Snapshot` — `snapshot/index.ts`
+- [x] `Truncate` — `tool/truncate.ts`
+- [x] `Vcs` — `project/vcs.ts`
+- [x] `Discovery` — `skill/discovery.ts`
+- [x] `SessionStatus`
 
 Still open and likely worth migrating:
 
-- [ ] `Plugin`
-- [ ] `ToolRegistry`
+- [x] `Plugin`
+- [x] `ToolRegistry`
 - [ ] `Pty`
-- [ ] `Worktree`
-- [ ] `Installation`
-- [ ] `Bus`
-- [ ] `Command`
-- [ ] `Config`
+- [x] `Worktree`
+- [x] `Bus`
+- [x] `Command`
+- [x] `Config`
 - [ ] `Session`
 - [ ] `SessionProcessor`
 - [ ] `SessionPrompt`
 - [ ] `SessionCompaction`
 - [ ] `Provider`
-- [ ] `Project`
-- [ ] `LSP`
-- [ ] `MCP`
+- [x] `Project`
+- [x] `LSP`
+- [x] `MCP`
