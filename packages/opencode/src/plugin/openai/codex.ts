@@ -630,6 +630,7 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
       output.headers.originator = "opencode"
       output.headers["User-Agent"] = `opencode/${Installation.VERSION} (${os.platform()} ${os.release()}; ${os.arch()})`
 
+      // TODO: this is kinda hacky, we need to move the transport creation to a later point so it can accept more arguments rather than just relying on whatever is passed to fetch...
       // distinguish between title gen and actual chat session
       if (!input.small) {
         output.headers.session_id = input.sessionID
