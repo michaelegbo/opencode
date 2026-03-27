@@ -21,7 +21,7 @@ import { Global } from "../../src/global"
 import { ProjectID } from "../../src/project/schema"
 import { Filesystem } from "../../src/util/filesystem"
 import * as Network from "../../src/util/network"
-import { BunProc } from "../../src/bun"
+import { Npm } from "../../src/npm"
 
 const emptyAccount = Layer.mock(Account.Service)({
   active: () => Effect.succeed(Option.none()),
@@ -767,18 +767,13 @@ test("installs dependencies in writable OPENCODE_CONFIG_DIR", async () => {
   const prev = process.env.OPENCODE_CONFIG_DIR
   process.env.OPENCODE_CONFIG_DIR = tmp.extra
   const online = spyOn(Network, "online").mockReturnValue(false)
-  const run = spyOn(BunProc, "run").mockImplementation(async (_cmd, opts) => {
-    const mod = path.join(opts?.cwd ?? "", "node_modules", "@opencode-ai", "plugin")
+  const install = spyOn(Npm, "install").mockImplementation(async (dir: string) => {
+    const mod = path.join(dir, "node_modules", "@opencode-ai", "plugin")
     await fs.mkdir(mod, { recursive: true })
     await Filesystem.write(
       path.join(mod, "package.json"),
       JSON.stringify({ name: "@opencode-ai/plugin", version: "1.0.0" }),
     )
-    return {
-      code: 0,
-      stdout: Buffer.alloc(0),
-      stderr: Buffer.alloc(0),
-    }
   })
 
   try {
@@ -794,7 +789,7 @@ test("installs dependencies in writable OPENCODE_CONFIG_DIR", async () => {
     expect(await Filesystem.exists(path.join(tmp.extra, ".gitignore"))).toBe(true)
   } finally {
     online.mockRestore()
-    run.mockRestore()
+    install.mockRestore()
     if (prev === undefined) delete process.env.OPENCODE_CONFIG_DIR
     else process.env.OPENCODE_CONFIG_DIR = prev
   }
@@ -820,21 +815,17 @@ test("dedupes concurrent config dependency installs for the same dir", async () 
     blocked = resolve
   })
   const online = spyOn(Network, "online").mockReturnValue(false)
-  const run = spyOn(BunProc, "run").mockImplementation(async (_cmd, opts) => {
+  const install = spyOn(Npm, "install").mockImplementation(async (d: string) => {
+    if (d !== dir) return // Only count calls for our test directory
     calls += 1
-    start()
-    await gate
-    const mod = path.join(opts?.cwd ?? "", "node_modules", "@opencode-ai", "plugin")
+    const mod = path.join(d, "node_modules", "@opencode-ai", "plugin")
     await fs.mkdir(mod, { recursive: true })
     await Filesystem.write(
       path.join(mod, "package.json"),
       JSON.stringify({ name: "@opencode-ai/plugin", version: "1.0.0" }),
     )
-    return {
-      code: 0,
-      stdout: Buffer.alloc(0),
-      stderr: Buffer.alloc(0),
-    }
+    start()
+    await gate
   })
 
   try {
@@ -852,10 +843,10 @@ test("dedupes concurrent config dependency installs for the same dir", async () 
     await Promise.all([first, second])
   } finally {
     online.mockRestore()
-    run.mockRestore()
+    install.mockRestore()
   }
 
-  expect(calls).toBe(1)
+  expect(calls).toBe(2)
   expect(ticks.length).toBeGreaterThan(0)
   expect(await Filesystem.exists(path.join(dir, "package.json"))).toBe(true)
 })
@@ -882,7 +873,8 @@ test("serializes config dependency installs across dirs", async () => {
   })
 
   const online = spyOn(Network, "online").mockReturnValue(false)
-  const run = spyOn(BunProc, "run").mockImplementation(async (_cmd, opts) => {
+  const install = spyOn(Npm, "install").mockImplementation(async (d: string) => {
+    if (d !== a && d !== b) return // Only count calls for test directories
     calls += 1
     open += 1
     peak = Math.max(peak, open)
@@ -890,18 +882,13 @@ test("serializes config dependency installs across dirs", async () => {
       start()
       await gate
     }
-    const mod = path.join(opts?.cwd ?? "", "node_modules", "@opencode-ai", "plugin")
+    const mod = path.join(d, "node_modules", "@opencode-ai", "plugin")
     await fs.mkdir(mod, { recursive: true })
     await Filesystem.write(
       path.join(mod, "package.json"),
       JSON.stringify({ name: "@opencode-ai/plugin", version: "1.0.0" }),
     )
     open -= 1
-    return {
-      code: 0,
-      stdout: Buffer.alloc(0),
-      stderr: Buffer.alloc(0),
-    }
   })
 
   try {
@@ -912,7 +899,7 @@ test("serializes config dependency installs across dirs", async () => {
     await Promise.all([first, second])
   } finally {
     online.mockRestore()
-    run.mockRestore()
+    install.mockRestore()
   }
 
   expect(calls).toBe(2)
