@@ -109,14 +109,6 @@ function mix(a: OklchColor, b: OklchColor, t: number): OklchColor {
   }
 }
 
-function paint(base: OklchColor, tone: OklchColor, c: number, max: number): OklchColor {
-  return fitOklch({
-    l: tone.l,
-    c: Math.min(max, Math.max(tone.c, base.c * c)),
-    h: base.h,
-  })
-}
-
 export function fitOklch(oklch: OklchColor): OklchColor {
   const base = {
     l: clamp(oklch.l, 0, 1),
@@ -149,35 +141,33 @@ export function oklchToHex(oklch: OklchColor): HexColor {
 
 export function generateScale(seed: HexColor, isDark: boolean): HexColor[] {
   const base = hexToOklch(seed)
-  const tint = isDark
-    ? [0.029, 0.064, 0.11, 0.174, 0.263, 0.382, 0.542, 0.746]
-    : [0.018, 0.042, 0.082, 0.146, 0.238, 0.368, 0.542, 0.764]
-  const shade = isDark ? [0, 0.115, 0.524, 0.871] : [0, 0.124, 0.514, 0.83]
+  const stop = isDark
+    ? [
+        0.118,
+        0.138,
+        0.167,
+        0.202,
+        0.246,
+        0.304,
+        0.378,
+        0.468,
+        clamp(base.l * 0.825, 0.53, 0.705),
+        clamp(base.l * 0.89, 0.61, 0.79),
+        clamp(base.l + 0.033, 0.868, 0.943),
+        0.984,
+      ]
+    : [0.993, 0.983, 0.962, 0.936, 0.906, 0.866, 0.811, 0.74, base.l, Math.max(0, base.l - 0.036), 0.49, 0.27]
   const curve = isDark
-    ? [0.48, 0.58, 0.69, 0.82, 0.94, 1.05, 1.16, 1.23, 1.04, 0.97, 0.82, 0.6]
-    : [0.24, 0.32, 0.42, 0.56, 0.72, 0.88, 1.04, 1.14, 1, 0.94, 0.82, 0.64]
-  const mid = fitOklch({
-    l: clamp(base.l + (isDark ? 0.009 : 0), isDark ? 0.61 : 0.5, isDark ? 0.75 : 0.68),
-    c: clamp(base.c * (isDark ? 1.04 : 1), 0, isDark ? 0.29 : 0.26),
-    h: base.h,
-  })
-  const bg = fitOklch({
-    l: isDark ? clamp(0.13 + base.c * 0.065, 0.11, 0.175) : clamp(0.995 - base.c * 0.1, 0.962, 0.995),
-    c: Math.min(base.c * (isDark ? 0.38 : 0.18), isDark ? 0.07 : 0.03),
-    h: base.h,
-  })
-  const fg = fitOklch({
-    l: isDark ? 0.952 : 0.24,
-    c: Math.min(mid.c * (isDark ? 0.55 : 0.72), isDark ? 0.13 : 0.14),
-    h: base.h,
-  })
+    ? [0.52, 0.68, 0.86, 1.02, 1.14, 1.24, 1.36, 1.48, 1.56, 1.64, 1.62, 1.15]
+    : [0.12, 0.24, 0.46, 0.68, 0.84, 0.98, 1.08, 1.16, 1.22, 1.26, 1.18, 0.98]
 
-  return [
-    ...tint.map((step, i) => oklchToHex(paint(base, mix(bg, mid, step), curve[i]!, isDark ? 0.32 : 0.28))),
-    ...shade.map((step, i) =>
-      oklchToHex(paint(base, mix(mid, fg, step), curve[i + tint.length]!, isDark ? 0.32 : 0.28)),
-    ),
-  ]
+  return stop.map((l, i) =>
+    oklchToHex({
+      l,
+      c: base.c * curve[i]!,
+      h: base.h,
+    }),
+  )
 }
 
 export function generateNeutralScale(seed: HexColor, isDark: boolean): HexColor[] {

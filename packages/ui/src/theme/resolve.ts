@@ -27,14 +27,13 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   const overlay = Boolean(bgValue) && !bgHex
   const bg = bgHex ?? neutral[0]
   const alpha = generateNeutralAlphaScale(neutral, isDark)
-  const soft = isDark ? 6 : 3
-  const base = isDark ? 7 : 4
-  const fill = isDark ? 8 : 5
-  const rise = isDark ? 8 : 6
-  const prose = isDark ? 10 : 9
+  const soft = isDark ? 5 : 3
+  const tone = isDark ? 6 : 5
+  const rise = isDark ? 7 : 5
+  const prose = isDark ? 8 : 9
   const fade = (color: HexColor, value: number) =>
     overlay ? (withAlpha(color, value) as ColorValue) : blend(color, bg, value)
-  const text = (scale: HexColor[]) => shift(scale[prose], { l: isDark ? 0.014 : -0.024, c: isDark ? 1.16 : 1.14 })
+  const text = (scale: HexColor[]) => shift(scale[prose], { l: isDark ? 0.006 : -0.024, c: isDark ? 1.08 : 1.14 })
   const wash = (
     seed: HexColor,
     value: { base: number; weak: number; weaker: number; strong: number; stronger: number },
@@ -68,9 +67,10 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   )
   const brand = primary[8]
   const brandHover = primary[9]
-  const inter = interactive[base]
-  const interHover = interactive[isDark ? 7 : 5]
-  const interWeak = interactive[soft]
+  const interText = isDark ? shift(interactive[8], { l: 0.012, c: 1.08 }) : text(interactive)
+  const inter = interactive[tone]
+  const interHover = interactive[isDark ? 7 : 6]
+  const interWeak = interactive[isDark ? 3 : soft]
   const tones = {
     success,
     warning,
@@ -139,11 +139,11 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     "surface-diff-delete-stronger": diffDelete[isDark ? 10 : 8],
     "input-base": isDark ? neutral[1] : neutral[0],
     "input-hover": isDark ? neutral[2] : neutral[1],
-    "input-active": isDark ? interactive[base] : interactive[0],
-    "input-selected": isDark ? interactive[fill] : interactive[3],
-    "input-focus": isDark ? interactive[base] : interactive[0],
+    "input-active": isDark ? interactive[tone] : interactive[0],
+    "input-selected": isDark ? interactive[7] : interactive[3],
+    "input-focus": isDark ? interactive[tone] : interactive[0],
     "input-disabled": neutral[3],
-    "text-base": neutral[10],
+    "text-base": isDark ? neutral[8] : neutral[10],
     "text-weak": neutral[7],
     "text-weaker": neutral[6],
     "text-strong": neutral[11],
@@ -151,7 +151,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     "text-invert-weak": isDark ? neutral[8] : neutral[2],
     "text-invert-weaker": isDark ? neutral[7] : neutral[3],
     "text-invert-strong": isDark ? neutral[11] : neutral[0],
-    "text-interactive-base": text(interactive),
+    "text-interactive-base": interText,
     "text-on-brand-base": on(brand),
     "text-on-brand-weak": on(brand),
     "text-on-brand-weaker": on(brand),
@@ -193,40 +193,40 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     "border-interactive-disabled": neutral[7],
     "border-interactive-focus": interactive[8],
     "border-color": neutral[0],
-    "icon-base": neutral[isDark ? 9 : 8],
-    "icon-hover": neutral[10],
-    "icon-active": neutral[11],
-    "icon-selected": neutral[11],
-    "icon-disabled": neutral[isDark ? 6 : 7],
-    "icon-focus": neutral[11],
+    "icon-base": neutral[isDark ? 7 : 8],
+    "icon-hover": neutral[isDark ? 8 : 10],
+    "icon-active": neutral[isDark ? 9 : 11],
+    "icon-selected": neutral[isDark ? 10 : 11],
+    "icon-disabled": neutral[isDark ? 5 : 6],
+    "icon-focus": neutral[isDark ? 10 : 11],
     "icon-invert-base": isDark ? neutral[0] : "#ffffff",
     "icon-weak-base": neutral[isDark ? 5 : 6],
-    "icon-weak-hover": neutral[isDark ? 11 : 7],
+    "icon-weak-hover": neutral[isDark ? 10 : 7],
     "icon-weak-active": neutral[8],
     "icon-weak-selected": neutral[isDark ? 8 : 9],
     "icon-weak-disabled": neutral[isDark ? 3 : 5],
     "icon-weak-focus": neutral[8],
-    "icon-strong-base": neutral[11],
-    "icon-strong-hover": neutral[11],
-    "icon-strong-active": neutral[11],
-    "icon-strong-selected": neutral[11],
+    "icon-strong-base": neutral[isDark ? 10 : 11],
+    "icon-strong-hover": neutral[isDark ? 10 : 11],
+    "icon-strong-active": neutral[isDark ? 10 : 11],
+    "icon-strong-selected": neutral[isDark ? 10 : 11],
     "icon-strong-disabled": neutral[7],
-    "icon-strong-focus": neutral[11],
+    "icon-strong-focus": neutral[isDark ? 10 : 11],
     "icon-brand-base": on(brand),
     "icon-interactive-base": interactive[rise],
     "icon-on-brand-base": on(brand),
     "icon-on-brand-hover": on(brandHover),
     "icon-on-brand-selected": on(brandHover),
     "icon-on-interactive-base": on(inter),
-    "icon-agent-plan-base": info[8],
-    "icon-agent-docs-base": warning[8],
-    "icon-agent-ask-base": interactive[8],
-    "icon-agent-build-base": interactive[10],
+    "icon-agent-plan-base": info[rise],
+    "icon-agent-docs-base": warning[rise],
+    "icon-agent-ask-base": interactive[rise],
+    "icon-agent-build-base": interactive[isDark ? 8 : 6],
     "icon-diff-add-base": diffAdd[10],
     "icon-diff-add-hover": diffAdd[11],
     "icon-diff-add-active": diffAdd[11],
-    "icon-diff-delete-base": diffDelete[10],
-    "icon-diff-delete-hover": diffDelete[11],
+    "icon-diff-delete-base": diffDelete[isDark ? 9 : 10],
+    "icon-diff-delete-hover": diffDelete[isDark ? 10 : 11],
     "icon-diff-modified-base": warning[10],
     "syntax-comment": "var(--text-weak)",
     "syntax-regexp": text(primary),
@@ -264,10 +264,10 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   }
 
   for (const [name, scale] of Object.entries(tones)) {
-    const fillColor = scale[fill]
+    const fillColor = scale[tone]
     const weakColor = scale[soft]
     const strongColor = scale[10]
-    const iconColor = scale[rise]
+    const iconColor = name === "success" ? scale[isDark ? 8 : 6] : scale[rise]
 
     tokens[`surface-${name}-base`] = fillColor
     tokens[`surface-${name}-weak`] = weakColor
