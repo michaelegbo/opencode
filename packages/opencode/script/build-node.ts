@@ -66,6 +66,9 @@ await Bun.build({
     OPENCODE_MIGRATIONS: JSON.stringify(migrations),
     OPENCODE_CHANNEL: `'${Script.channel}'`,
   },
+  files: {
+    "opencode-web-ui.gen.ts": "",
+  },
 })
 
 console.log("Build complete")
