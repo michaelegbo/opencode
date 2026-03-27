@@ -114,6 +114,9 @@ export namespace Format {
                       cwd: Instance.directory,
                       env: item.environment,
                       extendEnv: true,
+                      stdin: "ignore",
+                      stdout: "ignore",
+                      stderr: "ignore",
                     }),
                   )
                   .pipe(
