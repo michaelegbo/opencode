@@ -557,7 +557,7 @@ export default function DictationScreen() {
           lastWaveformCommitRef.current = now
         }
 
-        // Always use the latest model ref to avoid stale closure
+        // Always use the latest model ref to avoid stale closure.
         modelRef.current.streamInsert(samples)
       },
     )
