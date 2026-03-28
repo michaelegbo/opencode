@@ -12,6 +12,14 @@
       "bundleIdentifier": "com.anomalyco.mobilevoice",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs microphone access for live speech-to-text dictation.",
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "ts.net": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
         "ITSAppUsesNonExemptEncryption": false
       }
     },

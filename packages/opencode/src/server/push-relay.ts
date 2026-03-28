@@ -1,4 +1,5 @@
 import os from "node:os"
+import { SessionID } from "@/session/schema"
 import { GlobalBus } from "@/bus/global"
 import { Log } from "@/util/log"
 
@@ -30,6 +31,13 @@ type State = {
 type Event = {
   type: string
   properties: unknown
+}
+
+type Notify = {
+  type: Type
+  sessionID: string
+  title?: string
+  body?: string
 }
 
 const log = Log.create({ service: "push-relay" })
@@ -99,6 +107,66 @@ function map(event: Event): { type: Type; sessionID: string } | undefined {
   return { type: "complete", sessionID }
 }
 
+function text(input: string) {
+  return input.replace(/\s+/g, " ").trim()
+}
+
+function words(input: string, max = 18, chars = 140) {
+  const clean = text(input)
+  if (!clean) return ""
+  const split = clean.split(" ")
+  const cut = split.slice(0, max).join(" ")
+  if (cut.length <= chars && split.length <= max) return cut
+  const short = cut.slice(0, chars).trim()
+  return short.endsWith("…") ? short : `${short}…`
+}
+
+function fallback(input: Type) {
+  if (input === "complete") return "Session complete."
+  if (input === "permission") return "OpenCode needs your permission decision."
+  return "OpenCode reported an error for your session."
+}
+
+async function notify(input: { type: Type; sessionID: string }): Promise<Notify> {
+  const out: Notify = {
+    type: input.type,
+    sessionID: input.sessionID,
+  }
+
+  try {
+    const [{ Session }, { MessageV2 }] = await Promise.all([import("@/session"), import("@/session/message-v2")])
+    const sessionID = SessionID.make(input.sessionID)
+    const session = await Session.get(sessionID)
+    out.title = session.title
+
+    for await (const msg of MessageV2.stream(sessionID)) {
+      if (msg.info.role !== "user") continue
+      const body = msg.parts
+        .map((part) => {
+          if (part.type !== "text") return ""
+          if (part.ignored) return ""
+          return part.text
+        })
+        .filter(Boolean)
+        .join(" ")
+      const next = words(body)
+      if (!next) continue
+      out.body = next
+      break
+    }
+  } catch (error) {
+    log.info("notification metadata unavailable", {
+      type: input.type,
+      sessionID: input.sessionID,
+      error: String(error),
+    })
+  }
+
+  if (!out.title) out.title = `Session ${input.type}`
+  if (!out.body) out.body = fallback(input.type)
+  return out
+}
+
 function dedupe(input: { type: Type; sessionID: string }) {
   if (input.type !== "complete") return false
   const next = state
@@ -130,10 +198,12 @@ function dedupe(input: { type: Type; sessionID: string }) {
   return now - prev < 5_000
 }
 
-function post(input: { type: Type; sessionID: string }) {
+async function post(input: { type: Type; sessionID: string }) {
   const next = state
   if (!next) return false
   if (dedupe(input)) return true
+
+  const content = await notify(input)
 
   void fetch(`${next.relayURL}/v1/event`, {
     method: "POST",
@@ -144,6 +214,8 @@ function post(input: { type: Type; sessionID: string }) {
       secret: next.relaySecret,
       eventType: input.type,
       sessionID: input.sessionID,
+      title: content.title,
+      body: content.body,
     }),
   })
     .then(async (res) => {
@@ -153,6 +225,7 @@ function post(input: { type: Type; sessionID: string }) {
         status: res.status,
         type: input.type,
         sessionID: input.sessionID,
+        title: content.title,
         error,
       })
     })
@@ -160,6 +233,7 @@ function post(input: { type: Type; sessionID: string }) {
       log.warn("relay post failed", {
         type: input.type,
         sessionID: input.sessionID,
+        title: content.title,
         error: String(error),
       })
     })
@@ -186,7 +260,7 @@ export namespace PushRelay {
     const callback = (event: { payload: Event }) => {
       const next = map(event.payload)
       if (!next) return
-      post(next)
+      void post(next)
     }
     GlobalBus.on("event", callback)
     const unsub = () => {
@@ -236,7 +310,8 @@ export namespace PushRelay {
   }
 
   export function test(input: { type: Type; sessionID: string }) {
-    return post(input)
+    void post(input)
+    return true
   }
 
   export function auth(input: string) {

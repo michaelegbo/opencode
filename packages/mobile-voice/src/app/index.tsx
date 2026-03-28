@@ -31,6 +31,7 @@ import { useSpeechToText, WHISPER_BASE_EN } from "react-native-executorch"
 import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher"
 import { AudioManager, AudioRecorder } from "react-native-audio-api"
 import * as Notifications from "expo-notifications"
+import * as FileSystem from "expo-file-system/legacy"
 import Constants from "expo-constants"
 import { fetch as expoFetch } from "expo/fetch"
 import {
@@ -59,6 +60,7 @@ const DROPDOWN_VISIBLE_ROWS = 6
 // If the press duration is shorter than this, treat it as a tap (toggle)
 const TAP_THRESHOLD_MS = 300
 const DEFAULT_RELAY_URL = "https://apn.dev.opencode.ai"
+const SERVER_STATE_FILE = `${FileSystem.documentDirectory}mobile-voice-servers.json`
 
 type ServerItem = {
   id: string
@@ -119,6 +121,20 @@ type Scan = {
   data: string
 }
 
+type SavedServer = {
+  id: string
+  name: string
+  url: string
+  relayURL: string
+  relaySecret: string
+}
+
+type SavedState = {
+  servers: SavedServer[]
+  activeServerId: string | null
+  activeSessionId: string | null
+}
+
 type Cam = {
   CameraView: (typeof import("expo-camera"))["CameraView"]
   requestCameraPermissionsAsync: (typeof import("expo-camera"))["Camera"]["requestCameraPermissionsAsync"]
@@ -161,6 +177,72 @@ function pickHost(list: string[]): string | undefined {
   return next ?? list[0]
 }
 
+function serverBases(input: string) {
+  const base = input.replace(/\/+$/, "")
+  const list = [base]
+  try {
+    const url = new URL(base)
+    const local =
+      url.hostname === "127.0.0.1" ||
+      url.hostname === "localhost" ||
+      url.hostname === "::1" ||
+      url.hostname.startsWith("10.")
+    const tailnet = url.hostname.endsWith(".ts.net")
+    const secure = `https://${url.host}`
+    const insecure = `http://${url.host}`
+    if (url.protocol === "http:" && !local) {
+      if (tailnet) {
+        list.unshift(secure)
+      } else {
+        list.push(secure)
+      }
+    } else if (url.protocol === "https:" && tailnet) {
+      list.push(insecure)
+    }
+  } catch {
+    // Keep original base only.
+  }
+  return [...new Set(list)]
+}
+
+function toSaved(servers: ServerItem[], activeServerId: string | null, activeSessionId: string | null): SavedState {
+  return {
+    servers: servers.map((item) => ({
+      id: item.id,
+      name: item.name,
+      url: item.url,
+      relayURL: item.relayURL,
+      relaySecret: item.relaySecret,
+    })),
+    activeServerId,
+    activeSessionId,
+  }
+}
+
+function fromSaved(input: SavedState): {
+  servers: ServerItem[]
+  activeServerId: string | null
+  activeSessionId: string | null
+} {
+  const servers = input.servers.map((item) => ({
+    id: item.id,
+    name: item.name,
+    url: item.url,
+    relayURL: item.relayURL,
+    relaySecret: item.relaySecret,
+    status: "checking" as const,
+    sessions: [] as SessionItem[],
+    sessionsLoading: false,
+  }))
+  const hasActive = input.activeServerId && servers.some((item) => item.id === input.activeServerId)
+  const activeServerId = hasActive ? input.activeServerId : (servers[0]?.id ?? null)
+  return {
+    servers,
+    activeServerId,
+    activeSessionId: hasActive ? input.activeSessionId : null,
+  }
+}
+
 export default function DictationScreen() {
   const [camera, setCamera] = useState<Cam | null>(null)
   const [modelReset, setModelReset] = useState(false)
@@ -183,28 +265,7 @@ export default function DictationScreen() {
   const [dropdownRenderMode, setDropdownRenderMode] = useState<Exclude<DropdownMode, "none">>("server")
   const [scanOpen, setScanOpen] = useState(false)
   const [camGranted, setCamGranted] = useState(false)
-  const [servers, setServers] = useState<ServerItem[]>([
-    {
-      id: "srv-1",
-      name: "Local OpenCode",
-      url: "http://127.0.0.1:4096",
-      relayURL: DEFAULT_RELAY_URL,
-      relaySecret: "",
-      status: "checking",
-      sessions: [],
-      sessionsLoading: false,
-    },
-    {
-      id: "srv-2",
-      name: "Staging OpenCode",
-      url: "http://127.0.0.1:4097",
-      relayURL: "http://127.0.0.1:8788",
-      relaySecret: "",
-      status: "offline",
-      sessions: [],
-      sessionsLoading: false,
-    },
-  ])
+  const [servers, setServers] = useState<ServerItem[]>([])
   const [activeServerId, setActiveServerId] = useState<string | null>(null)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [waveformLevels, setWaveformLevels] = useState<number[]>(Array.from({ length: 24 }, () => 0))
@@ -232,12 +293,46 @@ export default function DictationScreen() {
   const monitorJobRef = useRef<MonitorJob | null>(null)
   const previousPushTokenRef = useRef<string | null>(null)
   const scanLockRef = useRef(false)
+  const restoredRef = useRef(false)
+  const refreshSeqRef = useRef<Record<string, number>>({})
 
   const [recorder] = useState(() => new AudioRecorder())
 
   useEffect(() => {
     serversRef.current = servers
   }, [servers])
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const data = await FileSystem.readAsStringAsync(SERVER_STATE_FILE)
+        if (!mounted || !data) return
+        const parsed = JSON.parse(data) as SavedState
+        const next = fromSaved(parsed)
+        setServers(next.servers)
+        setActiveServerId(next.activeServerId)
+        setActiveSessionId(next.activeSessionId)
+        console.log("[Server] restore", {
+          count: next.servers.length,
+          activeServerId: next.activeServerId,
+        })
+      } catch {
+        // No saved servers yet.
+      } finally {
+        restoredRef.current = true
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!restoredRef.current) return
+    const payload = toSaved(servers, activeServerId, activeSessionId)
+    FileSystem.writeAsStringAsync(SERVER_STATE_FILE, JSON.stringify(payload)).catch(() => {})
+  }, [activeServerId, activeSessionId, servers])
 
   useEffect(() => {
     monitorJobRef.current = monitorJob
@@ -373,11 +468,22 @@ export default function DictationScreen() {
     if (!m.isReady || isRecordingRef.current || isStartingRef.current) return
 
     isStartingRef.current = true
+    const sessionId = Date.now()
+    activeSessionRef.current = sessionId
+    accumulatedRef.current = ""
+    baseTextRef.current = transcribedText
+    isRecordingRef.current = true
+    setIsRecording(true)
+    const cancelled = () => !isRecordingRef.current || activeSessionRef.current !== sessionId
 
     // If prewarm is still running, wait once here to avoid ModelGenerating race.
     if (prewarmPromiseRef.current) {
       await prewarmPromiseRef.current
       prewarmPromiseRef.current = null
+    }
+    if (cancelled()) {
+      isStartingRef.current = false
+      return
     }
 
     try {
@@ -385,18 +491,16 @@ export default function DictationScreen() {
     } catch (e) {
       console.warn("[Dictation] Failed to ensure audio route:", e)
     }
-
-    isRecordingRef.current = true
-    setIsRecording(true)
-    const sessionId = Date.now()
-    activeSessionRef.current = sessionId
-    accumulatedRef.current = ""
-    baseTextRef.current = transcribedText
+    if (cancelled()) {
+      isStartingRef.current = false
+      return
+    }
 
     recorder.onError((err) => {
       console.error("[Dictation] Recorder error:", err.message)
       if (activeSessionRef.current !== sessionId) return
       isRecordingRef.current = false
+      activeSessionRef.current = 0
       setIsRecording(false)
       recorder.clearOnAudioReady()
       recorder.clearOnError()
@@ -461,7 +565,17 @@ export default function DictationScreen() {
     if (readyResult.status === "error") {
       console.error("[Dictation] onAudioReady failed:", readyResult.message)
       isRecordingRef.current = false
+      activeSessionRef.current = 0
       setIsRecording(false)
+      recorder.clearOnAudioReady()
+      recorder.clearOnError()
+      isStartingRef.current = false
+      return
+    }
+    if (cancelled()) {
+      recorder.clearOnAudioReady()
+      recorder.clearOnError()
+      modelRef.current.streamStop()
       isStartingRef.current = false
       return
     }
@@ -494,10 +608,14 @@ export default function DictationScreen() {
       console.error("[Dictation] Recorder start failed:", startResult.message)
       modelRef.current.streamStop()
       isRecordingRef.current = false
+      activeSessionRef.current = 0
       setIsRecording(false)
+      recorder.clearOnAudioReady()
+      recorder.clearOnError()
       isStartingRef.current = false
       return
     }
+    isStartingRef.current = false
 
     try {
       await streamTask
@@ -506,8 +624,6 @@ export default function DictationScreen() {
       }
     } catch (error) {
       console.error("[Dictation] Streaming error:", error)
-    } finally {
-      isStartingRef.current = false
     }
   }, [ensureAudioRoute, recorder, transcribedText])
 
@@ -1048,30 +1164,71 @@ export default function DictationScreen() {
   const refreshServerStatusAndSessions = useCallback(async (serverID: string, includeSessions = true) => {
     const server = serversRef.current.find((s) => s.id === serverID)
     if (!server) return
+    const req = (refreshSeqRef.current[serverID] ?? 0) + 1
+    refreshSeqRef.current[serverID] = req
+    const current = () => refreshSeqRef.current[serverID] === req
 
-    const base = server.url.replace(/\/+$/, "")
+    const candidates = serverBases(server.url)
+    const base = candidates[0] ?? server.url.replace(/\/+$/, "")
+    const healthURL = `${base}/health`
+    const sessionsURL = `${base}/experimental/session?limit=100`
+    const insecureRemote =
+      base.startsWith("http://") && !base.includes("127.0.0.1") && !base.includes("localhost") && !base.includes("10.")
     console.log("[Server] refresh:start", {
       id: server.id,
       name: server.name,
       base,
+      healthURL,
+      sessionsURL,
       includeSessions,
     })
 
-    setServers((prev) =>
-      prev.map((s) => {
-        if (s.id !== serverID) return s
-        if (s.status === "checking" && s.sessionsLoading === includeSessions) return s
-        return { ...s, status: "checking", sessionsLoading: includeSessions ? true : s.sessionsLoading }
-      }),
-    )
+    setServers((prev) => prev.map((s) => (s.id === serverID && includeSessions ? { ...s, sessionsLoading: true } : s)))
 
+    let activeBase = base
     try {
-      const healthRes = await fetch(`${base}/health`)
-      const online = healthRes.ok
+      let healthRes: Response | null = null
+      let healthErr: unknown
+
+      for (const item of candidates) {
+        const url = `${item}/health`
+        try {
+          const next = await fetch(url)
+          if (next.ok) {
+            healthRes = next
+            activeBase = item
+            if (item !== server.url.replace(/\/+$/, "") && current()) {
+              setServers((prev) => prev.map((s) => (s.id === serverID ? { ...s, url: item } : s)))
+              console.log("[Server] refresh:scheme-upgrade", {
+                id: server.id,
+                from: server.url,
+                to: item,
+              })
+            }
+            break
+          }
+          healthRes = next
+          activeBase = item
+        } catch (err) {
+          healthErr = err
+          console.log("[Server] health:attempt-error", {
+            id: server.id,
+            url,
+            error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+          })
+        }
+      }
+
+      const online = !!healthRes?.ok
+      if (!current()) {
+        console.log("[Server] refresh:stale-skip", { id: server.id, req })
+        return
+      }
       console.log("[Server] health", {
         id: server.id,
-        base,
-        status: healthRes.status,
+        base: activeBase,
+        url: `${activeBase}/health`,
+        status: healthRes?.status ?? "fetch_error",
         online,
       })
 
@@ -1079,7 +1236,12 @@ export default function DictationScreen() {
         setServers((prev) =>
           prev.map((s) => (s.id === serverID ? { ...s, status: "offline", sessionsLoading: false, sessions: [] } : s)),
         )
-        console.log("[Server] refresh:offline", { id: server.id, base })
+        console.log("[Server] refresh:offline", {
+          id: server.id,
+          base,
+          candidates,
+          error: healthErr instanceof Error ? `${healthErr.name}: ${healthErr.message}` : String(healthErr),
+        })
         return
       }
 
@@ -1091,7 +1253,20 @@ export default function DictationScreen() {
         return
       }
 
-      const sessionsRes = await fetch(`${base}/experimental/session?limit=100`)
+      const resolvedSessionsURL = `${activeBase}/experimental/session?limit=100`
+      const sessionsRes = await fetch(resolvedSessionsURL)
+      if (!current()) {
+        console.log("[Server] refresh:stale-skip", { id: server.id, req })
+        return
+      }
+      if (!sessionsRes.ok) {
+        console.log("[Server] sessions:http-error", {
+          id: server.id,
+          url: resolvedSessionsURL,
+          status: sessionsRes.status,
+        })
+      }
+
       const json = sessionsRes.ok ? await sessionsRes.json() : []
       const sessions: SessionItem[] = Array.isArray(json)
         ? json
@@ -1108,14 +1283,29 @@ export default function DictationScreen() {
         prev.map((s) => (s.id === serverID ? { ...s, status: "online", sessionsLoading: false, sessions } : s)),
       )
       console.log("[Server] sessions", { id: server.id, count: sessions.length })
-    } catch {
+    } catch (err) {
+      if (!current()) {
+        console.log("[Server] refresh:stale-skip", { id: server.id, req })
+        return
+      }
       setServers((prev) =>
         prev.map((s) => (s.id === serverID ? { ...s, status: "offline", sessionsLoading: false, sessions: [] } : s)),
       )
       console.log("[Server] refresh:error", {
         id: server.id,
         base,
+        healthURL,
+        sessionsURL,
+        candidates,
+        insecureRemote,
+        error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
       })
+      if (insecureRemote) {
+        console.log("[Server] refresh:hint", {
+          id: server.id,
+          message: "Remote http:// host may be blocked by iOS ATS; prefer https:// for non-local hosts.",
+        })
+      }
     }
   }, [])
 
@@ -1212,9 +1402,9 @@ export default function DictationScreen() {
 
       const id = `srv-${Date.now()}`
       const relaySecret = relaySecretRaw.trim()
+      const url = `${parsed.protocol}//${parsed.host}`
       const inferredName =
         parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" ? "Local OpenCode" : parsed.hostname
-      const url = `${parsed.protocol}//${parsed.host}`
       const relay = `${relayParsed.protocol}//${relayParsed.host}`
       const existing = serversRef.current.find(
         (item) => item.url === url && item.relayURL === relay && item.relaySecret.trim() === relaySecret,
@@ -1434,7 +1624,11 @@ export default function DictationScreen() {
               >
                 <View style={styles.headerServerLabel}>
                   <View style={[styles.serverStatusDot, headerDotStyle]} />
-                  <Text style={styles.workspaceHeaderText} numberOfLines={1}>
+                  <Text
+                    style={[styles.workspaceHeaderText, styles.headerServerText]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     {activeServer.name}
                   </Text>
                 </View>
@@ -1446,7 +1640,11 @@ export default function DictationScreen() {
                 onPress={toggleSessionMenu}
                 style={({ pressed }) => [styles.headerSplitRight, pressed && styles.clearButtonPressed]}
               >
-                <Text style={styles.workspaceHeaderText} numberOfLines={1}>
+                <Text
+                  style={[styles.workspaceHeaderText, styles.headerSessionText]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {activeSession?.title ?? "Select session"}
                 </Text>
               </Pressable>
@@ -1497,16 +1695,20 @@ export default function DictationScreen() {
                   ))
                 )
               ) : activeServer ? (
-                activeServer.sessionsLoading ? (
-                  <Text style={styles.serverEmptyText}>Loading sessions…</Text>
-                ) : activeServer.sessions.length === 0 ? (
-                  <Text style={styles.serverEmptyText}>No sessions available</Text>
+                activeServer.sessions.length === 0 ? (
+                  activeServer.sessionsLoading ? null : (
+                    <Text style={styles.serverEmptyText}>No sessions available</Text>
+                  )
                 ) : (
-                  activeServer.sessions.map((session) => (
+                  activeServer.sessions.map((session, index) => (
                     <Pressable
                       key={session.id}
                       onPress={() => handleSelectSession(session.id)}
-                      style={({ pressed }) => [styles.serverRow, pressed && styles.serverRowPressed]}
+                      style={({ pressed }) => [
+                        styles.serverRow,
+                        index === activeServer.sessions.length - 1 && styles.serverRowLast,
+                        pressed && styles.serverRowPressed,
+                      ]}
                     >
                       <View style={[styles.serverStatusDot, styles.serverStatusActive]} />
                       <Text style={styles.serverNameText} numberOfLines={1}>
@@ -1705,6 +1907,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    width: "100%",
   },
   headerSplitRow: {
     height: 45,
@@ -1712,26 +1915,45 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerSplitLeft: {
-    maxWidth: "38%",
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
     height: "100%",
     justifyContent: "center",
+    alignItems: "flex-start",
     paddingRight: 8,
   },
   headerSplitDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: "#2B3140",
-    marginRight: 10,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#3F4556",
+    marginHorizontal: 6,
   },
   headerSplitRight: {
     flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
     height: "100%",
     justifyContent: "center",
+    alignItems: "flex-start",
+    paddingLeft: 8,
   },
   workspaceHeaderText: {
     color: "#8F8F8F",
     fontSize: 14,
     fontWeight: "600",
+  },
+  headerServerText: {
+    flex: 1,
+    minWidth: 0,
+    width: "100%",
+  },
+  headerSessionText: {
+    flexShrink: 1,
+    minWidth: 0,
+    width: "100%",
+    textAlign: "left",
   },
   serverMenuInline: {
     marginTop: 8,
@@ -1758,6 +1980,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#222733",
+  },
+  serverRowLast: {
+    borderBottomWidth: 0,
   },
   serverRowPressed: {
     opacity: 0.85,
