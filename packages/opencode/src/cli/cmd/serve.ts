@@ -76,6 +76,9 @@ export const ServeCommand = cmd({
     const relaySecret = input || randomBytes(18).toString("base64url")
     if (!input) {
       console.log("experimental push relay secret generated")
+      console.log(
+        "set --relay-secret or OPENCODE_EXPERIMENTAL_PUSH_RELAY_SECRET to keep push registrations stable across server restarts",
+      )
     }
     if (relayURL && relaySecret) {
       const host = server.hostname ?? opts.hostname

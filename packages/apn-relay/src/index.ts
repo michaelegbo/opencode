@@ -264,6 +264,7 @@ app.post("/v1/device/register", async (c) => {
     token: tail(row.device_token),
     env: row.apns_env,
     bundle: row.bundle_id,
+    secretHash: `${key.slice(0, 12)}...`,
   })
 
   await db
@@ -293,18 +294,16 @@ app.post("/v1/device/unregister", async (c) => {
     )
   }
 
+  const key = hash(check.data.secret)
+
   console.log("[relay] unregister", {
     token: tail(check.data.deviceToken),
+    secretHash: `${key.slice(0, 12)}...`,
   })
 
   await db
     .delete(device_registration)
-    .where(
-      and(
-        eq(device_registration.secret_hash, hash(check.data.secret)),
-        eq(device_registration.device_token, check.data.deviceToken),
-      ),
-    )
+    .where(and(eq(device_registration.secret_hash, key), eq(device_registration.device_token, check.data.deviceToken)))
 
   return c.json({ ok: true })
 })
@@ -327,9 +326,18 @@ app.post("/v1/event", async (c) => {
   console.log("[relay] event", {
     type: check.data.eventType,
     session: check.data.sessionID,
+    secretHash: `${key.slice(0, 12)}...`,
     devices: list.length,
   })
   if (!list.length) {
+    const [total] = await db.select({ value: sql<number>`count(*)` }).from(device_registration)
+    console.log("[relay] event:no-matching-devices", {
+      type: check.data.eventType,
+      session: check.data.sessionID,
+      secretHash: `${key.slice(0, 12)}...`,
+      totalDevices: Number(total?.value ?? 0),
+    })
+
     return c.json({
       ok: true,
       sent: 0,

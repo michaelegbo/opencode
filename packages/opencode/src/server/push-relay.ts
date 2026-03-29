@@ -1,4 +1,5 @@
 import os from "node:os"
+import { createHash } from "node:crypto"
 import { SessionID } from "@/session/schema"
 import { GlobalBus } from "@/bus/global"
 import { Log } from "@/util/log"
@@ -54,6 +55,11 @@ function str(input: unknown) {
 
 function norm(input: string) {
   return input.replace(/\/+$/, "")
+}
+
+function secretHash(input: string) {
+  if (!input) return "none"
+  return `${createHash("sha256").update(input).digest("hex").slice(0, 12)}...`
 }
 
 /**
@@ -256,6 +262,7 @@ async function post(input: { type: Type; sessionID: string }) {
 
   console.log("[ APN RELAY ] posting event", {
     relayURL: next.relayURL,
+    secretHash: secretHash(next.relaySecret),
     type: input.type,
     sessionID: input.sessionID,
     title: content.title,
@@ -263,6 +270,7 @@ async function post(input: { type: Type; sessionID: string }) {
 
   log.info("[ APN RELAY ] posting event", {
     relayURL: next.relayURL,
+    secretHash: secretHash(next.relaySecret),
     type: input.type,
     sessionID: input.sessionID,
     title: content.title,
@@ -285,6 +293,7 @@ async function post(input: { type: Type; sessionID: string }) {
       if (res.ok) {
         console.log("[ APN RELAY ] relay accepted event", {
           status: res.status,
+          secretHash: secretHash(next.relaySecret),
           type: input.type,
           sessionID: input.sessionID,
           title: content.title,
@@ -292,6 +301,7 @@ async function post(input: { type: Type; sessionID: string }) {
 
         log.info("[ APN RELAY ] relay accepted event", {
           status: res.status,
+          secretHash: secretHash(next.relaySecret),
           type: input.type,
           sessionID: input.sessionID,
           title: content.title,
