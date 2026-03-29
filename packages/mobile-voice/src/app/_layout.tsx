@@ -1,25 +1,20 @@
-import React from 'react';
-import { Slot } from 'expo-router';
-import { LogBox } from 'react-native';
-import { initExecutorch } from 'react-native-executorch';
-import { ExpoResourceFetcher } from 'react-native-executorch-expo-resource-fetcher';
+import React from "react"
+import { Slot } from "expo-router"
+import { LogBox } from "react-native"
 import {
   configureNotificationBehavior,
   registerBackgroundNotificationTask,
-} from '@/notifications/monitoring-notifications';
-
-// Initialize the ExecuTorch resource fetcher before any model hooks run
-initExecutorch({ resourceFetcher: ExpoResourceFetcher });
+} from "@/notifications/monitoring-notifications"
 
 // Suppress known non-actionable warnings from third-party libs.
 LogBox.ignoreLogs([
-  'RecordingNotificationManager is not implemented on iOS',
-  '[React Native ExecuTorch] No content-length header',
-]);
+  "RecordingNotificationManager is not implemented on iOS",
+  "`transcribeRealtime` is deprecated, use `RealtimeTranscriber` instead",
+])
 
-configureNotificationBehavior();
-registerBackgroundNotificationTask().catch(() => {});
+configureNotificationBehavior()
+registerBackgroundNotificationTask().catch(() => {})
 
 export default function RootLayout() {
-  return <Slot />;
+  return <Slot />
 }

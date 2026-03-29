@@ -139,8 +139,8 @@ async function notify(input: { type: Type; sessionID: string }): Promise<Notify>
     const session = await Session.get(sessionID)
     out.title = session.title
 
+    let latestUser: string | undefined
     for await (const msg of MessageV2.stream(sessionID)) {
-      if (msg.info.role !== "user") continue
       const body = msg.parts
         .map((part) => {
           if (part.type !== "text") return ""
@@ -151,8 +151,19 @@ async function notify(input: { type: Type; sessionID: string }): Promise<Notify>
         .join(" ")
       const next = words(body)
       if (!next) continue
-      out.body = next
-      break
+
+      if (msg.info.role === "assistant") {
+        out.body = next
+        break
+      }
+
+      if (!latestUser && msg.info.role === "user") {
+        latestUser = next
+      }
+    }
+
+    if (!out.body) {
+      out.body = latestUser
     }
   } catch (error) {
     log.info("notification metadata unavailable", {

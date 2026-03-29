@@ -7,6 +7,7 @@ import {
   ScrollView,
   Modal,
   Alert,
+  ActivityIndicator,
   LayoutChangeEvent,
   AppState,
   AppStateStatus,
@@ -25,11 +26,13 @@ import Animated, {
 } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { StatusBar } from "expo-status-bar"
+import { SymbolView } from "expo-symbols"
 import * as Haptics from "expo-haptics"
 import { useAudioPlayer } from "expo-audio"
-import { useSpeechToText, WHISPER_BASE_EN } from "react-native-executorch"
-import { ExpoResourceFetcher } from "react-native-executorch-expo-resource-fetcher"
-import { AudioManager, AudioRecorder } from "react-native-audio-api"
+import { initWhisper, releaseAllWhisper, type WhisperContext } from "whisper.rn"
+import { RealtimeTranscriber, type RealtimeTranscribeEvent } from "whisper.rn/src/realtime-transcription"
+import { AudioPcmStreamAdapter } from "whisper.rn/src/realtime-transcription/adapters/AudioPcmStreamAdapter"
+import { AudioManager } from "react-native-audio-api"
 import * as Notifications from "expo-notifications"
 import * as FileSystem from "expo-file-system/legacy"
 import Constants from "expo-constants"
@@ -49,8 +52,6 @@ import {
   onPushTokenChange,
 } from "@/notifications/monitoring-notifications"
 
-const SAMPLE_RATE = 16000
-const AUDIO_BUFFER_SECONDS = 0.02
 const CONTROL_HEIGHT = 86
 const SEND_SETTLE_MS = 240
 const WAVEFORM_ROWS = 5
@@ -61,6 +62,187 @@ const DROPDOWN_VISIBLE_ROWS = 6
 const TAP_THRESHOLD_MS = 300
 const DEFAULT_RELAY_URL = "https://apn.dev.opencode.ai"
 const SERVER_STATE_FILE = `${FileSystem.documentDirectory}mobile-voice-servers.json`
+const WHISPER_SETTINGS_FILE = `${FileSystem.documentDirectory}mobile-voice-whisper-settings.json`
+const WHISPER_MODELS_DIR = `${FileSystem.documentDirectory}whisper-models`
+const WHISPER_REPO = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
+const WHISPER_MODELS = [
+  "ggml-tiny.en-q5_1.bin",
+  "ggml-tiny.en-q8_0.bin",
+  "ggml-tiny.en.bin",
+  "ggml-tiny-q5_1.bin",
+  "ggml-tiny-q8_0.bin",
+  "ggml-tiny.bin",
+  "ggml-base.en-q5_1.bin",
+  "ggml-base.en-q8_0.bin",
+  "ggml-base.en.bin",
+  "ggml-base-q5_1.bin",
+  "ggml-base-q8_0.bin",
+  "ggml-base.bin",
+  "ggml-small.en-q5_1.bin",
+  "ggml-small.en-q8_0.bin",
+  "ggml-small.en.bin",
+  "ggml-small-q5_1.bin",
+  "ggml-small-q8_0.bin",
+  "ggml-small.bin",
+  "ggml-medium.en-q5_0.bin",
+  "ggml-medium.en-q8_0.bin",
+  "ggml-medium.en.bin",
+  "ggml-medium-q5_0.bin",
+  "ggml-medium-q8_0.bin",
+  "ggml-medium.bin",
+  "ggml-large-v1.bin",
+  "ggml-large-v2-q5_0.bin",
+  "ggml-large-v2-q8_0.bin",
+  "ggml-large-v2.bin",
+  "ggml-large-v3-q5_0.bin",
+  "ggml-large-v3-turbo-q5_0.bin",
+  "ggml-large-v3-turbo-q8_0.bin",
+  "ggml-large-v3-turbo.bin",
+  "ggml-large-v3.bin",
+] as const
+
+type WhisperModelID = (typeof WHISPER_MODELS)[number]
+type TranscriptionMode = "bulk" | "realtime"
+const DEFAULT_WHISPER_MODEL: WhisperModelID = "ggml-medium.bin"
+const DEFAULT_TRANSCRIPTION_MODE: TranscriptionMode = "bulk"
+
+const WHISPER_MODEL_LABELS: Record<WhisperModelID, string> = {
+  "ggml-tiny.en-q5_1.bin": "tiny.en q5_1",
+  "ggml-tiny.en-q8_0.bin": "tiny.en q8_0",
+  "ggml-tiny.en.bin": "tiny.en",
+  "ggml-tiny-q5_1.bin": "tiny q5_1",
+  "ggml-tiny-q8_0.bin": "tiny q8_0",
+  "ggml-tiny.bin": "tiny",
+  "ggml-base.en-q5_1.bin": "base.en q5_1",
+  "ggml-base.en-q8_0.bin": "base.en q8_0",
+  "ggml-base.en.bin": "base.en",
+  "ggml-base-q5_1.bin": "base q5_1",
+  "ggml-base-q8_0.bin": "base q8_0",
+  "ggml-base.bin": "base",
+  "ggml-small.en-q5_1.bin": "small.en q5_1",
+  "ggml-small.en-q8_0.bin": "small.en q8_0",
+  "ggml-small.en.bin": "small.en",
+  "ggml-small-q5_1.bin": "small q5_1",
+  "ggml-small-q8_0.bin": "small q8_0",
+  "ggml-small.bin": "small",
+  "ggml-medium.en-q5_0.bin": "medium.en q5_0",
+  "ggml-medium.en-q8_0.bin": "medium.en q8_0",
+  "ggml-medium.en.bin": "medium.en",
+  "ggml-medium-q5_0.bin": "medium q5_0",
+  "ggml-medium-q8_0.bin": "medium q8_0",
+  "ggml-medium.bin": "medium",
+  "ggml-large-v1.bin": "large-v1",
+  "ggml-large-v2-q5_0.bin": "large-v2 q5_0",
+  "ggml-large-v2-q8_0.bin": "large-v2 q8_0",
+  "ggml-large-v2.bin": "large-v2",
+  "ggml-large-v3-q5_0.bin": "large-v3 q5_0",
+  "ggml-large-v3-turbo-q5_0.bin": "large-v3 turbo q5_0",
+  "ggml-large-v3-turbo-q8_0.bin": "large-v3 turbo q8_0",
+  "ggml-large-v3-turbo.bin": "large-v3 turbo",
+  "ggml-large-v3.bin": "large-v3",
+}
+
+const WHISPER_MODEL_SIZES: Record<WhisperModelID, number> = {
+  "ggml-tiny.en-q5_1.bin": 32166155,
+  "ggml-tiny.en-q8_0.bin": 43550795,
+  "ggml-tiny.en.bin": 77704715,
+  "ggml-tiny-q5_1.bin": 32152673,
+  "ggml-tiny-q8_0.bin": 43537433,
+  "ggml-tiny.bin": 77691713,
+  "ggml-base.en-q5_1.bin": 59721011,
+  "ggml-base.en-q8_0.bin": 81781811,
+  "ggml-base.en.bin": 147964211,
+  "ggml-base-q5_1.bin": 59707625,
+  "ggml-base-q8_0.bin": 81768585,
+  "ggml-base.bin": 147951465,
+  "ggml-small.en-q5_1.bin": 190098681,
+  "ggml-small.en-q8_0.bin": 264477561,
+  "ggml-small.en.bin": 487614201,
+  "ggml-small-q5_1.bin": 190085487,
+  "ggml-small-q8_0.bin": 264464607,
+  "ggml-small.bin": 487601967,
+  "ggml-medium.en-q5_0.bin": 539225533,
+  "ggml-medium.en-q8_0.bin": 823382461,
+  "ggml-medium.en.bin": 1533774781,
+  "ggml-medium-q5_0.bin": 539212467,
+  "ggml-medium-q8_0.bin": 823369779,
+  "ggml-medium.bin": 1533763059,
+  "ggml-large-v1.bin": 3094623691,
+  "ggml-large-v2-q5_0.bin": 1080732091,
+  "ggml-large-v2-q8_0.bin": 1656129691,
+  "ggml-large-v2.bin": 3094623691,
+  "ggml-large-v3-q5_0.bin": 1081140203,
+  "ggml-large-v3-turbo-q5_0.bin": 574041195,
+  "ggml-large-v3-turbo-q8_0.bin": 874188075,
+  "ggml-large-v3-turbo.bin": 1624555275,
+  "ggml-large-v3.bin": 3095033483,
+}
+
+function isWhisperModelID(value: unknown): value is WhisperModelID {
+  return typeof value === "string" && (WHISPER_MODELS as readonly string[]).includes(value)
+}
+
+function isEnglishOnlyWhisperModel(modelID: WhisperModelID): boolean {
+  return modelID.includes(".en")
+}
+
+function isTranscriptionMode(value: unknown): value is TranscriptionMode {
+  return value === "bulk" || value === "realtime"
+}
+
+function formatWhisperModelSize(bytes: number): string {
+  const mib = bytes / (1024 * 1024)
+  if (mib >= 1024) {
+    return `${(mib / 1024).toFixed(1)} GB`
+  }
+
+  return `${Math.round(mib)} MB`
+}
+
+function cleanTranscriptText(text: string): string {
+  return text.replace(/[ \t]+$/gm, "").trimEnd()
+}
+
+function cleanSessionText(text: string): string {
+  return cleanTranscriptText(text).trimStart()
+}
+
+function normalizeTranscriptSessions(text: string): string {
+  const cleaned = cleanTranscriptText(text)
+  if (!cleaned) {
+    return ""
+  }
+
+  return cleaned
+    .split(/\n\n+/)
+    .map((session) => cleanSessionText(session))
+    .filter((session) => session.length > 0)
+    .join("\n\n")
+}
+
+function mergeTranscriptChunk(previous: string, chunk: string): string {
+  const cleanPrevious = cleanTranscriptText(previous)
+  const cleanChunk = cleanSessionText(chunk)
+
+  if (!cleanChunk) {
+    return cleanPrevious
+  }
+
+  if (!cleanPrevious) {
+    return cleanChunk
+  }
+
+  const normalizedChunk = cleanChunk
+  if (!normalizedChunk) {
+    return cleanPrevious
+  }
+
+  if (/^[,.;:!?)]/.test(normalizedChunk)) {
+    return `${cleanPrevious}${normalizedChunk}`
+  }
+
+  return `${cleanPrevious} ${normalizedChunk}`
+}
 
 type ServerItem = {
   id: string
@@ -133,6 +315,11 @@ type SavedState = {
   servers: SavedServer[]
   activeServerId: string | null
   activeSessionId: string | null
+}
+
+type WhisperSavedState = {
+  defaultModel: WhisperModelID
+  mode: TranscriptionMode
 }
 
 type Cam = {
@@ -245,12 +432,16 @@ function fromSaved(input: SavedState): {
 
 export default function DictationScreen() {
   const [camera, setCamera] = useState<Cam | null>(null)
-  const [modelReset, setModelReset] = useState(false)
-  const model = useSpeechToText({
-    model: WHISPER_BASE_EN,
-    preventLoad: modelReset,
-  })
-
+  const [defaultWhisperModel, setDefaultWhisperModel] = useState<WhisperModelID>(DEFAULT_WHISPER_MODEL)
+  const [activeWhisperModel, setActiveWhisperModel] = useState<WhisperModelID | null>(null)
+  const [installedWhisperModels, setInstalledWhisperModels] = useState<WhisperModelID[]>([])
+  const [whisperSettingsOpen, setWhisperSettingsOpen] = useState(false)
+  const [downloadingModelID, setDownloadingModelID] = useState<WhisperModelID | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState(0)
+  const [isPreparingWhisperModel, setIsPreparingWhisperModel] = useState(true)
+  const [transcriptionMode, setTranscriptionMode] = useState<TranscriptionMode>(DEFAULT_TRANSCRIPTION_MODE)
+  const [isTranscribingBulk, setIsTranscribingBulk] = useState(false)
+  const [whisperError, setWhisperError] = useState("")
   const [transcribedText, setTranscribedText] = useState("")
   const [isRecording, setIsRecording] = useState(false)
   const [permissionGranted, setPermissionGranted] = useState(false)
@@ -283,20 +474,22 @@ export default function DictationScreen() {
   const pressInTimeRef = useRef(0)
   const accumulatedRef = useRef("")
   const baseTextRef = useRef("")
-  // Keep a ref to model so audio callbacks always use the latest hook closure
-  const modelRef = useRef(model)
-  modelRef.current = model
-  const prewarmPromiseRef = useRef<Promise<void> | null>(null)
-  const hasPrewarmedRef = useRef(false)
+  const whisperContextRef = useRef<WhisperContext | null>(null)
+  const whisperContextModelRef = useRef<WhisperModelID | null>(null)
+  const whisperTranscriberRef = useRef<RealtimeTranscriber | null>(null)
+  const bulkAudioStreamRef = useRef<AudioPcmStreamAdapter | null>(null)
+  const bulkAudioChunksRef = useRef<Uint8Array[]>([])
+  const bulkTranscriptionJobRef = useRef(0)
+  const downloadProgressRef = useRef(0)
+  const waveformPulseIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sendSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const foregroundMonitorAbortRef = useRef<AbortController | null>(null)
   const monitorJobRef = useRef<MonitorJob | null>(null)
   const previousPushTokenRef = useRef<string | null>(null)
   const scanLockRef = useRef(false)
   const restoredRef = useRef(false)
+  const whisperRestoredRef = useRef(false)
   const refreshSeqRef = useRef<Record<string, number>>({})
-
-  const [recorder] = useState(() => new AudioRecorder())
 
   useEffect(() => {
     serversRef.current = servers
@@ -338,12 +531,38 @@ export default function DictationScreen() {
     monitorJobRef.current = monitorJob
   }, [monitorJob])
 
-  const ensureAudioRoute = useCallback(async () => {
-    await AudioManager.setAudioSessionActivity(true)
-    const devices = await AudioManager.getDevicesInfo()
-    if (devices.currentInputs.length === 0 && devices.availableInputs.length > 0) {
-      await AudioManager.setInputDevice(devices.availableInputs[0].id)
+  const modelPath = useCallback((modelID: WhisperModelID) => `${WHISPER_MODELS_DIR}/${modelID}`, [])
+
+  const refreshInstalledWhisperModels = useCallback(async () => {
+    const next: WhisperModelID[] = []
+
+    for (const modelID of WHISPER_MODELS) {
+      try {
+        const info = await FileSystem.getInfoAsync(modelPath(modelID))
+        if (info.exists) {
+          next.push(modelID)
+        }
+      } catch {
+        // Ignore model metadata read errors.
+      }
     }
+
+    setInstalledWhisperModels(next)
+    return next
+  }, [modelPath])
+
+  const stopWaveformPulse = useCallback(() => {
+    if (waveformPulseIntervalRef.current) {
+      clearInterval(waveformPulseIntervalRef.current)
+      waveformPulseIntervalRef.current = null
+    }
+  }, [])
+
+  const clearWaveform = useCallback(() => {
+    const cleared = new Array(waveformLevelsRef.current.length).fill(0)
+    waveformLevelsRef.current = cleared
+    setWaveformLevels(cleared)
+    setWaveformTick(Date.now())
   }, [])
 
   useEffect(() => {
@@ -351,23 +570,9 @@ export default function DictationScreen() {
       if (sendSettleTimeoutRef.current) {
         clearTimeout(sendSettleTimeoutRef.current)
       }
+      stopWaveformPulse()
     }
-  }, [])
-
-  // Warm up the model once after load to reduce first-utterance latency.
-  useEffect(() => {
-    if (!model.isReady || hasPrewarmedRef.current) return
-    hasPrewarmedRef.current = true
-    prewarmPromiseRef.current = (async () => {
-      try {
-        await modelRef.current.transcribe(new Float32Array(SAMPLE_RATE / 2), {
-          verbose: false,
-        })
-      } catch {
-        // Prewarm best-effort only.
-      }
-    })()
-  }, [model.isReady])
+  }, [stopWaveformPulse])
 
   // Set up audio session and request permissions on mount
   useEffect(() => {
@@ -409,6 +614,215 @@ export default function DictationScreen() {
         console.error("Failed to set up audio permissions:", e)
       }
     })()
+  }, [])
+
+  const loadWhisperContext = useCallback(
+    async (modelID: WhisperModelID) => {
+      if (whisperContextRef.current && whisperContextModelRef.current === modelID) {
+        setActiveWhisperModel(modelID)
+        return whisperContextRef.current
+      }
+
+      setIsPreparingWhisperModel(true)
+      setWhisperError("")
+
+      try {
+        const existing = whisperContextRef.current
+        whisperContextRef.current = null
+        whisperContextModelRef.current = null
+        if (existing) {
+          await existing.release().catch(() => {})
+        }
+
+        const context = await initWhisper({
+          filePath: modelPath(modelID),
+          useGpu: Platform.OS === "ios",
+        })
+
+        whisperContextRef.current = context
+        whisperContextModelRef.current = modelID
+        setActiveWhisperModel(modelID)
+        return context
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load Whisper model"
+        setWhisperError(message)
+        throw error
+      } finally {
+        setIsPreparingWhisperModel(false)
+      }
+    },
+    [modelPath],
+  )
+
+  const downloadWhisperModel = useCallback(
+    async (modelID: WhisperModelID) => {
+      if (downloadingModelID && downloadingModelID !== modelID) {
+        return false
+      }
+
+      setDownloadingModelID(modelID)
+      downloadProgressRef.current = 0
+      setDownloadProgress(0)
+      setWhisperError("")
+
+      try {
+        await FileSystem.makeDirectoryAsync(WHISPER_MODELS_DIR, { intermediates: true }).catch(() => {})
+
+        const targetPath = modelPath(modelID)
+        await FileSystem.deleteAsync(targetPath, { idempotent: true }).catch(() => {})
+
+        const download = FileSystem.createDownloadResumable(
+          `${WHISPER_REPO}/${modelID}`,
+          targetPath,
+          {},
+          (event: FileSystem.DownloadProgressData) => {
+            const total = event.totalBytesExpectedToWrite
+            if (!total) return
+            const rawProgress = Math.max(0, Math.min(1, event.totalBytesWritten / total))
+            const progress = Math.max(downloadProgressRef.current, rawProgress)
+            downloadProgressRef.current = progress
+            setDownloadProgress(progress)
+          },
+        )
+
+        const result = await download.downloadAsync()
+        if (!result?.uri) {
+          throw new Error("Whisper model download did not complete")
+        }
+
+        await refreshInstalledWhisperModels()
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to download Whisper model"
+        setWhisperError(message)
+        return false
+      } finally {
+        setDownloadingModelID((current) => (current === modelID ? null : current))
+      }
+    },
+    [downloadingModelID, modelPath, refreshInstalledWhisperModels],
+  )
+
+  const ensureWhisperModelReady = useCallback(
+    async (modelID: WhisperModelID) => {
+      const info = await FileSystem.getInfoAsync(modelPath(modelID))
+      if (!info.exists) {
+        const downloaded = await downloadWhisperModel(modelID)
+        if (!downloaded) {
+          throw new Error(`Unable to download ${modelID}`)
+        }
+      }
+      return loadWhisperContext(modelID)
+    },
+    [downloadWhisperModel, loadWhisperContext, modelPath],
+  )
+
+  useEffect(() => {
+    let mounted = true
+
+    ;(async () => {
+      await FileSystem.makeDirectoryAsync(WHISPER_MODELS_DIR, { intermediates: true }).catch(() => {})
+
+      let nextDefaultModel: WhisperModelID = DEFAULT_WHISPER_MODEL
+      let nextMode: TranscriptionMode = DEFAULT_TRANSCRIPTION_MODE
+      try {
+        const data = await FileSystem.readAsStringAsync(WHISPER_SETTINGS_FILE)
+        if (data) {
+          const parsed = JSON.parse(data) as Partial<WhisperSavedState>
+          if (isWhisperModelID(parsed.defaultModel)) {
+            nextDefaultModel = parsed.defaultModel
+          }
+          if (isTranscriptionMode(parsed.mode)) {
+            nextMode = parsed.mode
+          }
+        }
+      } catch {
+        // Use default settings if state file is missing or invalid.
+      }
+
+      if (!mounted) return
+
+      whisperRestoredRef.current = true
+      setDefaultWhisperModel(nextDefaultModel)
+      setTranscriptionMode(nextMode)
+
+      await refreshInstalledWhisperModels()
+
+      try {
+        await ensureWhisperModelReady(nextDefaultModel)
+      } catch (error) {
+        console.error("[Whisper] Failed to initialize default model:", error)
+      } finally {
+        if (mounted) {
+          setIsPreparingWhisperModel(false)
+        }
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [ensureWhisperModelReady, refreshInstalledWhisperModels])
+
+  useEffect(() => {
+    if (!whisperRestoredRef.current) return
+    const payload: WhisperSavedState = { defaultModel: defaultWhisperModel, mode: transcriptionMode }
+    FileSystem.writeAsStringAsync(WHISPER_SETTINGS_FILE, JSON.stringify(payload)).catch(() => {})
+  }, [defaultWhisperModel, transcriptionMode])
+
+  useEffect(() => {
+    return () => {
+      const transcriber = whisperTranscriberRef.current
+      whisperTranscriberRef.current = null
+      if (transcriber) {
+        void (async () => {
+          await transcriber.stop().catch(() => {})
+          await transcriber.release().catch(() => {})
+        })()
+      }
+
+      const bulkStream = bulkAudioStreamRef.current
+      bulkAudioStreamRef.current = null
+      if (bulkStream) {
+        void (async () => {
+          await bulkStream.stop().catch(() => {})
+          await bulkStream.release().catch(() => {})
+        })()
+      }
+
+      const context = whisperContextRef.current
+      whisperContextRef.current = null
+      whisperContextModelRef.current = null
+
+      if (context) {
+        context.release().catch(() => {})
+      }
+
+      releaseAllWhisper().catch(() => {})
+    }
+  }, [])
+
+  const startWaveformPulse = useCallback(() => {
+    if (waveformPulseIntervalRef.current) return
+
+    waveformPulseIntervalRef.current = setInterval(() => {
+      if (!isRecordingRef.current) return
+
+      const next = waveformLevelsRef.current.map((value) => {
+        const decay = value * 0.45
+        const lift = Math.random() * 0.95
+        return Math.max(0.08, Math.min(1, decay + lift * 0.55))
+      })
+
+      waveformLevelsRef.current = next
+
+      const now = Date.now()
+      if (now - lastWaveformCommitRef.current > 45) {
+        setWaveformLevels(next)
+        setWaveformTick(now)
+        lastWaveformCommitRef.current = now
+      }
+    }, 70)
   }, [])
 
   useEffect(() => {
@@ -463,192 +877,296 @@ export default function DictationScreen() {
     return () => notificationSub.remove()
   }, [])
 
-  const startRecording = useCallback(async () => {
-    const m = modelRef.current
-    if (!m.isReady || isRecordingRef.current || isStartingRef.current) return
-
-    isStartingRef.current = true
-    const sessionId = Date.now()
-    activeSessionRef.current = sessionId
-    accumulatedRef.current = ""
-    baseTextRef.current = transcribedText
-    isRecordingRef.current = true
-    setIsRecording(true)
-    const cancelled = () => !isRecordingRef.current || activeSessionRef.current !== sessionId
-
-    // If prewarm is still running, wait once here to avoid ModelGenerating race.
-    if (prewarmPromiseRef.current) {
-      await prewarmPromiseRef.current
-      prewarmPromiseRef.current = null
-    }
-    if (cancelled()) {
-      isStartingRef.current = false
-      return
-    }
-
-    try {
-      await ensureAudioRoute()
-    } catch (e) {
-      console.warn("[Dictation] Failed to ensure audio route:", e)
-    }
-    if (cancelled()) {
-      isStartingRef.current = false
-      return
-    }
-
-    recorder.onError((err) => {
-      console.error("[Dictation] Recorder error:", err.message)
-      if (activeSessionRef.current !== sessionId) return
-      isRecordingRef.current = false
-      activeSessionRef.current = 0
-      setIsRecording(false)
-      recorder.clearOnAudioReady()
-      recorder.clearOnError()
-      modelRef.current.streamStop()
-    })
-
-    const readyResult = recorder.onAudioReady(
-      {
-        sampleRate: SAMPLE_RATE,
-        bufferLength: AUDIO_BUFFER_SECONDS * SAMPLE_RATE,
-        channelCount: 1,
-      },
-      (chunk) => {
-        if (activeSessionRef.current !== sessionId) return
-        const samples = chunk.buffer.getChannelData(0)
-        if (!samples || samples.length === 0) return
-
-        // Defensive guard against invalid chunk data coming from unstable audio routes.
-        let valid = true
-        for (let i = 0; i < samples.length; i += 32) {
-          if (!Number.isFinite(samples[i])) {
-            valid = false
-            break
-          }
-        }
-        if (!valid) return
-
-        const columns = waveformLevelsRef.current.length
-        const segmentLength = Math.max(1, Math.floor(samples.length / Math.max(columns, 1)))
-        const next = new Array(columns).fill(0)
-
-        for (let b = 0; b < columns; b++) {
-          const start = b * segmentLength
-          const end = Math.min(samples.length, start + segmentLength)
-
-          let sum = 0
-          for (let i = start; i < end; i++) {
-            const s = samples[i]
-            sum += s * s
-          }
-
-          const rms = Math.sqrt(sum / Math.max(end - start, 1))
-          const base = Math.min(1, rms * 10)
-          const previous = waveformLevelsRef.current[b] ?? 0
-          // Fast rise, slower decay for more natural meter behavior
-          next[b] = base > previous ? base : previous * 0.82
-        }
-
-        waveformLevelsRef.current = next
-        const now = Date.now()
-        if (now - lastWaveformCommitRef.current > 45) {
-          setWaveformLevels(next)
-          setWaveformTick(now)
-          lastWaveformCommitRef.current = now
-        }
-
-        // Always use the latest model ref to avoid stale closure.
-        modelRef.current.streamInsert(samples)
-      },
-    )
-
-    if (readyResult.status === "error") {
-      console.error("[Dictation] onAudioReady failed:", readyResult.message)
-      isRecordingRef.current = false
-      activeSessionRef.current = 0
-      setIsRecording(false)
-      recorder.clearOnAudioReady()
-      recorder.clearOnError()
-      isStartingRef.current = false
-      return
-    }
-    if (cancelled()) {
-      recorder.clearOnAudioReady()
-      recorder.clearOnError()
-      modelRef.current.streamStop()
-      isStartingRef.current = false
-      return
-    }
-
-    // Start stream first, then begin feeding chunks from recorder.
-    const streamIter = modelRef.current.stream({ verbose: false })
-    let sawTextInSession = false
-    const streamTask = (async () => {
-      for await (const { committed, nonCommitted } of streamIter) {
-        if (!isRecordingRef.current) break
-
-        if (committed.text) {
-          accumulatedRef.current += committed.text
-        }
-
-        if (committed.text || nonCommitted.text) {
-          sawTextInSession = true
-        }
-
-        const base = baseTextRef.current
-        const separator = base.length > 0 ? "\n\n" : ""
-        // Whisper can emit a leading-space token at the start of each session.
-        const sessionText = (accumulatedRef.current + nonCommitted.text).replace(/^\s+/, "")
-        setTranscribedText(base + separator + sessionText)
-      }
-    })()
-
-    const startResult = recorder.start()
-    if (startResult.status === "error") {
-      console.error("[Dictation] Recorder start failed:", startResult.message)
-      modelRef.current.streamStop()
-      isRecordingRef.current = false
-      activeSessionRef.current = 0
-      setIsRecording(false)
-      recorder.clearOnAudioReady()
-      recorder.clearOnError()
-      isStartingRef.current = false
-      return
-    }
-    isStartingRef.current = false
-
-    try {
-      await streamTask
-      if (sawTextInSession) {
-        setHasCompletedSession(true)
-      }
-    } catch (error) {
-      console.error("[Dictation] Streaming error:", error)
-    }
-  }, [ensureAudioRoute, recorder, transcribedText])
-
-  const stopRecording = useCallback(() => {
-    if (!isRecordingRef.current) return
-
+  const finalizeRecordingState = useCallback(() => {
     isRecordingRef.current = false
     activeSessionRef.current = 0
     isStartingRef.current = false
     setIsRecording(false)
+    stopWaveformPulse()
+    clearWaveform()
+  }, [clearWaveform, stopWaveformPulse])
+
+  const startRecording = useCallback(async () => {
+    if (isRecordingRef.current || isStartingRef.current || downloadingModelID || isTranscribingBulk) return
+
+    isStartingRef.current = true
+    const sessionID = Date.now()
+    activeSessionRef.current = sessionID
+    accumulatedRef.current = ""
+    baseTextRef.current = normalizeTranscriptSessions(transcribedText)
+    if (baseTextRef.current !== transcribedText) {
+      setTranscribedText(baseTextRef.current)
+    }
+    isRecordingRef.current = true
+    setIsRecording(true)
+    setWhisperError("")
+
+    const cancelled = () => !isRecordingRef.current || activeSessionRef.current !== sessionID
+
+    try {
+      const context = await ensureWhisperModelReady(defaultWhisperModel)
+      if (cancelled()) {
+        isStartingRef.current = false
+        return
+      }
+
+      const previousTranscriber = whisperTranscriberRef.current
+      whisperTranscriberRef.current = null
+      if (previousTranscriber) {
+        await previousTranscriber.stop().catch(() => {})
+        await previousTranscriber.release().catch(() => {})
+      }
+
+      const previousBulkStream = bulkAudioStreamRef.current
+      bulkAudioStreamRef.current = null
+      if (previousBulkStream) {
+        await previousBulkStream.stop().catch(() => {})
+        await previousBulkStream.release().catch(() => {})
+      }
+
+      bulkAudioChunksRef.current = []
+      bulkTranscriptionJobRef.current = 0
+
+      startWaveformPulse()
+
+      const englishOnlyModel = isEnglishOnlyWhisperModel(defaultWhisperModel)
+
+      if (transcriptionMode === "bulk") {
+        const audioStream = new AudioPcmStreamAdapter()
+        audioStream.onData((packet: unknown) => {
+          if (activeSessionRef.current !== sessionID) return
+          const data = (packet as { data?: unknown }).data
+          if (!(data instanceof Uint8Array) || data.length === 0) return
+          bulkAudioChunksRef.current.push(new Uint8Array(data))
+        })
+        audioStream.onError((error: string) => {
+          if (activeSessionRef.current !== sessionID) return
+          setWhisperError(error)
+          console.error("[Dictation] Bulk audio stream error:", error)
+        })
+
+        await audioStream.initialize({
+          sampleRate: 16000,
+          channels: 1,
+          bitsPerSample: 16,
+          bufferSize: 16 * 1024,
+          audioSource: 6,
+        })
+        await audioStream.start()
+
+        bulkAudioStreamRef.current = audioStream
+
+        if (cancelled()) {
+          await audioStream.stop().catch(() => {})
+          await audioStream.release().catch(() => {})
+          if (bulkAudioStreamRef.current === audioStream) {
+            bulkAudioStreamRef.current = null
+          }
+          finalizeRecordingState()
+          return
+        }
+
+        isStartingRef.current = false
+        return
+      }
+
+      const transcriber = new RealtimeTranscriber(
+        {
+          whisperContext: context,
+          audioStream: new AudioPcmStreamAdapter(),
+        },
+        {
+          audioSliceSec: 4,
+          audioMinSec: 0.8,
+          maxSlicesInMemory: 6,
+          transcribeOptions: {
+            language: englishOnlyModel ? "en" : "auto",
+            translate: !englishOnlyModel,
+            maxLen: 1,
+          },
+          logger: () => {},
+        },
+        {
+          onTranscribe: (event: RealtimeTranscribeEvent) => {
+            if (activeSessionRef.current !== sessionID) return
+            if (event.type !== "transcribe") return
+
+            const nextSessionText = mergeTranscriptChunk(accumulatedRef.current, event.data?.result ?? "")
+            accumulatedRef.current = nextSessionText
+
+            const base = normalizeTranscriptSessions(baseTextRef.current)
+            const separator = base.length > 0 && nextSessionText.length > 0 ? "\n\n" : ""
+            setTranscribedText(normalizeTranscriptSessions(base + separator + nextSessionText))
+
+            if (nextSessionText.length > 0) {
+              setHasCompletedSession(true)
+            }
+          },
+          onError: (error: string) => {
+            if (activeSessionRef.current !== sessionID) return
+            console.error("[Dictation] Whisper realtime error:", error)
+            setWhisperError(error)
+          },
+          onStatusChange: (active: boolean) => {
+            if (activeSessionRef.current !== sessionID) return
+            if (!active) {
+              if (whisperTranscriberRef.current === transcriber) {
+                whisperTranscriberRef.current = null
+              }
+              finalizeRecordingState()
+            }
+          },
+        },
+      )
+
+      whisperTranscriberRef.current = transcriber
+      await transcriber.start()
+
+      if (cancelled()) {
+        await transcriber.stop().catch(() => {})
+        await transcriber.release().catch(() => {})
+        if (whisperTranscriberRef.current === transcriber) {
+          whisperTranscriberRef.current = null
+        }
+        finalizeRecordingState()
+        return
+      }
+
+      isStartingRef.current = false
+    } catch (error) {
+      console.error("[Dictation] Failed to start realtime transcription:", error)
+      const message = error instanceof Error ? error.message : "Unable to start transcription"
+      setWhisperError(message)
+
+      const activeTranscriber = whisperTranscriberRef.current
+      whisperTranscriberRef.current = null
+      if (activeTranscriber) {
+        void (async () => {
+          await activeTranscriber.stop().catch(() => {})
+          await activeTranscriber.release().catch(() => {})
+        })()
+      }
+
+      finalizeRecordingState()
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {})
+    }
+  }, [
+    defaultWhisperModel,
+    downloadingModelID,
+    ensureWhisperModelReady,
+    finalizeRecordingState,
+    isTranscribingBulk,
+    startWaveformPulse,
+    transcriptionMode,
+    transcribedText,
+  ])
+
+  const stopRecording = useCallback(() => {
+    if (!isRecordingRef.current && !isStartingRef.current) return
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
-    recorder.stop()
-    recorder.clearOnAudioReady()
-    recorder.clearOnError()
-    modelRef.current.streamStop()
-    const cleared = new Array(waveformLevelsRef.current.length).fill(0)
-    waveformLevelsRef.current = cleared
-    setWaveformLevels(cleared)
-    setWaveformTick(Date.now())
-  }, [recorder])
+
+    const baseAtStop = normalizeTranscriptSessions(baseTextRef.current)
+    const englishOnlyModel = isEnglishOnlyWhisperModel(defaultWhisperModel)
+
+    const transcriber = whisperTranscriberRef.current
+    whisperTranscriberRef.current = null
+    if (transcriber) {
+      void (async () => {
+        await transcriber.stop().catch((error: unknown) => {
+          console.warn("[Dictation] Failed to stop realtime transcription:", error)
+        })
+        await transcriber.release().catch(() => {})
+      })()
+    }
+
+    const bulkStream = bulkAudioStreamRef.current
+    bulkAudioStreamRef.current = null
+    const bulkChunks = bulkAudioChunksRef.current
+    bulkAudioChunksRef.current = []
+
+    finalizeRecordingState()
+
+    if (transcriptionMode !== "bulk") {
+      return
+    }
+
+    const runID = Date.now()
+    bulkTranscriptionJobRef.current = runID
+
+    void (async () => {
+      if (bulkStream) {
+        await bulkStream.stop().catch((error: unknown) => {
+          console.warn("[Dictation] Failed to stop bulk audio stream:", error)
+        })
+        await bulkStream.release().catch(() => {})
+      }
+
+      if (bulkChunks.length === 0) {
+        return
+      }
+
+      const totalLength = bulkChunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      if (totalLength === 0) {
+        return
+      }
+
+      const merged = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of bulkChunks) {
+        merged.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      const context = whisperContextRef.current
+      if (!context) {
+        setWhisperError("Whisper model is not loaded")
+        return
+      }
+
+      setIsTranscribingBulk(true)
+
+      try {
+        const { promise } = context.transcribeData(merged.buffer, {
+          language: englishOnlyModel ? "en" : "auto",
+          translate: !englishOnlyModel,
+          maxLen: 1,
+        })
+
+        const result = await promise
+        if (bulkTranscriptionJobRef.current !== runID) {
+          return
+        }
+
+        const sessionText = cleanSessionText(result.result ?? "")
+        if (!sessionText) {
+          return
+        }
+
+        const separator = baseAtStop.length > 0 ? "\n\n" : ""
+        setTranscribedText(normalizeTranscriptSessions(baseAtStop + separator + sessionText))
+        setHasCompletedSession(true)
+      } catch (error) {
+        if (bulkTranscriptionJobRef.current !== runID) {
+          return
+        }
+        const message = error instanceof Error ? error.message : "Bulk transcription failed"
+        setWhisperError(message)
+        console.error("[Dictation] Bulk transcription failed:", error)
+      } finally {
+        if (bulkTranscriptionJobRef.current === runID) {
+          setIsTranscribingBulk(false)
+        }
+      }
+    })()
+  }, [defaultWhisperModel, finalizeRecordingState, transcriptionMode])
 
   const clearIconRotation = useSharedValue(0)
   const sendOutProgress = useSharedValue(0)
 
   const handleClearTranscript = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {})
+
     clearIconRotation.value = withSequence(
       withTiming(-30, { duration: 90 }),
       withTiming(30, { duration: 120 }),
@@ -662,42 +1180,10 @@ export default function DictationScreen() {
     baseTextRef.current = ""
     setTranscribedText("")
     setHasCompletedSession(false)
-    const cleared = new Array(waveformLevelsRef.current.length).fill(0)
-    waveformLevelsRef.current = cleared
-    setWaveformLevels(cleared)
-    setWaveformTick(Date.now())
+    clearWaveform()
     sendOutProgress.value = 0
     setIsSending(false)
-  }, [clearIconRotation, sendOutProgress, stopRecording])
-
-  const handleDeleteModel = useCallback(async () => {
-    if (modelReset) return
-
-    if (isRecordingRef.current) {
-      stopRecording()
-    }
-
-    setModelReset(true)
-    accumulatedRef.current = ""
-    baseTextRef.current = ""
-    setTranscribedText("")
-    setHasCompletedSession(false)
-    const cleared = new Array(waveformLevelsRef.current.length).fill(0)
-    waveformLevelsRef.current = cleared
-    setWaveformLevels(cleared)
-    setWaveformTick(Date.now())
-    sendOutProgress.value = 0
-    setIsSending(false)
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
-
-    try {
-      await ExpoResourceFetcher.deleteResources(WHISPER_BASE_EN.modelSource, WHISPER_BASE_EN.tokenizerSource)
-    } catch (err) {
-      console.error("Failed to delete model resources:", err)
-    }
-
-    setModelReset(false)
-  }, [modelReset, sendOutProgress, stopRecording])
+  }, [clearIconRotation, clearWaveform, sendOutProgress, stopRecording])
 
   const resetTranscriptState = useCallback(() => {
     if (isRecordingRef.current) {
@@ -707,11 +1193,91 @@ export default function DictationScreen() {
     baseTextRef.current = ""
     setTranscribedText("")
     setHasCompletedSession(false)
-    const cleared = new Array(waveformLevelsRef.current.length).fill(0)
-    waveformLevelsRef.current = cleared
-    setWaveformLevels(cleared)
-    setWaveformTick(Date.now())
-  }, [stopRecording])
+    clearWaveform()
+  }, [clearWaveform, stopRecording])
+
+  const handleOpenWhisperSettings = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {})
+    setDropdownMode("none")
+    setWhisperSettingsOpen(true)
+  }, [])
+
+  const handleDownloadWhisperModel = useCallback(
+    async (modelID: WhisperModelID) => {
+      const ok = await downloadWhisperModel(modelID)
+      if (ok) {
+        Haptics.selectionAsync().catch(() => {})
+      }
+    },
+    [downloadWhisperModel],
+  )
+
+  const handleSelectWhisperModel = useCallback(
+    async (modelID: WhisperModelID) => {
+      if (isRecordingRef.current || isStartingRef.current) {
+        stopRecording()
+      }
+
+      try {
+        await ensureWhisperModelReady(modelID)
+        setDefaultWhisperModel(modelID)
+        setWhisperError("")
+        Haptics.selectionAsync().catch(() => {})
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to switch Whisper model"
+        setWhisperError(message)
+      }
+    },
+    [ensureWhisperModelReady, stopRecording],
+  )
+
+  const handleDeleteWhisperModel = useCallback(
+    async (modelID: WhisperModelID) => {
+      if (downloadingModelID === modelID) return
+
+      if (isRecordingRef.current || isStartingRef.current) {
+        stopRecording()
+      }
+
+      if (whisperContextModelRef.current === modelID && whisperContextRef.current) {
+        const activeContext = whisperContextRef.current
+        whisperContextRef.current = null
+        whisperContextModelRef.current = null
+        setActiveWhisperModel(null)
+        await activeContext.release().catch(() => {})
+      }
+
+      await FileSystem.deleteAsync(modelPath(modelID), { idempotent: true }).catch(() => {})
+      const nextInstalled = await refreshInstalledWhisperModels()
+
+      if (defaultWhisperModel === modelID) {
+        const fallbackModel = nextInstalled[0] ?? DEFAULT_WHISPER_MODEL
+        setDefaultWhisperModel(fallbackModel)
+        try {
+          await ensureWhisperModelReady(fallbackModel)
+        } catch {
+          // Keep UI responsive if fallback init fails.
+        }
+      } else if (activeWhisperModel == null && nextInstalled.includes(defaultWhisperModel)) {
+        try {
+          await ensureWhisperModelReady(defaultWhisperModel)
+        } catch {
+          // Keep UI responsive if default model init fails.
+        }
+      }
+
+      Haptics.selectionAsync().catch(() => {})
+    },
+    [
+      activeWhisperModel,
+      defaultWhisperModel,
+      downloadingModelID,
+      ensureWhisperModelReady,
+      modelPath,
+      refreshInstalledWhisperModels,
+      stopRecording,
+    ],
+  )
 
   const completeSend = useCallback(() => {
     if (sendSettleTimeoutRef.current) {
@@ -960,10 +1526,13 @@ export default function DictationScreen() {
     }
   }, [stopRecording])
 
-  const modelLoading = !model.isReady
-  const prog = model.downloadProgress > 1 ? model.downloadProgress / 100 : model.downloadProgress
-  const load = Math.max(0, Math.min(1, Number.isFinite(prog) ? prog : 0))
-  const pct = Math.round(load * 100)
+  const modelDownloading = downloadingModelID !== null
+  const modelLoading = isPreparingWhisperModel || activeWhisperModel == null || modelDownloading || isTranscribingBulk
+  const modelLoadingState = modelDownloading ? "downloading" : modelLoading ? "loading" : "ready"
+  const pct = Math.round(Math.max(0, Math.min(1, downloadProgress)) * 100)
+  const loadingModelLabel = downloadingModelID
+    ? WHISPER_MODEL_LABELS[downloadingModelID]
+    : WHISPER_MODEL_LABELS[defaultWhisperModel]
   const hasTranscript = transcribedText.trim().length > 0
   const shouldShowSend = hasCompletedSession && hasTranscript
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
@@ -995,12 +1564,12 @@ export default function DictationScreen() {
   }, [isRecording, recordingProgress])
 
   useEffect(() => {
-    const isGenerating = isRecording || model.isGenerating
+    const isGenerating = isRecording
     waveformVisibility.value = withTiming(isGenerating ? 1 : 0, {
       duration: isGenerating ? 180 : 240,
       easing: Easing.inOut(Easing.quad),
     })
-  }, [isRecording, model.isGenerating, waveformVisibility])
+  }, [isRecording, waveformVisibility])
 
   useEffect(() => {
     serverMenuProgress.value = withTiming(isDropdownOpen ? 1 : 0, {
@@ -1736,14 +2305,16 @@ export default function DictationScreen() {
       <View style={styles.transcriptionArea}>
         <View style={styles.transcriptionTopActions} pointerEvents="box-none">
           <Pressable
-            onPress={() => {
-              void handleDeleteModel()
-            }}
+            onPress={handleOpenWhisperSettings}
             style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
             hitSlop={8}
-            disabled={modelLoading || modelReset}
           >
-            <Text style={styles.modelDeleteIcon}>DL</Text>
+            <SymbolView
+              name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
+              size={18}
+              weight="semibold"
+              tintColor="#B8BDC9"
+            />
           </Pressable>
           <Pressable
             onPress={handleClearTranscript}
@@ -1757,6 +2328,12 @@ export default function DictationScreen() {
         {monitorStatus ? (
           <View style={styles.monitorBadge}>
             <Text style={styles.monitorBadgeText}>{monitorStatus}</Text>
+          </View>
+        ) : null}
+
+        {whisperError ? (
+          <View style={styles.modelErrorBadge}>
+            <Text style={styles.modelErrorText}>{whisperError}</Text>
           </View>
         ) : null}
 
@@ -1799,11 +2376,25 @@ export default function DictationScreen() {
           style={[styles.recordPressable, !permissionGranted && styles.recordButtonDisabled]}
         >
           <View style={styles.recordButton}>
-            {modelLoading ? (
+            {isTranscribingBulk ? (
+              <View style={styles.recordBusyCenter}>
+                <ActivityIndicator color="#FF2E3F" size="small" />
+              </View>
+            ) : modelLoadingState !== "ready" ? (
               <>
-                <View style={[styles.loadFill, { width: `${Math.max(pct, 3)}%` }]} />
+                <View
+                  style={[
+                    styles.loadFill,
+                    modelLoadingState === "loading" && styles.loadFillPending,
+                    { width: modelLoadingState === "downloading" ? `${Math.max(pct, 3)}%` : "100%" },
+                  ]}
+                />
                 <View style={styles.loadOverlay} pointerEvents="none">
-                  <Text style={styles.loadText}>{`Downloading model ${pct}%`}</Text>
+                  <Text style={styles.loadText}>
+                    {modelLoadingState === "downloading"
+                      ? `Downloading ${loadingModelLabel} ${pct}%`
+                      : `Loading ${loadingModelLabel}`}
+                  </Text>
                 </View>
               </>
             ) : (
@@ -1830,6 +2421,162 @@ export default function DictationScreen() {
           </Pressable>
         </Animated.View>
       </View>
+
+      <Modal
+        visible={whisperSettingsOpen}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setWhisperSettingsOpen(false)}
+      >
+        <SafeAreaView style={styles.settingsRoot}>
+          <View style={styles.settingsTop}>
+            <View style={styles.settingsTitleBlock}>
+              <Text style={styles.settingsTitle}>Whisper models</Text>
+              <Text style={styles.settingsSubtitle}>Default: {WHISPER_MODEL_LABELS[defaultWhisperModel]}</Text>
+            </View>
+            <Pressable onPress={() => setWhisperSettingsOpen(false)}>
+              <Text style={styles.settingsClose}>Done</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.settingsModeRow}>
+            <Text style={styles.settingsModeLabel}>Transcription</Text>
+            <View style={styles.settingsModeControls}>
+              <Pressable
+                onPress={() => setTranscriptionMode("bulk")}
+                disabled={isRecording || isTranscribingBulk}
+                style={({ pressed }) => [
+                  styles.settingsModeButton,
+                  transcriptionMode === "bulk" && styles.settingsModeButtonActive,
+                  (isRecording || isTranscribingBulk) && styles.settingsInlinePressableDisabled,
+                  pressed && styles.clearButtonPressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.settingsModeButtonText,
+                    transcriptionMode === "bulk" && styles.settingsModeButtonTextActive,
+                  ]}
+                >
+                  On Release
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => setTranscriptionMode("realtime")}
+                disabled={isRecording || isTranscribingBulk}
+                style={({ pressed }) => [
+                  styles.settingsModeButton,
+                  transcriptionMode === "realtime" && styles.settingsModeButtonActive,
+                  (isRecording || isTranscribingBulk) && styles.settingsInlinePressableDisabled,
+                  pressed && styles.clearButtonPressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.settingsModeButtonText,
+                    transcriptionMode === "realtime" && styles.settingsModeButtonTextActive,
+                  ]}
+                >
+                  Realtime
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <ScrollView style={styles.settingsScroll} contentContainerStyle={styles.settingsContent}>
+            {WHISPER_MODELS.map((modelID) => {
+              const installed = installedWhisperModels.includes(modelID)
+              const isDefault = defaultWhisperModel === modelID
+              const isDownloading = downloadingModelID === modelID
+              const actionDisabled = (downloadingModelID !== null && !isDownloading) || isTranscribingBulk
+              const rowLabel = isDefault ? `${modelID} · default` : modelID
+              const actionIcon = isDownloading ? "…" : installed ? "✓" : "↓"
+              const downloadPct = Math.round(Math.max(0, Math.min(1, downloadProgress)) * 100)
+              const actionLabel = isDownloading
+                ? "Downloading"
+                : installed
+                  ? isDefault
+                    ? "Selected"
+                    : "Select"
+                  : "Download"
+              const sizeLabel = formatWhisperModelSize(WHISPER_MODEL_SIZES[modelID])
+
+              return (
+                <View key={modelID} style={styles.settingsInlineRow}>
+                  <Pressable
+                    onPress={() => {
+                      if (installed) {
+                        void handleSelectWhisperModel(modelID)
+                      }
+                    }}
+                    onLongPress={() => {
+                      if (!installed || isDownloading) return
+                      Alert.alert("Delete model?", `Remove ${modelID} from this device?`, [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Delete",
+                          style: "destructive",
+                          onPress: () => {
+                            void handleDeleteWhisperModel(modelID)
+                          },
+                        },
+                      ])
+                    }}
+                    delayLongPress={350}
+                    disabled={!installed || actionDisabled || isPreparingWhisperModel}
+                    style={({ pressed }) => [
+                      styles.settingsInlineLabelPressable,
+                      (!installed || actionDisabled || isPreparingWhisperModel) &&
+                        styles.settingsInlinePressableDisabled,
+                      pressed && styles.clearButtonPressed,
+                    ]}
+                  >
+                    <Text style={styles.settingsInlineName}>{rowLabel}</Text>
+                  </Pressable>
+
+                  <Text style={styles.settingsInlineSize}>{sizeLabel}</Text>
+
+                  <Pressable
+                    onPress={() => {
+                      if (isDownloading) return
+                      if (installed) {
+                        void handleSelectWhisperModel(modelID)
+                        return
+                      }
+                      void handleDownloadWhisperModel(modelID)
+                    }}
+                    disabled={actionDisabled || (installed && isPreparingWhisperModel)}
+                    accessibilityLabel={actionLabel}
+                    style={({ pressed }) => [
+                      styles.settingsInlineIconButton,
+                      (actionDisabled || (installed && isPreparingWhisperModel)) &&
+                        styles.settingsInlinePressableDisabled,
+                      pressed && styles.clearButtonPressed,
+                    ]}
+                  >
+                    {isDownloading ? (
+                      <View style={styles.settingsDownloadCircle}>
+                        <Text style={styles.settingsDownloadCircleText}>{downloadPct}</Text>
+                      </View>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.settingsInlineIcon,
+                          installed && styles.settingsInlineIconInstalled,
+                          isDownloading && styles.settingsInlineIconDownloading,
+                        ]}
+                      >
+                        {actionIcon}
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+              )
+            })}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       <Modal
         visible={scanOpen}
@@ -2102,11 +2849,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  modelDeleteIcon: {
-    color: "#8FB4FF",
-    fontSize: 14,
-    fontWeight: "800",
-    letterSpacing: 0.6,
+  modelErrorBadge: {
+    alignSelf: "flex-start",
+    marginLeft: 14,
+    marginTop: 8,
+    marginBottom: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#3A1A1D",
+    borderWidth: 1,
+    borderColor: "#5D292F",
+  },
+  modelErrorText: {
+    color: "#FFB9BF",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.1,
   },
   monitorBadge: {
     alignSelf: "flex-start",
@@ -2177,12 +2936,21 @@ const styles = StyleSheet.create({
     width: "100%",
     overflow: "hidden",
   },
+  recordBusyCenter: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+  },
   loadFill: {
     position: "absolute",
     left: 0,
     top: 0,
     bottom: 0,
     backgroundColor: "#FF5B47",
+  },
+  loadFillPending: {
+    backgroundColor: "#66423C",
   },
   loadOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -2195,6 +2963,152 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     letterSpacing: 0.2,
+  },
+  settingsRoot: {
+    flex: 1,
+    backgroundColor: "#121212",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 12,
+  },
+  settingsTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  settingsTitleBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  settingsTitle: {
+    color: "#F1F1F1",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  settingsSubtitle: {
+    color: "#999999",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  settingsClose: {
+    color: "#C5C5C5",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  settingsModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#2B2B2B",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#171717",
+  },
+  settingsModeLabel: {
+    color: "#D2D2D2",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
+  settingsModeControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  settingsModeButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#3A3A3A",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#1E1E1E",
+  },
+  settingsModeButtonActive: {
+    borderColor: "#6B3A31",
+    backgroundColor: "#3D231E",
+  },
+  settingsModeButtonText: {
+    color: "#B9B9B9",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  settingsModeButtonTextActive: {
+    color: "#FFD8D2",
+  },
+  settingsScroll: {
+    flex: 1,
+  },
+  settingsContent: {
+    paddingBottom: 24,
+  },
+  settingsInlineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 44,
+    borderBottomWidth: 1,
+    borderBottomColor: "#242424",
+  },
+  settingsInlineLabelPressable: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingRight: 12,
+  },
+  settingsInlinePressableDisabled: {
+    opacity: 0.55,
+  },
+  settingsInlineName: {
+    color: "#E7E7E7",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  settingsInlineSize: {
+    color: "#8F8F8F",
+    fontSize: 12,
+    fontWeight: "500",
+    minWidth: 64,
+    textAlign: "right",
+  },
+  settingsInlineIconButton: {
+    width: 36,
+    height: 36,
+    marginLeft: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsInlineIcon: {
+    color: "#D0D0D0",
+    fontSize: 17,
+    fontWeight: "700",
+    lineHeight: 19,
+  },
+  settingsInlineIconInstalled: {
+    color: "#E2B1A8",
+  },
+  settingsInlineIconDownloading: {
+    color: "#FFD7CE",
+    fontWeight: "700",
+  },
+  settingsDownloadCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#FF6A57",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2A1715",
+  },
+  settingsDownloadCircleText: {
+    color: "#FFD9D2",
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+    lineHeight: 10,
   },
   scanRoot: {
     flex: 1,

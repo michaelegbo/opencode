@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile-voice",
+    "name": "Control",
     "slug": "mobile-voice",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,6 +10,9 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.anomalyco.mobilevoice",
+      "entitlements": {
+        "com.apple.developer.kernel.extended-virtual-addressing": true
+      },
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs microphone access for live speech-to-text dictation.",
         "NSAppTransportSecurity": {
