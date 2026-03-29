@@ -80,6 +80,10 @@ function hosts(hostname: string, port: number, advertised: string[] = []) {
   return [...preferred, ...entries.map((item) => item.url)]
 }
 
+function pairLink(pair: unknown) {
+  return `mobilevoice:///?pair=${encodeURIComponent(JSON.stringify(pair))}`
+}
+
 export const ServeCommand = cmd({
   command: "serve",
   builder: (yargs) =>
@@ -153,14 +157,16 @@ export const ServeCommand = cmd({
       }
       if (pair) {
         console.log("experimental push relay enabled")
-        const payload = JSON.stringify(pair)
-        const code = await QRCode.toString(payload, {
+        const link = pairLink(pair)
+        const code = await QRCode.toString(link, {
           type: "terminal",
           small: true,
           errorCorrectionLevel: "M",
         })
-        console.log("scan qr code in mobile app")
+        console.log("scan qr code in mobile app or phone camera")
         console.log(code)
+        console.log("qr link")
+        console.log(link)
         console.log("qr payload")
         console.log(JSON.stringify(pair, null, 2))
       }

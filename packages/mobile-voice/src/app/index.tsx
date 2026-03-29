@@ -11,6 +11,7 @@ import {
   LayoutChangeEvent,
   AppState,
   AppStateStatus,
+  Linking,
   Platform,
 } from "react-native"
 import Animated, {
@@ -342,7 +343,6 @@ type DropdownMode = "none" | "server" | "session"
 
 type Pair = {
   v: 1
-  name?: string
   serverID?: string
   relayURL: string
   relaySecret: string
@@ -417,30 +417,55 @@ type Cam = {
   requestCameraPermissionsAsync: () => Promise<{ granted: boolean }>
 }
 
+function parsePairShape(data: unknown): Pair | undefined {
+  if (!data || typeof data !== "object") return
+  if ((data as { v?: unknown }).v !== 1) return
+  if (typeof (data as { relayURL?: unknown }).relayURL !== "string") return
+  if (typeof (data as { relaySecret?: unknown }).relaySecret !== "string") return
+  if (!Array.isArray((data as { hosts?: unknown }).hosts)) return
+  const hosts = (data as { hosts: unknown[] }).hosts.filter((item): item is string => typeof item === "string")
+  if (!hosts.length) return
+  const serverIDRaw = (data as { serverID?: unknown }).serverID
+  const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : undefined
+  return {
+    v: 1,
+    serverID,
+    relayURL: (data as { relayURL: string }).relayURL,
+    relaySecret: (data as { relaySecret: string }).relaySecret,
+    hosts,
+  }
+}
+
 function parsePair(input: string): Pair | undefined {
+  const raw = input.trim()
+  if (!raw) return
+
+  const candidates: string[] = [raw]
+
   try {
-    const data = JSON.parse(input)
-    if (!data || typeof data !== "object") return
-    if ((data as { v?: unknown }).v !== 1) return
-    if (typeof (data as { relayURL?: unknown }).relayURL !== "string") return
-    if (typeof (data as { relaySecret?: unknown }).relaySecret !== "string") return
-    if (!Array.isArray((data as { hosts?: unknown }).hosts)) return
-    const hosts = (data as { hosts: unknown[] }).hosts.filter((item): item is string => typeof item === "string")
-    if (!hosts.length) return
-    const nameRaw = (data as { name?: unknown }).name
-    const name = typeof nameRaw === "string" && nameRaw.trim().length > 0 ? nameRaw.trim() : undefined
-    const serverIDRaw = (data as { serverID?: unknown }).serverID
-    const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : undefined
-    return {
-      v: 1,
-      name,
-      serverID,
-      relayURL: (data as { relayURL: string }).relayURL,
-      relaySecret: (data as { relaySecret: string }).relaySecret,
-      hosts,
+    const url = new URL(raw)
+    const query = url.searchParams.get("pair") ?? url.searchParams.get("payload")
+    if (query) {
+      candidates.unshift(query)
     }
   } catch {
-    return
+    // Raw JSON payload is still supported.
+  }
+
+  const seen = new Set<string>()
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue
+    seen.add(candidate)
+
+    try {
+      const parsed = JSON.parse(candidate)
+      const pair = parsePairShape(parsed)
+      if (pair) {
+        return pair
+      }
+    } catch {
+      // keep trying fallbacks
+    }
   }
 }
 
@@ -2544,7 +2569,7 @@ export default function DictationScreen() {
   )
 
   const addServer = useCallback(
-    (serverURL: string, relayURL: string, relaySecretRaw: string, serverIDRaw?: string, nameRaw?: string) => {
+    (serverURL: string, relayURL: string, relaySecretRaw: string, serverIDRaw?: string) => {
       const raw = serverURL.trim()
       if (!raw) return false
 
@@ -2569,11 +2594,9 @@ export default function DictationScreen() {
       const id = `srv-${Date.now()}`
       const relaySecret = relaySecretRaw.trim()
       const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : null
-      const explicitName = typeof nameRaw === "string" && nameRaw.trim().length > 0 ? nameRaw.trim() : null
       const url = `${parsed.protocol}//${parsed.host}`
       const inferredName =
         parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" ? "Local OpenCode" : parsed.hostname
-      const name = explicitName ?? inferredName
       const relay = `${relayParsed.protocol}//${relayParsed.host}`
       const existing = serversRef.current.find(
         (item) =>
@@ -2583,17 +2606,9 @@ export default function DictationScreen() {
           (!serverID || item.serverID === serverID || item.serverID === null),
       )
       if (existing) {
-        if ((serverID && existing.serverID !== serverID) || (explicitName && existing.name !== explicitName)) {
+        if (serverID && existing.serverID !== serverID) {
           setServers((prev) =>
-            prev.map((item) =>
-              item.id === existing.id
-                ? {
-                    ...item,
-                    name: explicitName ?? item.name,
-                    serverID: serverID ?? item.serverID,
-                  }
-                : item,
-            ),
+            prev.map((item) => (item.id === existing.id ? { ...item, serverID: serverID ?? item.serverID } : item)),
           )
         }
         setActiveServerId(existing.id)
@@ -2607,7 +2622,7 @@ export default function DictationScreen() {
         ...prev,
         {
           id,
-          name,
+          name: inferredName,
           url,
           serverID,
           relayURL: relay,
@@ -2695,42 +2710,100 @@ export default function DictationScreen() {
     FileSystem.deleteAsync(ONBOARDING_STATE_FILE, { idempotent: true }).catch(() => {})
   }, [permissionGranted])
 
-  const handleScan = useCallback(
-    (event: Scan) => {
-      if (scanLockRef.current) return
-      scanLockRef.current = true
-      const pair = parsePair(event.data)
+  const connectPairPayload = useCallback(
+    (rawData: string, source: "scan" | "link") => {
+      const fromScan = source === "scan"
+      if (fromScan && scanLockRef.current) return
+
+      if (fromScan) {
+        scanLockRef.current = true
+      }
+
+      const pair = parsePair(rawData)
       if (!pair) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {})
-        setTimeout(() => {
-          scanLockRef.current = false
-        }, 750)
+        if (fromScan) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {})
+          setTimeout(() => {
+            scanLockRef.current = false
+          }, 750)
+        }
         return
       }
 
-      void pickHost(pair.hosts).then((host) => {
-        if (!host) {
-          scanLockRef.current = false
-          return
-        }
+      void pickHost(pair.hosts)
+        .then((host) => {
+          if (!host) {
+            if (fromScan) {
+              scanLockRef.current = false
+            }
+            return
+          }
 
-        const ok = addServer(host, pair.relayURL, pair.relaySecret, pair.serverID, pair.name)
-        if (!ok) {
-          scanLockRef.current = false
-          return
-        }
+          const ok = addServer(host, pair.relayURL, pair.relaySecret, pair.serverID)
+          if (!ok) {
+            if (fromScan) {
+              scanLockRef.current = false
+            }
+            return
+          }
 
-        setScanOpen(false)
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
-      })
+          setScanOpen(false)
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+        })
+        .catch(() => {
+          if (fromScan) {
+            scanLockRef.current = false
+          }
+        })
     },
     [addServer],
+  )
+
+  const handleScan = useCallback(
+    (event: Scan) => {
+      connectPairPayload(event.data, "scan")
+    },
+    [connectPairPayload],
   )
 
   useEffect(() => {
     if (scanOpen) return
     scanLockRef.current = false
   }, [scanOpen])
+
+  useEffect(() => {
+    let active = true
+
+    const handleURL = async (url: string | null) => {
+      if (!url) return
+      if (!parsePair(url)) return
+
+      if (!restoredRef.current) {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          if (restoredRef.current || !active) {
+            break
+          }
+        }
+      }
+
+      if (!active) return
+      connectPairPayload(url, "link")
+    }
+
+    void Linking.getInitialURL()
+      .then((url) => handleURL(url))
+      .catch(() => {})
+
+    const sub = Linking.addEventListener("url", (event) => {
+      void handleURL(event.url)
+    })
+
+    return () => {
+      active = false
+      sub.remove()
+    }
+  }, [connectPairPayload])
 
   useEffect(() => {
     if (!activeServerId) return
