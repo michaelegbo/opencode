@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Control",
-    "slug": "mobile-voice",
+    "slug": "control",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -66,7 +66,8 @@
       [
         "expo-notifications",
         {
-          "enableBackgroundRemoteNotifications": true
+          "enableBackgroundRemoteNotifications": true,
+          "sounds": ["./assets/sounds/alert.wav"]
         }
       ]
     ],
@@ -77,8 +78,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "89248f34-51fc-49e9-acb3-728497520c5a"
+        "projectId": "50b3dac3-8b5e-4142-b749-65ecf7b2904d"
       }
-    }
+    },
+    "owner": "anomaly-co"
   }
 }

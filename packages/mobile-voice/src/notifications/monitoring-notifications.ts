@@ -23,6 +23,8 @@ TaskManager.defineTask(BACKGROUND_TASK_NAME, async ({ data }: { data?: unknown }
       title,
       body,
       data: payload ?? {},
+      sound: "alert.wav",
+      ...(Platform.OS === "android" ? { channelId: "monitoring" } : {}),
     },
     trigger: null,
   })
@@ -55,6 +57,7 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
     await Notifications.setNotificationChannelAsync("monitoring", {
       name: "OpenCode Monitoring",
       importance: Notifications.AndroidImportance.HIGH,
+      sound: "alert.wav",
     })
   }
 

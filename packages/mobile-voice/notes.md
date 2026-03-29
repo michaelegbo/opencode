@@ -1,1 +1,4 @@
 - While the model is loading for the first time, there should be some fun little like onboarding sequence that you can go through that makes sure the model is automated properly.
+- When a permission/session complete notification is sent, if you click on it, the session/server should auto be selected. 
+- We need some sort of permissions UI in the top half of the generation.
+- Need to figure out a good way to start new sessions.

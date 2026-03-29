@@ -19,6 +19,10 @@ type PushResult = {
   error?: string
 }
 
+function tokenSuffix(input: string) {
+  return input.length > 8 ? input.slice(-8) : input
+}
+
 let jwt = ""
 let exp = 0
 let pk: Awaited<ReturnType<typeof importPKCS8>> | undefined
@@ -100,10 +104,27 @@ function post(input: {
 }
 
 export async function send(input: PushInput): Promise<PushResult> {
+  const apnsHost = host(input.env)
+  const suffix = tokenSuffix(input.token)
+
+  console.log("[ APN RELAY ] push:start", {
+    env: input.env,
+    host: apnsHost,
+    bundle: input.bundle,
+    tokenSuffix: suffix,
+  })
+
   const auth = await sign().catch((err) => {
     return `error:${String(err)}`
   })
   if (auth.startsWith("error:")) {
+    console.log("[ APN RELAY ] push:auth-failed", {
+      env: input.env,
+      host: apnsHost,
+      bundle: input.bundle,
+      tokenSuffix: suffix,
+      error: auth,
+    })
     return {
       ok: false,
       code: 0,
@@ -117,13 +138,13 @@ export async function send(input: PushInput): Promise<PushResult> {
         title: input.title,
         body: input.body,
       },
-      sound: "default",
+      sound: "alert.wav",
     },
     ...input.data,
   })
 
   const out = await post({
-    host: host(input.env),
+    host: apnsHost,
     token: input.token,
     auth,
     bundle: input.bundle,
@@ -134,11 +155,27 @@ export async function send(input: PushInput): Promise<PushResult> {
   }))
 
   if (out.code === 200) {
+    console.log("[ APN RELAY ] push:sent", {
+      env: input.env,
+      host: apnsHost,
+      bundle: input.bundle,
+      tokenSuffix: suffix,
+      code: out.code,
+    })
     return {
       ok: true,
       code: 200,
     }
   }
+
+  console.log("[ APN RELAY ] push:failed", {
+    env: input.env,
+    host: apnsHost,
+    bundle: input.bundle,
+    tokenSuffix: suffix,
+    code: out.code,
+    error: out.body,
+  })
 
   return {
     ok: false,

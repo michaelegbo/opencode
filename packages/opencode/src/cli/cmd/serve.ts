@@ -10,13 +10,30 @@ import { Installation } from "../../installation"
 import { PushRelay } from "../../server/push-relay"
 import * as QRCode from "qrcode"
 
+function ipTier(address: string): number {
+  const parts = address.split(".")
+  if (parts.length !== 4) return 4
+  const a = Number(parts[0])
+  const b = Number(parts[1])
+  if (a === 127) return 4
+  if (a === 169 && b === 254) return 3
+  if (a === 10) return 2
+  if (a === 172 && b >= 16 && b <= 31) return 2
+  if (a === 192 && b === 168) return 2
+  if (a === 100 && b >= 64 && b <= 127) return 1
+  return 0
+}
+
 function hosts(hostname: string, port: number) {
-  const list = new Set<string>()
+  const seen = new Set<string>()
+  const entries: Array<{ url: string; tier: number }> = []
   const add = (item: string) => {
     if (!item) return
     if (item === "0.0.0.0") return
     if (item === "::") return
-    list.add(`http://${item}:${port}`)
+    if (seen.has(item)) return
+    seen.add(item)
+    entries.push({ url: `http://${item}:${port}`, tier: ipTier(item) })
   }
   add(hostname)
   add("127.0.0.1")
@@ -25,7 +42,8 @@ function hosts(hostname: string, port: number) {
     .filter((item) => item.family === "IPv4" && !item.internal)
     .map((item) => item.address)
     .forEach(add)
-  return [...list]
+  entries.sort((a, b) => a.tier - b.tier)
+  return entries.map((item) => item.url)
 }
 
 export const ServeCommand = cmd({

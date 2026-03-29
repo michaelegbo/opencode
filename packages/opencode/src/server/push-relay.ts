@@ -56,13 +56,48 @@ function norm(input: string) {
   return input.replace(/\/+$/, "")
 }
 
+/**
+ * Classify an IPv4 address into a reachability tier.
+ * Lower number = more likely reachable from an external/overlay network device.
+ *
+ * 0 – public / routable
+ * 1 – CGNAT / shared (100.64.0.0/10) – used by Tailscale, Cloudflare WARP, carrier NAT, etc.
+ * 2 – private LAN (10.0.0.0/8, 172.16-31.x, 192.168.x)
+ * 3 – link-local (169.254.x)
+ * 4 – loopback (127.x)
+ */
+function ipTier(address: string): number {
+  const parts = address.split(".")
+  if (parts.length !== 4) return 4
+  const a = Number(parts[0])
+  const b = Number(parts[1])
+
+  // loopback 127.0.0.0/8
+  if (a === 127) return 4
+  // link-local 169.254.0.0/16
+  if (a === 169 && b === 254) return 3
+  // private 10.0.0.0/8
+  if (a === 10) return 2
+  // private 172.16.0.0/12
+  if (a === 172 && b >= 16 && b <= 31) return 2
+  // private 192.168.0.0/16
+  if (a === 192 && b === 168) return 2
+  // CGNAT / shared address space 100.64.0.0/10 (100.64.x – 100.127.x)
+  if (a === 100 && b >= 64 && b <= 127) return 1
+  // everything else is routable
+  return 0
+}
+
 function list(hostname: string, port: number) {
-  const urls = new Set<string>()
+  const seen = new Set<string>()
+  const hosts: Array<{ url: string; tier: number }> = []
   const add = (host: string) => {
     if (!host) return
     if (host === "0.0.0.0") return
     if (host === "::") return
-    urls.add(`http://${host}:${port}`)
+    if (seen.has(host)) return
+    seen.add(host)
+    hosts.push({ url: `http://${host}:${port}`, tier: ipTier(host) })
   }
 
   add(hostname)
@@ -75,7 +110,10 @@ function list(hostname: string, port: number) {
 
   nets.forEach(add)
 
-  return [...urls]
+  // sort: most externally reachable first, loopback last
+  hosts.sort((a, b) => a.tier - b.tier)
+
+  return hosts.map((item) => item.url)
 }
 
 function map(event: Event): { type: Type; sessionID: string } | undefined {
@@ -216,6 +254,20 @@ async function post(input: { type: Type; sessionID: string }) {
 
   const content = await notify(input)
 
+  console.log("[ APN RELAY ] posting event", {
+    relayURL: next.relayURL,
+    type: input.type,
+    sessionID: input.sessionID,
+    title: content.title,
+  })
+
+  log.info("[ APN RELAY ] posting event", {
+    relayURL: next.relayURL,
+    type: input.type,
+    sessionID: input.sessionID,
+    title: content.title,
+  })
+
   void fetch(`${next.relayURL}/v1/event`, {
     method: "POST",
     headers: {
@@ -230,7 +282,22 @@ async function post(input: { type: Type; sessionID: string }) {
     }),
   })
     .then(async (res) => {
-      if (res.ok) return
+      if (res.ok) {
+        console.log("[ APN RELAY ] relay accepted event", {
+          status: res.status,
+          type: input.type,
+          sessionID: input.sessionID,
+          title: content.title,
+        })
+
+        log.info("[ APN RELAY ] relay accepted event", {
+          status: res.status,
+          type: input.type,
+          sessionID: input.sessionID,
+          title: content.title,
+        })
+        return
+      }
       const error = await res.text().catch(() => "")
       log.warn("relay post failed", {
         status: res.status,

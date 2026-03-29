@@ -246,6 +246,51 @@ function mergeTranscriptChunk(previous: string, chunk: string): string {
   return `${cleanPrevious} ${normalizedChunk}`
 }
 
+type SessionMessageInfo = {
+  role?: unknown
+  time?: unknown
+}
+
+type SessionMessagePart = {
+  type?: unknown
+  text?: unknown
+}
+
+type SessionMessagePayload = {
+  info?: unknown
+  parts?: unknown
+}
+
+function findLatestAssistantCompletionText(payload: unknown): string {
+  if (!Array.isArray(payload)) return ""
+
+  for (let index = payload.length - 1; index >= 0; index -= 1) {
+    const candidate = payload[index] as SessionMessagePayload
+    if (!candidate || typeof candidate !== "object") continue
+
+    const info = candidate.info as SessionMessageInfo
+    if (!info || typeof info !== "object") continue
+    if (info.role !== "assistant") continue
+
+    const time = info.time as { completed?: unknown } | undefined
+    if (!time || typeof time !== "object") continue
+    if (typeof time.completed !== "number") continue
+
+    const parts = Array.isArray(candidate.parts) ? (candidate.parts as SessionMessagePart[]) : []
+    const text = parts
+      .filter((part) => part && part.type === "text" && typeof part.text === "string")
+      .map((part) => cleanSessionText(part.text as string))
+      .filter((part) => part.length > 0)
+      .join("\n\n")
+
+    if (text.length > 0) {
+      return text
+    }
+  }
+
+  return ""
+}
+
 type ServerItem = {
   id: string
   name: string
@@ -354,20 +399,48 @@ function parsePair(input: string): Pair | undefined {
   }
 }
 
-function pickHost(list: string[]): string | undefined {
-  const next = list.find((item) => {
+function isLoopback(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1"
+}
+
+/**
+ * Race all non-loopback hosts in parallel by hitting /health.
+ * Returns the first one that responds with 200, or falls back to the
+ * first non-loopback entry (preserving server-side ordering) if none respond.
+ */
+async function pickHost(list: string[]): Promise<string | undefined> {
+  const candidates = list.filter((item) => {
     try {
-      const url = new URL(item)
-      if (url.hostname === "127.0.0.1") return false
-      if (url.hostname === "localhost") return false
-      if (url.hostname === "0.0.0.0") return false
-      if (url.hostname === "::1") return false
-      return true
+      return !isLoopback(new URL(item).hostname)
     } catch {
       return false
     }
   })
-  return next ?? list[0]
+
+  if (!candidates.length) return list[0]
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 3000)
+
+  try {
+    const winner = await Promise.any(
+      candidates.map(async (host) => {
+        const res = await fetch(`${host.replace(/\/+$/, "")}/health`, {
+          method: "GET",
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`${res.status}`)
+        return host
+      }),
+    )
+    return winner
+  } catch {
+    // all failed or timed out — fall back to first candidate (server already orders by reachability)
+    return candidates[0]
+  } finally {
+    clearTimeout(timeout)
+    controller.abort()
+  }
 }
 
 function serverBases(input: string) {
@@ -473,6 +546,8 @@ export default function DictationScreen() {
   const [isSending, setIsSending] = useState(false)
   const [monitorJob, setMonitorJob] = useState<MonitorJob | null>(null)
   const [monitorStatus, setMonitorStatus] = useState<string>("")
+  const [latestAssistantResponse, setLatestAssistantResponse] = useState("")
+  const [agentStateDismissed, setAgentStateDismissed] = useState(false)
   const [devicePushToken, setDevicePushToken] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState)
   const [dropdownMode, setDropdownMode] = useState<DropdownMode>("none")
@@ -488,6 +563,7 @@ export default function DictationScreen() {
   const serversRef = useRef<ServerItem[]>([])
   const lastWaveformCommitRef = useRef(0)
   const sendPlayer = useAudioPlayer(require("../../assets/sounds/send-whoosh.mp3"))
+  const completePlayer = useAudioPlayer(require("../../assets/sounds/complete.wav"))
 
   const isRecordingRef = useRef(false)
   const isStartingRef = useRef(false)
@@ -513,6 +589,8 @@ export default function DictationScreen() {
   const restoredRef = useRef(false)
   const whisperRestoredRef = useRef(false)
   const refreshSeqRef = useRef<Record<string, number>>({})
+  const activeSessionIdRef = useRef<string | null>(null)
+  const latestAssistantRequestRef = useRef(0)
 
   useEffect(() => {
     serversRef.current = servers
@@ -599,6 +677,10 @@ export default function DictationScreen() {
   useEffect(() => {
     monitorJobRef.current = monitorJob
   }, [monitorJob])
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId
+  }, [activeSessionId])
 
   const modelPath = useCallback((modelID: WhisperModelID) => `${WHISPER_MODELS_DIR}/${modelID}`, [])
 
@@ -931,20 +1013,22 @@ export default function DictationScreen() {
 
   useEffect(() => {
     const notificationSub = Notifications.addNotificationReceivedListener((notification: unknown) => {
-      const data = (notification as { request?: { content?: { data?: unknown } } }).request?.content?.data as Record<
-        string,
-        unknown
-      >
-      const eventType = data.eventType
+      const data = (notification as { request?: { content?: { data?: unknown } } }).request?.content?.data
+      if (!data || typeof data !== "object") return
+      const eventType = (data as { eventType?: unknown }).eventType
       if (eventType === "complete" || eventType === "permission" || eventType === "error") {
         setMonitorStatus(formatMonitorEventLabel(eventType))
       }
-      if (eventType === "complete" || eventType === "error") {
+      if (eventType === "complete") {
+        completePlayer.seekTo(0)
+        completePlayer.play()
+        setMonitorJob(null)
+      } else if (eventType === "error") {
         setMonitorJob(null)
       }
     })
     return () => notificationSub.remove()
-  }, [])
+  }, [completePlayer])
 
   const finalizeRecordingState = useCallback(() => {
     isRecordingRef.current = false
@@ -1254,6 +1338,11 @@ export default function DictationScreen() {
     setIsSending(false)
   }, [clearIconRotation, clearWaveform, sendOutProgress, stopRecording])
 
+  const handleHideAgentState = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {})
+    setAgentStateDismissed(true)
+  }, [])
+
   const resetTranscriptState = useCallback(() => {
     if (isRecordingRef.current) {
       stopRecording()
@@ -1451,8 +1540,36 @@ export default function DictationScreen() {
     }
   }, [])
 
+  const loadLatestAssistantResponse = useCallback(async (baseURL: string, sessionID: string) => {
+    const requestID = latestAssistantRequestRef.current + 1
+    latestAssistantRequestRef.current = requestID
+
+    const base = baseURL.replace(/\/+$/, "")
+
+    try {
+      const response = await fetch(`${base}/session/${sessionID}/message?limit=60`)
+      if (!response.ok) {
+        throw new Error(`Session messages failed (${response.status})`)
+      }
+
+      const payload = (await response.json()) as unknown
+      const text = findLatestAssistantCompletionText(payload)
+
+      if (latestAssistantRequestRef.current !== requestID) return
+      if (activeSessionIdRef.current !== sessionID) return
+      setLatestAssistantResponse(text)
+      if (text) {
+        setAgentStateDismissed(false)
+      }
+    } catch {
+      if (latestAssistantRequestRef.current !== requestID) return
+      if (activeSessionIdRef.current !== sessionID) return
+      setLatestAssistantResponse("")
+    }
+  }, [])
+
   const handleMonitorEvent = useCallback(
-    (eventType: MonitorEventType) => {
+    (eventType: MonitorEventType, job: MonitorJob) => {
       setMonitorStatus(formatMonitorEventLabel(eventType))
 
       if (eventType === "permission") {
@@ -1462,8 +1579,11 @@ export default function DictationScreen() {
 
       if (eventType === "complete") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+        completePlayer.seekTo(0)
+        completePlayer.play()
         stopForegroundMonitor()
         setMonitorJob(null)
+        void loadLatestAssistantResponse(job.opencodeBaseURL, job.sessionID)
         return
       }
 
@@ -1471,7 +1591,7 @@ export default function DictationScreen() {
       stopForegroundMonitor()
       setMonitorJob(null)
     },
-    [stopForegroundMonitor],
+    [completePlayer, loadLatestAssistantResponse, stopForegroundMonitor],
   )
 
   const startForegroundMonitor = useCallback(
@@ -1514,7 +1634,7 @@ export default function DictationScreen() {
 
             const active = monitorJobRef.current
             if (!active || active.id !== job.id) return
-            handleMonitorEvent(eventType)
+            handleMonitorEvent(eventType, job)
           }
         } catch {
           if (abortController.signal.aborted) return
@@ -1554,6 +1674,16 @@ export default function DictationScreen() {
     setMonitorJob(null)
     setMonitorStatus("")
   }, [activeSessionId, stopForegroundMonitor])
+
+  useEffect(() => {
+    setLatestAssistantResponse("")
+    setAgentStateDismissed(false)
+    if (!activeServerId || !activeSessionId) return
+
+    const server = serversRef.current.find((item) => item.id === activeServerId)
+    if (!server || server.status !== "online") return
+    void loadLatestAssistantResponse(server.url, activeSessionId)
+  }, [activeServerId, activeSessionId, loadLatestAssistantResponse])
 
   useEffect(() => {
     return () => {
@@ -1685,6 +1815,11 @@ export default function DictationScreen() {
     ? WHISPER_MODEL_LABELS[downloadingModelID]
     : WHISPER_MODEL_LABELS[defaultWhisperModel]
   const hasTranscript = transcribedText.trim().length > 0
+  const hasAssistantResponse = latestAssistantResponse.trim().length > 0
+  const hasAgentActivity = hasAssistantResponse || monitorStatus.trim().length > 0 || monitorJob !== null
+  const shouldShowAgentStateCard = hasAgentActivity && !agentStateDismissed
+  const agentStateIcon = monitorJob !== null ? "loading" : hasAssistantResponse ? "done" : "loading"
+  const agentStateText = hasAssistantResponse ? latestAssistantResponse : "Waiting for agent…"
   const shouldShowSend = hasCompletedSession && hasTranscript
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
   const activeSession = activeServer?.sessions.find((s) => s.id === activeSessionId) ?? null
@@ -1742,8 +1877,8 @@ export default function DictationScreen() {
           easing: Easing.bezier(0.2, 0.8, 0.2, 1),
         })
       : withTiming(0, {
-          duration: 220,
-          easing: Easing.bezier(0.4, 0, 0.2, 1),
+          duration: 360,
+          easing: Easing.bezier(0.22, 0.61, 0.36, 1),
         })
   }, [shouldShowSend, sendVisibility])
 
@@ -2241,20 +2376,21 @@ export default function DictationScreen() {
         return
       }
 
-      const host = pickHost(pair.hosts)
-      if (!host) {
-        scanLockRef.current = false
-        return
-      }
+      void pickHost(pair.hosts).then((host) => {
+        if (!host) {
+          scanLockRef.current = false
+          return
+        }
 
-      const ok = addServer(host, pair.relayURL, pair.relaySecret)
-      if (!ok) {
-        scanLockRef.current = false
-        return
-      }
+        const ok = addServer(host, pair.relayURL, pair.relaySecret)
+        if (!ok) {
+          scanLockRef.current = false
+          return
+        }
 
-      setScanOpen(false)
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+        setScanOpen(false)
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+      })
     },
     [addServer],
   )
@@ -2273,11 +2409,22 @@ export default function DictationScreen() {
     return () => clearInterval(timer)
   }, [activeServerId, refreshServerStatusAndSessions])
 
+  // Stable key that only changes when relay-relevant server properties change
+  // (id, relayURL, relaySecret), not on status/session/sessionsLoading updates.
+  const relayServersKey = useMemo(
+    () =>
+      servers
+        .filter((s) => s.relaySecret.trim().length > 0)
+        .map((s) => `${s.id}:${s.relayURL}:${s.relaySecret.trim()}`)
+        .join("|"),
+    [servers],
+  )
+
   useEffect(() => {
     if (Platform.OS !== "ios") return
     if (!devicePushToken) return
 
-    const list = servers.filter((server) => server.relaySecret.trim().length > 0)
+    const list = serversRef.current.filter((server) => server.relaySecret.trim().length > 0)
     if (!list.length) return
 
     const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? "com.anomalyco.mobilevoice"
@@ -2322,7 +2469,7 @@ export default function DictationScreen() {
         }
       }),
     ).catch(() => {})
-  }, [devicePushToken, servers])
+  }, [devicePushToken, relayServersKey])
 
   useEffect(() => {
     if (Platform.OS !== "ios") return
@@ -2331,7 +2478,7 @@ export default function DictationScreen() {
     previousPushTokenRef.current = devicePushToken
     if (!previous || previous === devicePushToken) return
 
-    const list = servers.filter((server) => server.relaySecret.trim().length > 0)
+    const list = serversRef.current.filter((server) => server.relaySecret.trim().length > 0)
     if (!list.length) return
     console.log("[Relay] unregister:batch", {
       previousSuffix: previous.slice(-8),
@@ -2365,7 +2512,7 @@ export default function DictationScreen() {
         }
       }),
     ).catch(() => {})
-  }, [devicePushToken, servers])
+  }, [devicePushToken, relayServersKey])
 
   const defaultModelInstalled = installedWhisperModels.includes(defaultWhisperModel)
   const onboardingProgressRaw = downloadingModelID
@@ -2628,68 +2775,152 @@ export default function DictationScreen() {
 
       {/* Transcription area */}
       <View style={styles.transcriptionArea}>
-        <View style={styles.transcriptionTopActions} pointerEvents="box-none">
-          <Pressable
-            onPress={handleOpenWhisperSettings}
-            style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
-            hitSlop={8}
-          >
-            <SymbolView
-              name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
-              size={18}
-              weight="semibold"
-              tintColor="#B8BDC9"
-            />
-          </Pressable>
-          <Pressable
-            onPress={handleClearTranscript}
-            style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
-            hitSlop={8}
-          >
-            <Animated.Text style={[styles.clearIcon, animatedClearIconStyle]}>↻</Animated.Text>
-          </Pressable>
-        </View>
-
-        {monitorStatus ? (
-          <View style={styles.monitorBadge}>
-            <Text style={styles.monitorBadgeText}>{monitorStatus}</Text>
-          </View>
-        ) : null}
-
-        {whisperError ? (
-          <View style={styles.modelErrorBadge}>
-            <Text style={styles.modelErrorText}>{whisperError}</Text>
-          </View>
-        ) : null}
-
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.transcriptionScroll}
-          contentContainerStyle={styles.transcriptionContent}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-        >
-          <Animated.View style={animatedTranscriptSendStyle}>
-            {transcribedText ? (
-              <Text style={styles.transcriptionText}>{transcribedText}</Text>
-            ) : (
-              <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
-            )}
-          </Animated.View>
-        </ScrollView>
-
-        <Animated.View
-          style={[styles.waveformBoxesRow, animatedWaveformRowStyle]}
-          pointerEvents="none"
-          onLayout={handleWaveformLayout}
-        >
-          {Array.from({ length: WAVEFORM_ROWS }).map((_, row) => (
-            <View key={`row-${row}`} style={styles.waveformGridRow}>
-              {waveformLevels.map((_, col) => (
-                <View key={`cell-${row}-${col}`} style={[styles.waveformBox, getWaveformCellStyle(row, col)]} />
-              ))}
+        {shouldShowAgentStateCard ? (
+          <View style={styles.splitCardStack}>
+            <View style={[styles.splitCard, styles.replyCard]}>
+              <View style={styles.agentStateHeaderRow}>
+                <View style={styles.agentStateTitleWrap}>
+                  <View style={styles.agentStateIconWrap}>
+                    {agentStateIcon === "loading" ? (
+                      <ActivityIndicator size="small" color="#91A0C0" />
+                    ) : (
+                      <SymbolView
+                        name={{ ios: "checkmark.circle.fill", android: "check_circle", web: "check_circle" }}
+                        size={16}
+                        tintColor="#91C29D"
+                      />
+                    )}
+                  </View>
+                  <Text style={styles.replyCardLabel}>Agent</Text>
+                </View>
+                <Pressable onPress={handleHideAgentState} hitSlop={8}>
+                  <Text style={styles.agentStateClose}>✕</Text>
+                </Pressable>
+              </View>
+              <ScrollView style={styles.replyScroll} contentContainerStyle={styles.replyContent}>
+                <Text style={styles.replyText}>{agentStateText}</Text>
+              </ScrollView>
             </View>
-          ))}
-        </Animated.View>
+
+            <View style={styles.transcriptionPanel}>
+              <View style={styles.transcriptionTopActions} pointerEvents="box-none">
+                <Pressable
+                  onPress={handleOpenWhisperSettings}
+                  style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                  hitSlop={8}
+                >
+                  <SymbolView
+                    name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
+                    size={18}
+                    weight="semibold"
+                    tintColor="#B8BDC9"
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={handleClearTranscript}
+                  style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                  hitSlop={8}
+                >
+                  <Animated.Text style={[styles.clearIcon, animatedClearIconStyle]}>↻</Animated.Text>
+                </Pressable>
+              </View>
+
+              {whisperError ? (
+                <View style={styles.modelErrorBadge}>
+                  <Text style={styles.modelErrorText}>{whisperError}</Text>
+                </View>
+              ) : null}
+
+              <ScrollView
+                ref={scrollViewRef}
+                style={styles.transcriptionScroll}
+                contentContainerStyle={styles.transcriptionContent}
+                onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+              >
+                <Animated.View style={animatedTranscriptSendStyle}>
+                  {transcribedText ? (
+                    <Text style={styles.transcriptionText}>{transcribedText}</Text>
+                  ) : (
+                    <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
+                  )}
+                </Animated.View>
+              </ScrollView>
+
+              <Animated.View
+                style={[styles.waveformBoxesRow, animatedWaveformRowStyle]}
+                pointerEvents="none"
+                onLayout={handleWaveformLayout}
+              >
+                {Array.from({ length: WAVEFORM_ROWS }).map((_, row) => (
+                  <View key={`row-${row}`} style={styles.waveformGridRow}>
+                    {waveformLevels.map((_, col) => (
+                      <View key={`cell-${row}-${col}`} style={[styles.waveformBox, getWaveformCellStyle(row, col)]} />
+                    ))}
+                  </View>
+                ))}
+              </Animated.View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.transcriptionPanel}>
+            <View style={styles.transcriptionTopActions} pointerEvents="box-none">
+              <Pressable
+                onPress={handleOpenWhisperSettings}
+                style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                hitSlop={8}
+              >
+                <SymbolView
+                  name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
+                  size={18}
+                  weight="semibold"
+                  tintColor="#B8BDC9"
+                />
+              </Pressable>
+              <Pressable
+                onPress={handleClearTranscript}
+                style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                hitSlop={8}
+              >
+                <Animated.Text style={[styles.clearIcon, animatedClearIconStyle]}>↻</Animated.Text>
+              </Pressable>
+            </View>
+
+            {whisperError ? (
+              <View style={styles.modelErrorBadge}>
+                <Text style={styles.modelErrorText}>{whisperError}</Text>
+              </View>
+            ) : null}
+
+            <ScrollView
+              ref={scrollViewRef}
+              style={styles.transcriptionScroll}
+              contentContainerStyle={styles.transcriptionContent}
+              onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            >
+              <Animated.View style={animatedTranscriptSendStyle}>
+                {transcribedText ? (
+                  <Text style={styles.transcriptionText}>{transcribedText}</Text>
+                ) : (
+                  <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
+                )}
+              </Animated.View>
+            </ScrollView>
+
+            <Animated.View
+              style={[styles.waveformBoxesRow, animatedWaveformRowStyle]}
+              pointerEvents="none"
+              onLayout={handleWaveformLayout}
+            >
+              {Array.from({ length: WAVEFORM_ROWS }).map((_, row) => (
+                <View key={`row-${row}`} style={styles.waveformGridRow}>
+                  {waveformLevels.map((_, col) => (
+                    <View key={`cell-${row}-${col}`} style={[styles.waveformBox, getWaveformCellStyle(row, col)]} />
+                  ))}
+                </View>
+              ))}
+            </Animated.View>
+          </View>
+        )}
       </View>
 
       {/* Record button */}
@@ -3223,12 +3454,70 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 6,
     marginTop: 6,
+  },
+  splitCardStack: {
+    flex: 1,
+    gap: 8,
+  },
+  splitCard: {
+    flex: 1,
     backgroundColor: "#151515",
     borderRadius: 20,
     borderWidth: 3,
     borderColor: "#282828",
     overflow: "hidden",
     position: "relative",
+  },
+  replyCard: {
+    paddingTop: 16,
+  },
+  transcriptionPanel: {
+    flex: 1,
+    position: "relative",
+    overflow: "hidden",
+  },
+  replyCardLabel: {
+    color: "#AAB5CC",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  agentStateHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  agentStateTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  agentStateIconWrap: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  agentStateClose: {
+    color: "#8D97AB",
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  replyScroll: {
+    flex: 1,
+  },
+  replyContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    flexGrow: 1,
+  },
+  replyText: {
+    fontSize: 22,
+    fontWeight: "500",
+    lineHeight: 32,
+    color: "#F4F7FF",
   },
   transcriptionScroll: {
     flex: 1,
@@ -3265,24 +3554,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     letterSpacing: 0.1,
-  },
-  monitorBadge: {
-    alignSelf: "flex-start",
-    marginLeft: 14,
-    marginTop: 12,
-    marginBottom: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: "#1B2438",
-    borderWidth: 1,
-    borderColor: "#2B3D66",
-  },
-  monitorBadgeText: {
-    color: "#BFD0FA",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.2,
   },
   transcriptionText: {
     fontSize: 28,
