@@ -24,17 +24,51 @@ function ipTier(address: string): number {
   return 0
 }
 
-function hosts(hostname: string, port: number) {
+function norm(input: string) {
+  return input.replace(/\/+$/, "")
+}
+
+function advertiseURL(input: string, port: number): string | undefined {
+  const raw = input.trim()
+  if (!raw) return
+
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `http://${raw}`)
+    if (!parsed.hostname) return
+    if (!parsed.port) {
+      parsed.port = String(port)
+    }
+    return norm(`${parsed.protocol}//${parsed.host}`)
+  } catch {
+    return
+  }
+}
+
+function hosts(hostname: string, port: number, advertised: string[] = []) {
   const seen = new Set<string>()
+  const preferred: string[] = []
   const entries: Array<{ url: string; tier: number }> = []
+
+  const addPreferred = (value: string) => {
+    const url = advertiseURL(value, port)
+    if (!url) return
+    if (seen.has(url)) return
+    seen.add(url)
+    preferred.push(url)
+  }
+
   const add = (item: string) => {
     if (!item) return
     if (item === "0.0.0.0") return
     if (item === "::") return
-    if (seen.has(item)) return
-    seen.add(item)
-    entries.push({ url: `http://${item}:${port}`, tier: ipTier(item) })
+    const url = `http://${item}:${port}`
+    if (seen.has(url)) return
+    seen.add(url)
+    entries.push({ url, tier: ipTier(item) })
   }
+
+  advertised.forEach(addPreferred)
+
   add(hostname)
   add("127.0.0.1")
   Object.values(os.networkInterfaces())
@@ -43,7 +77,7 @@ function hosts(hostname: string, port: number) {
     .map((item) => item.address)
     .forEach(add)
   entries.sort((a, b) => a.tier - b.tier)
-  return entries.map((item) => item.url)
+  return [...preferred, ...entries.map((item) => item.url)]
 }
 
 export const ServeCommand = cmd({
@@ -57,6 +91,11 @@ export const ServeCommand = cmd({
       .option("relay-secret", {
         type: "string",
         describe: "experimental APN relay secret",
+      })
+      .option("advertise-host", {
+        type: "string",
+        array: true,
+        describe: "preferred host/domain for mobile QR (repeatable, supports host[:port] or URL)",
       }),
   describe: "starts a headless opencode server",
   handler: async (args) => {
@@ -72,6 +111,18 @@ export const ServeCommand = cmd({
       process.env.OPENCODE_EXPERIMENTAL_PUSH_RELAY_URL ??
       "https://apn.dev.opencode.ai"
     ).trim()
+    const advertiseHostArg = args["advertise-host"]
+    const advertiseHostsFromArg = Array.isArray(advertiseHostArg)
+      ? advertiseHostArg
+      : typeof advertiseHostArg === "string"
+        ? [advertiseHostArg]
+        : []
+    const advertiseHostsFromEnv = (process.env.OPENCODE_EXPERIMENTAL_PUSH_ADVERTISE_HOSTS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const advertiseHosts = [...new Set([...advertiseHostsFromArg, ...advertiseHostsFromEnv])]
+
     const input = (args["relay-secret"] ?? process.env.OPENCODE_EXPERIMENTAL_PUSH_RELAY_SECRET ?? "").trim()
     const relaySecret = input || randomBytes(18).toString("base64url")
     if (!input) {
@@ -88,13 +139,14 @@ export const ServeCommand = cmd({
         relaySecret,
         hostname: host,
         port,
+        advertiseHosts,
       })
       const pair = started ??
         PushRelay.pair() ?? {
           v: 1 as const,
           relayURL,
           relaySecret,
-          hosts: hosts(host, port),
+          hosts: hosts(host, port, advertiseHosts),
         }
       if (!started) {
         console.log("experimental push relay failed to initialize; showing setup qr anyway")

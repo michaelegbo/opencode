@@ -19,6 +19,7 @@ type Input = {
   relaySecret: string
   hostname: string
   port: number
+  advertiseHosts?: string[]
 }
 
 type State = {
@@ -99,17 +100,46 @@ function ipTier(address: string): number {
   return 0
 }
 
-function list(hostname: string, port: number) {
+function advertiseURL(input: string, port: number): string | undefined {
+  const raw = input.trim()
+  if (!raw) return
+
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `http://${raw}`)
+    if (!parsed.hostname) return
+    if (!parsed.port) {
+      parsed.port = String(port)
+    }
+    return norm(`${parsed.protocol}//${parsed.host}`)
+  } catch {
+    return
+  }
+}
+
+function list(hostname: string, port: number, advertised: string[] = []) {
   const seen = new Set<string>()
+  const preferred: string[] = []
   const hosts: Array<{ url: string; tier: number }> = []
+
+  const addPreferred = (input: string) => {
+    const url = advertiseURL(input, port)
+    if (!url) return
+    if (seen.has(url)) return
+    seen.add(url)
+    preferred.push(url)
+  }
+
   const add = (host: string) => {
     if (!host) return
     if (host === "0.0.0.0") return
     if (host === "::") return
-    if (seen.has(host)) return
-    seen.add(host)
-    hosts.push({ url: `http://${host}:${port}`, tier: ipTier(host) })
+    const url = `http://${host}:${port}`
+    if (seen.has(url)) return
+    seen.add(url)
+    hosts.push({ url, tier: ipTier(host) })
   }
+
+  advertised.forEach(addPreferred)
 
   add(hostname)
   add("127.0.0.1")
@@ -124,7 +154,7 @@ function list(hostname: string, port: number) {
   // sort: most externally reachable first, loopback last
   hosts.sort((a, b) => a.tier - b.tier)
 
-  return hosts.map((item) => item.url)
+  return [...preferred, ...hosts.map((item) => item.url)]
 }
 
 function map(event: Event): { type: Type; sessionID: string } | undefined {
@@ -353,7 +383,7 @@ export namespace PushRelay {
       serverID: serverID({ relayURL, relaySecret }),
       relayURL,
       relaySecret,
-      hosts: list(input.hostname, input.port),
+      hosts: list(input.hostname, input.port, input.advertiseHosts ?? []),
     }
 
     const callback = (event: { payload: Event }) => {

@@ -342,6 +342,7 @@ type DropdownMode = "none" | "server" | "session"
 
 type Pair = {
   v: 1
+  name?: string
   serverID?: string
   relayURL: string
   relaySecret: string
@@ -426,10 +427,13 @@ function parsePair(input: string): Pair | undefined {
     if (!Array.isArray((data as { hosts?: unknown }).hosts)) return
     const hosts = (data as { hosts: unknown[] }).hosts.filter((item): item is string => typeof item === "string")
     if (!hosts.length) return
+    const nameRaw = (data as { name?: unknown }).name
+    const name = typeof nameRaw === "string" && nameRaw.trim().length > 0 ? nameRaw.trim() : undefined
     const serverIDRaw = (data as { serverID?: unknown }).serverID
     const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : undefined
     return {
       v: 1,
+      name,
       serverID,
       relayURL: (data as { relayURL: string }).relayURL,
       relaySecret: (data as { relaySecret: string }).relaySecret,
@@ -444,10 +448,17 @@ function isLoopback(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1"
 }
 
+function isCarrierGradeNat(hostname: string): boolean {
+  const match = /^100\.(\d{1,3})\./.exec(hostname)
+  if (!match) return false
+  const octet = Number(match[1])
+  return octet >= 64 && octet <= 127
+}
+
 /**
- * Race all non-loopback hosts in parallel by hitting /health.
- * Returns the first one that responds with 200, or falls back to the
- * first non-loopback entry (preserving server-side ordering) if none respond.
+ * Probe all non-loopback hosts in parallel by hitting /health, then
+ * choose the first reachable host based on the original ordering.
+ * This preserves server-side preference (e.g. tailnet before LAN).
  */
 async function pickHost(list: string[]): Promise<string | undefined> {
   const candidates = list.filter((item) => {
@@ -460,27 +471,34 @@ async function pickHost(list: string[]): Promise<string | undefined> {
 
   if (!candidates.length) return list[0]
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 3000)
+  const probes = candidates.map(async (host) => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    try {
+      const res = await fetch(`${host.replace(/\/+$/, "")}/health`, {
+        method: "GET",
+        signal: controller.signal,
+      })
+      return res.ok
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timeout)
+    }
+  })
 
+  for (let index = 0; index < candidates.length; index += 1) {
+    const reachable = await probes[index]
+    if (reachable) {
+      return candidates[index]
+    }
+  }
+
+  // none reachable — keep first candidate as deterministic fallback
   try {
-    const winner = await Promise.any(
-      candidates.map(async (host) => {
-        const res = await fetch(`${host.replace(/\/+$/, "")}/health`, {
-          method: "GET",
-          signal: controller.signal,
-        })
-        if (!res.ok) throw new Error(`${res.status}`)
-        return host
-      }),
-    )
-    return winner
-  } catch {
-    // all failed or timed out — fall back to first candidate (server already orders by reachability)
     return candidates[0]
-  } finally {
-    clearTimeout(timeout)
-    controller.abort()
+  } catch {
+    return list[0]
   }
 }
 
@@ -489,11 +507,7 @@ function serverBases(input: string) {
   const list = [base]
   try {
     const url = new URL(base)
-    const local =
-      url.hostname === "127.0.0.1" ||
-      url.hostname === "localhost" ||
-      url.hostname === "::1" ||
-      url.hostname.startsWith("10.")
+    const local = looksLikeLocalHost(url.hostname)
     const tailnet = url.hostname.endsWith(".ts.net")
     const secure = `https://${url.host}`
     const insecure = `http://${url.host}`
@@ -514,11 +528,14 @@ function serverBases(input: string) {
 
 function looksLikeLocalHost(hostname: string): boolean {
   return (
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
     hostname === "localhost" ||
     hostname.endsWith(".local") ||
     hostname.startsWith("10.") ||
     hostname.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    isCarrierGradeNat(hostname)
   )
 }
 
@@ -1553,7 +1570,12 @@ export default function DictationScreen() {
 
     setLocalNetworkPermissionState("pending")
 
-    const localProbes = new Set<string>(["http://192.168.1.1", "http://192.168.0.1", "http://10.0.0.1"])
+    const localProbes = new Set<string>([
+      "http://192.168.1.1",
+      "http://192.168.0.1",
+      "http://10.0.0.1",
+      "http://100.100.100.100",
+    ])
 
     for (const server of serversRef.current) {
       try {
@@ -2127,8 +2149,13 @@ export default function DictationScreen() {
     const base = candidates[0] ?? server.url.replace(/\/+$/, "")
     const healthURL = `${base}/health`
     const sessionsURL = `${base}/experimental/session?limit=100`
-    const insecureRemote =
-      base.startsWith("http://") && !base.includes("127.0.0.1") && !base.includes("localhost") && !base.includes("10.")
+    let insecureRemote = false
+    try {
+      const parsedBase = new URL(base)
+      insecureRemote = parsedBase.protocol === "http:" && !looksLikeLocalHost(parsedBase.hostname)
+    } catch {
+      insecureRemote = base.startsWith("http://")
+    }
     console.log("[Server] refresh:start", {
       id: server.id,
       name: server.name,
@@ -2517,7 +2544,7 @@ export default function DictationScreen() {
   )
 
   const addServer = useCallback(
-    (serverURL: string, relayURL: string, relaySecretRaw: string, serverIDRaw?: string) => {
+    (serverURL: string, relayURL: string, relaySecretRaw: string, serverIDRaw?: string, nameRaw?: string) => {
       const raw = serverURL.trim()
       if (!raw) return false
 
@@ -2542,9 +2569,11 @@ export default function DictationScreen() {
       const id = `srv-${Date.now()}`
       const relaySecret = relaySecretRaw.trim()
       const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : null
+      const explicitName = typeof nameRaw === "string" && nameRaw.trim().length > 0 ? nameRaw.trim() : null
       const url = `${parsed.protocol}//${parsed.host}`
       const inferredName =
         parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" ? "Local OpenCode" : parsed.hostname
+      const name = explicitName ?? inferredName
       const relay = `${relayParsed.protocol}//${relayParsed.host}`
       const existing = serversRef.current.find(
         (item) =>
@@ -2554,8 +2583,18 @@ export default function DictationScreen() {
           (!serverID || item.serverID === serverID || item.serverID === null),
       )
       if (existing) {
-        if (serverID && existing.serverID !== serverID) {
-          setServers((prev) => prev.map((item) => (item.id === existing.id ? { ...item, serverID } : item)))
+        if ((serverID && existing.serverID !== serverID) || (explicitName && existing.name !== explicitName)) {
+          setServers((prev) =>
+            prev.map((item) =>
+              item.id === existing.id
+                ? {
+                    ...item,
+                    name: explicitName ?? item.name,
+                    serverID: serverID ?? item.serverID,
+                  }
+                : item,
+            ),
+          )
         }
         setActiveServerId(existing.id)
         setActiveSessionId(null)
@@ -2568,7 +2607,7 @@ export default function DictationScreen() {
         ...prev,
         {
           id,
-          name: inferredName,
+          name,
           url,
           serverID,
           relayURL: relay,
@@ -2675,7 +2714,7 @@ export default function DictationScreen() {
           return
         }
 
-        const ok = addServer(host, pair.relayURL, pair.relaySecret, pair.serverID)
+        const ok = addServer(host, pair.relayURL, pair.relaySecret, pair.serverID, pair.name)
         if (!ok) {
           scanLockRef.current = false
           return
