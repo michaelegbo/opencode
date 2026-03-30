@@ -1976,7 +1976,12 @@ export default function DictationScreen() {
 
   const modelDownloading = downloadingModelID !== null
   const modelLoading = isPreparingWhisperModel || activeWhisperModel == null || modelDownloading || isTranscribingBulk
-  const modelLoadingState = modelDownloading ? "downloading" : modelLoading ? "loading" : "ready"
+  let modelLoadingState: "downloading" | "loading" | "ready" = "ready"
+  if (modelDownloading) {
+    modelLoadingState = "downloading"
+  } else if (modelLoading) {
+    modelLoadingState = "loading"
+  }
   const pct = Math.round(Math.max(0, Math.min(1, downloadProgress)) * 100)
   const loadingModelLabel = downloadingModelID
     ? WHISPER_MODEL_LABELS[downloadingModelID]
@@ -1986,8 +1991,10 @@ export default function DictationScreen() {
   const hasAgentActivity = hasAssistantResponse || monitorStatus.trim().length > 0 || monitorJob !== null
   const shouldShowAgentStateCard = hasAgentActivity && !agentStateDismissed
   const showsCompleteState = monitorStatus.toLowerCase().includes("complete")
-  const agentStateIcon =
-    monitorJob !== null ? "loading" : hasAssistantResponse || showsCompleteState ? "done" : "loading"
+  let agentStateIcon: "loading" | "done" = "loading"
+  if (monitorJob === null && (hasAssistantResponse || showsCompleteState)) {
+    agentStateIcon = "done"
+  }
   const agentStateText = hasAssistantResponse ? latestAssistantResponse : "Waiting for agent…"
   const shouldShowSend = hasCompletedSession && hasTranscript
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
@@ -1996,14 +2003,12 @@ export default function DictationScreen() {
   const isDropdownOpen = dropdownMode !== "none"
   const effectiveDropdownMode = isDropdownOpen ? dropdownMode : dropdownRenderMode
   const headerTitle = activeServer?.name ?? "No server configured"
-  const headerDotStyle =
-    activeServer == null
-      ? styles.serverStatusOffline
-      : activeServer.status === "online"
-        ? styles.serverStatusActive
-        : activeServer.status === "checking"
-          ? styles.serverStatusChecking
-          : styles.serverStatusOffline
+  let headerDotStyle = styles.serverStatusOffline
+  if (activeServer?.status === "online") {
+    headerDotStyle = styles.serverStatusActive
+  } else if (activeServer?.status === "checking") {
+    headerDotStyle = styles.serverStatusChecking
+  }
 
   const recordingProgress = useSharedValue(0)
   const sendVisibility = useSharedValue(hasTranscript ? 1 : 0)
@@ -2150,8 +2155,12 @@ export default function DictationScreen() {
       const basePhase = (Math.max(0, t - meta.delay) / meta.duration) * Math.PI * 2 + meta.phase + row * 0.35
       const pulse = 0.5 + 0.5 * Math.sin(basePhase)
 
-      const alpha =
-        intensity > 0 ? (0.4 + intensity * 0.6) * (0.85 + pulse * 0.15) : isRecording ? 0.1 + pulse * 0.07 : 0.08
+      let alpha = 0.08
+      if (intensity > 0) {
+        alpha = (0.4 + intensity * 0.6) * (0.85 + pulse * 0.15)
+      } else if (isRecording) {
+        alpha = 0.1 + pulse * 0.07
+      }
 
       // Base palette around #78839A, with brighter/lower variants by intensity.
       const baseR = 120
@@ -2666,12 +2675,12 @@ export default function DictationScreen() {
           const direct = (mod as { requestCameraPermissionsAsync?: unknown }).requestCameraPermissionsAsync
           const fromCamera = (mod as { Camera?: { requestCameraPermissionsAsync?: unknown } }).Camera
             ?.requestCameraPermissionsAsync
-          const requestCameraPermissionsAsync =
-            typeof direct === "function"
-              ? (direct as () => Promise<{ granted: boolean }>)
-              : typeof fromCamera === "function"
-                ? (fromCamera as () => Promise<{ granted: boolean }>)
-                : null
+          let requestCameraPermissionsAsync: (() => Promise<{ granted: boolean }>) | null = null
+          if (typeof direct === "function") {
+            requestCameraPermissionsAsync = direct as () => Promise<{ granted: boolean }>
+          } else if (typeof fromCamera === "function") {
+            requestCameraPermissionsAsync = fromCamera as () => Promise<{ granted: boolean }>
+          }
 
           if (!requestCameraPermissionsAsync) {
             return null
