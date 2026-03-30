@@ -10,7 +10,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
   },
   "dependencies": {
     "@fugood/react-native-audio-pcm-stream": "1.1.4",

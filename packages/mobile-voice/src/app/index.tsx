@@ -9,8 +9,6 @@ import {
   Alert,
   ActivityIndicator,
   LayoutChangeEvent,
-  AppState,
-  AppStateStatus,
   Linking,
   Platform,
 } from "react-native"
@@ -34,24 +32,12 @@ import { initWhisper, releaseAllWhisper, type WhisperContext } from "whisper.rn"
 import { RealtimeTranscriber, type RealtimeTranscribeEvent } from "whisper.rn/src/realtime-transcription"
 import { AudioPcmStreamAdapter } from "whisper.rn/src/realtime-transcription/adapters/AudioPcmStreamAdapter"
 import { AudioManager } from "react-native-audio-api"
-import * as Notifications from "expo-notifications"
 import * as FileSystem from "expo-file-system/legacy"
-import Constants from "expo-constants"
 import { fetch as expoFetch } from "expo/fetch"
-import {
-  classifyMonitorEvent,
-  extractSessionID,
-  formatMonitorEventLabel,
-  type OpenCodeEvent,
-  type MonitorEventType,
-} from "@/lib/opencode-events"
-import { parseSSEStream } from "@/lib/sse"
-import { registerRelayDevice, unregisterRelayDevice } from "@/lib/relay-client"
-import {
-  ensureNotificationPermissions,
-  getDevicePushToken,
-  onPushTokenChange,
-} from "@/notifications/monitoring-notifications"
+import { unregisterRelayDevice } from "@/lib/relay-client"
+import { useMonitoring, type MonitorJob } from "@/hooks/use-monitoring"
+import { looksLikeLocalHost, useServerSessions } from "@/hooks/use-server-sessions"
+import { ensureNotificationPermissions, getDevicePushToken } from "@/notifications/monitoring-notifications"
 
 const CONTROL_HEIGHT = 86
 const SEND_SETTLE_MS = 240
@@ -61,7 +47,6 @@ const WAVEFORM_CELL_GAP = 2
 const DROPDOWN_VISIBLE_ROWS = 6
 // If the press duration is shorter than this, treat it as a tap (toggle)
 const TAP_THRESHOLD_MS = 300
-const DEFAULT_RELAY_URL = "https://apn.dev.opencode.ai"
 const SERVER_STATE_FILE = `${FileSystem.documentDirectory}mobile-voice-servers.json`
 const WHISPER_SETTINGS_FILE = `${FileSystem.documentDirectory}mobile-voice-whisper-settings.json`
 const ONBOARDING_STATE_FILE = `${FileSystem.documentDirectory}mobile-voice-onboarding.json`
@@ -247,98 +232,6 @@ function mergeTranscriptChunk(previous: string, chunk: string): string {
   return `${cleanPrevious} ${normalizedChunk}`
 }
 
-type SessionMessageInfo = {
-  role?: unknown
-  time?: unknown
-}
-
-type SessionMessagePart = {
-  type?: unknown
-  text?: unknown
-}
-
-type SessionMessagePayload = {
-  info?: unknown
-  parts?: unknown
-}
-
-function findLatestAssistantCompletionText(payload: unknown): string {
-  if (!Array.isArray(payload)) return ""
-
-  for (let index = payload.length - 1; index >= 0; index -= 1) {
-    const candidate = payload[index] as SessionMessagePayload
-    if (!candidate || typeof candidate !== "object") continue
-
-    const info = candidate.info as SessionMessageInfo
-    if (!info || typeof info !== "object") continue
-    if (info.role !== "assistant") continue
-
-    const time = info.time as { completed?: unknown } | undefined
-    if (!time || typeof time !== "object") continue
-    if (typeof time.completed !== "number") continue
-
-    const parts = Array.isArray(candidate.parts) ? (candidate.parts as SessionMessagePart[]) : []
-    const text = parts
-      .filter((part) => part && part.type === "text" && typeof part.text === "string")
-      .map((part) => cleanSessionText(part.text as string))
-      .filter((part) => part.length > 0)
-      .join("\n\n")
-
-    if (text.length > 0) {
-      return text
-    }
-  }
-
-  return ""
-}
-
-type SessionItem = {
-  id: string
-  title: string
-  updated: number
-}
-
-type ServerSessionPayload = {
-  id?: unknown
-  title?: unknown
-  time?: {
-    updated?: unknown
-  }
-}
-
-function parseSessionItems(payload: unknown): SessionItem[] {
-  if (!Array.isArray(payload)) return []
-
-  return payload
-    .filter((item): item is ServerSessionPayload => !!item && typeof item === "object")
-    .map((item) => ({
-      id: String(item.id ?? ""),
-      title: String(item.title ?? item.id ?? "Untitled session"),
-      updated: Number(item.time?.updated ?? 0),
-    }))
-    .filter((item) => item.id.length > 0)
-    .sort((a, b) => b.updated - a.updated)
-}
-
-type ServerItem = {
-  id: string
-  name: string
-  url: string
-  serverID: string | null
-  relayURL: string
-  relaySecret: string
-  status: "checking" | "online" | "offline"
-  sessions: SessionItem[]
-  sessionsLoading: boolean
-}
-
-type MonitorJob = {
-  id: string
-  sessionID: string
-  opencodeBaseURL: string
-  startedAt: number
-}
-
 function formatSessionUpdated(updatedMs: number): string {
   if (!updatedMs) return ""
 
@@ -375,21 +268,6 @@ type Scan = {
   data: string
 }
 
-type SavedServer = {
-  id: string
-  name: string
-  url: string
-  serverID: string | null
-  relayURL: string
-  relaySecret: string
-}
-
-type SavedState = {
-  servers: SavedServer[]
-  activeServerId: string | null
-  activeSessionId: string | null
-}
-
 type WhisperSavedState = {
   defaultModel: WhisperModelID
   mode: TranscriptionMode
@@ -397,41 +275,6 @@ type WhisperSavedState = {
 
 type OnboardingSavedState = {
   completed: boolean
-}
-
-type SessionRuntimeStatus = "idle" | "busy" | "retry"
-
-type NotificationPayload = {
-  serverID: string | null
-  eventType: MonitorEventType | null
-  sessionID: string | null
-}
-
-function parseMonitorEventType(value: unknown): MonitorEventType | null {
-  if (value === "complete" || value === "permission" || value === "error") {
-    return value
-  }
-
-  return null
-}
-
-function parseNotificationPayload(data: unknown): NotificationPayload | null {
-  if (!data || typeof data !== "object") return null
-
-  const serverIDRaw = (data as { serverID?: unknown }).serverID
-  const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : null
-
-  const eventType = parseMonitorEventType((data as { eventType?: unknown }).eventType)
-  const sessionIDRaw = (data as { sessionID?: unknown }).sessionID
-  const sessionID = typeof sessionIDRaw === "string" && sessionIDRaw.length > 0 ? sessionIDRaw : null
-
-  if (!eventType && !sessionID && !serverID) return null
-
-  return {
-    serverID,
-    eventType,
-    sessionID,
-  }
 }
 
 type Cam = {
@@ -495,13 +338,6 @@ function isLoopback(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "0.0.0.0" || hostname === "::1"
 }
 
-function isCarrierGradeNat(hostname: string): boolean {
-  const match = /^100\.(\d{1,3})\./.exec(hostname)
-  if (!match) return false
-  const octet = Number(match[1])
-  return octet >= 64 && octet <= 127
-}
-
 /**
  * Probe all non-loopback hosts in parallel by hitting /health, then
  * choose the first reachable host based on the original ordering.
@@ -549,83 +385,6 @@ async function pickHost(list: string[]): Promise<string | undefined> {
   }
 }
 
-function serverBases(input: string) {
-  const base = input.replace(/\/+$/, "")
-  const list = [base]
-  try {
-    const url = new URL(base)
-    const local = looksLikeLocalHost(url.hostname)
-    const tailnet = url.hostname.endsWith(".ts.net")
-    const secure = `https://${url.host}`
-    const insecure = `http://${url.host}`
-    if (url.protocol === "http:" && !local) {
-      if (tailnet) {
-        list.unshift(secure)
-      } else {
-        list.push(secure)
-      }
-    } else if (url.protocol === "https:" && tailnet) {
-      list.push(insecure)
-    }
-  } catch {
-    // Keep original base only.
-  }
-  return [...new Set(list)]
-}
-
-function looksLikeLocalHost(hostname: string): boolean {
-  return (
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname === "localhost" ||
-    hostname.endsWith(".local") ||
-    hostname.startsWith("10.") ||
-    hostname.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
-    isCarrierGradeNat(hostname)
-  )
-}
-
-function toSaved(servers: ServerItem[], activeServerId: string | null, activeSessionId: string | null): SavedState {
-  return {
-    servers: servers.map((item) => ({
-      id: item.id,
-      name: item.name,
-      url: item.url,
-      serverID: item.serverID,
-      relayURL: item.relayURL,
-      relaySecret: item.relaySecret,
-    })),
-    activeServerId,
-    activeSessionId,
-  }
-}
-
-function fromSaved(input: SavedState): {
-  servers: ServerItem[]
-  activeServerId: string | null
-  activeSessionId: string | null
-} {
-  const servers = input.servers.map((item) => ({
-    id: item.id,
-    name: item.name,
-    url: item.url,
-    serverID: item.serverID ?? null,
-    relayURL: item.relayURL,
-    relaySecret: item.relaySecret,
-    status: "checking" as const,
-    sessions: [] as SessionItem[],
-    sessionsLoading: false,
-  }))
-  const hasActive = input.activeServerId && servers.some((item) => item.id === input.activeServerId)
-  const activeServerId = hasActive ? input.activeServerId : (servers[0]?.id ?? null)
-  return {
-    servers,
-    activeServerId,
-    activeSessionId: hasActive ? input.activeSessionId : null,
-  }
-}
-
 export default function DictationScreen() {
   const insets = useSafeAreaInsets()
   const [camera, setCamera] = useState<Cam | null>(null)
@@ -651,23 +410,14 @@ export default function DictationScreen() {
   const [controlsWidth, setControlsWidth] = useState(0)
   const [hasCompletedSession, setHasCompletedSession] = useState(false)
   const [isSending, setIsSending] = useState(false)
-  const [monitorJob, setMonitorJob] = useState<MonitorJob | null>(null)
-  const [monitorStatus, setMonitorStatus] = useState<string>("")
-  const [latestAssistantResponse, setLatestAssistantResponse] = useState("")
   const [agentStateDismissed, setAgentStateDismissed] = useState(false)
-  const [devicePushToken, setDevicePushToken] = useState<string | null>(null)
-  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState)
   const [dropdownMode, setDropdownMode] = useState<DropdownMode>("none")
   const [dropdownRenderMode, setDropdownRenderMode] = useState<Exclude<DropdownMode, "none">>("server")
   const [scanOpen, setScanOpen] = useState(false)
   const [camGranted, setCamGranted] = useState(false)
-  const [servers, setServers] = useState<ServerItem[]>([])
-  const [activeServerId, setActiveServerId] = useState<string | null>(null)
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [waveformLevels, setWaveformLevels] = useState<number[]>(Array.from({ length: 24 }, () => 0))
   const [waveformTick, setWaveformTick] = useState(0)
   const waveformLevelsRef = useRef<number[]>(Array.from({ length: 24 }, () => 0))
-  const serversRef = useRef<ServerItem[]>([])
   const lastWaveformCommitRef = useRef(0)
   const sendPlayer = useAudioPlayer(require("../../assets/sounds/send-whoosh.mp3"))
   const completePlayer = useAudioPlayer(require("../../assets/sounds/complete.wav"))
@@ -689,53 +439,57 @@ export default function DictationScreen() {
   const downloadProgressRef = useRef(0)
   const waveformPulseIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sendSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const foregroundMonitorAbortRef = useRef<AbortController | null>(null)
-  const monitorJobRef = useRef<MonitorJob | null>(null)
-  const pendingNotificationEventsRef = useRef<{ payload: NotificationPayload; source: "received" | "response" }[]>([])
-  const notificationHandlerRef = useRef<(payload: NotificationPayload, source: "received" | "response") => void>(
-    (payload, source) => {
-      pendingNotificationEventsRef.current.push({ payload, source })
-    },
-  )
-  const previousPushTokenRef = useRef<string | null>(null)
-  const previousAppStateRef = useRef<AppStateStatus>(AppState.currentState)
   const scanLockRef = useRef(false)
-  const restoredRef = useRef(false)
   const whisperRestoredRef = useRef(false)
-  const refreshSeqRef = useRef<Record<string, number>>({})
-  const activeServerIdRef = useRef<string | null>(null)
-  const activeSessionIdRef = useRef<string | null>(null)
-  const latestAssistantRequestRef = useRef(0)
 
-  useEffect(() => {
-    serversRef.current = servers
-  }, [servers])
-
-  useEffect(() => {
-    let mounted = true
-    void (async () => {
-      try {
-        const data = await FileSystem.readAsStringAsync(SERVER_STATE_FILE)
-        if (!mounted || !data) return
-        const parsed = JSON.parse(data) as SavedState
-        const next = fromSaved(parsed)
-        setServers(next.servers)
-        setActiveServerId(next.activeServerId)
-        setActiveSessionId(next.activeSessionId)
-        console.log("[Server] restore", {
-          count: next.servers.length,
-          activeServerId: next.activeServerId,
-        })
-      } catch {
-        // No saved servers yet.
-      } finally {
-        restoredRef.current = true
-      }
-    })()
-    return () => {
-      mounted = false
-    }
+  const closeDropdown = useCallback(() => {
+    setDropdownMode("none")
   }, [])
+
+  const {
+    servers,
+    serversRef,
+    activeServerId,
+    setActiveServerId,
+    activeServerIdRef,
+    activeSessionId,
+    setActiveSessionId,
+    activeSessionIdRef,
+    restoredRef,
+    refreshServerStatusAndSessions,
+    refreshAllServerHealth,
+    selectServer,
+    selectSession,
+    removeServer,
+    addServer,
+    findServerForSession,
+  } = useServerSessions()
+
+  const {
+    beginMonitoring,
+    devicePushToken,
+    latestAssistantResponse,
+    monitorJob,
+    monitorStatus,
+    setDevicePushToken,
+    setMonitorStatus,
+  } = useMonitoring({
+    completePlayer,
+    closeDropdown,
+    findServerForSession,
+    refreshServerStatusAndSessions,
+    servers,
+    serversRef,
+    restoredRef,
+    activeServerId,
+    activeSessionId,
+    activeServerIdRef,
+    activeSessionIdRef,
+    setActiveServerId,
+    setActiveSessionId,
+    setAgentStateDismissed,
+    setNotificationPermissionState,
+  })
 
   useEffect(() => {
     let mounted = true
@@ -782,24 +536,6 @@ export default function DictationScreen() {
       mounted = false
     }
   }, [])
-
-  useEffect(() => {
-    if (!restoredRef.current) return
-    const payload = toSaved(servers, activeServerId, activeSessionId)
-    void FileSystem.writeAsStringAsync(SERVER_STATE_FILE, JSON.stringify(payload)).catch(() => {})
-  }, [activeServerId, activeSessionId, servers])
-
-  useEffect(() => {
-    monitorJobRef.current = monitorJob
-  }, [monitorJob])
-
-  useEffect(() => {
-    activeServerIdRef.current = activeServerId
-  }, [activeServerId])
-
-  useEffect(() => {
-    activeSessionIdRef.current = activeSessionId
-  }, [activeSessionId])
 
   const modelPath = useCallback((modelID: WhisperModelID) => `${WHISPER_MODELS_DIR}/${modelID}`, [])
 
@@ -1089,78 +825,6 @@ export default function DictationScreen() {
         lastWaveformCommitRef.current = now
       }
     }, 70)
-  }, [])
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (nextState) => {
-      setAppState(nextState)
-    })
-    return () => sub.remove()
-  }, [])
-
-  useEffect(() => {
-    let active = true
-
-    void (async () => {
-      try {
-        if (Platform.OS !== "ios") return
-        const existing = await Notifications.getPermissionsAsync()
-        const granted = Boolean((existing as { granted?: unknown }).granted)
-        if (active) {
-          setNotificationPermissionState(granted ? "granted" : "idle")
-        }
-        if (!granted) return
-        const token = await getDevicePushToken()
-        if (token) {
-          setDevicePushToken(token)
-        }
-      } catch {
-        // Non-fatal: monitoring can still work in-app via foreground SSE.
-      }
-    })()
-
-    const sub = onPushTokenChange((token) => {
-      if (!active) return
-      setDevicePushToken(token)
-    })
-
-    return () => {
-      active = false
-      sub.remove()
-    }
-  }, [])
-
-  useEffect(() => {
-    const notificationSub = Notifications.addNotificationReceivedListener((notification: unknown) => {
-      const data = (notification as { request?: { content?: { data?: unknown } } }).request?.content?.data
-      const payload = parseNotificationPayload(data)
-      if (!payload) return
-      notificationHandlerRef.current(payload, "received")
-    })
-
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response: unknown) => {
-      const data = (response as { notification?: { request?: { content?: { data?: unknown } } } }).notification?.request
-        ?.content?.data
-      const payload = parseNotificationPayload(data)
-      if (!payload) return
-      notificationHandlerRef.current(payload, "response")
-    })
-
-    void Notifications.getLastNotificationResponseAsync()
-      .then((response) => {
-        if (!response) return
-        const data = (response as { notification?: { request?: { content?: { data?: unknown } } } }).notification
-          ?.request?.content?.data
-        const payload = parseNotificationPayload(data)
-        if (!payload) return
-        notificationHandlerRef.current(payload, "response")
-      })
-      .catch(() => {})
-
-    return () => {
-      notificationSub.remove()
-      responseSub.remove()
-    }
   }, [])
 
   const finalizeRecordingState = useCallback(() => {
@@ -1590,7 +1254,7 @@ export default function DictationScreen() {
     } catch {
       setNotificationPermissionState("denied")
     }
-  }, [notificationPermissionState])
+  }, [notificationPermissionState, setDevicePushToken])
 
   const handleRequestMicrophonePermission = useCallback(async () => {
     if (microphonePermissionState === "pending") return
@@ -1655,7 +1319,7 @@ export default function DictationScreen() {
     } finally {
       clearTimeout(timeout)
     }
-  }, [localNetworkPermissionState])
+  }, [localNetworkPermissionState, serversRef])
 
   const completeSend = useCallback(() => {
     if (sendSettleTimeoutRef.current) {
@@ -1669,194 +1333,6 @@ export default function DictationScreen() {
       sendSettleTimeoutRef.current = null
     }, SEND_SETTLE_MS)
   }, [resetTranscriptState, sendOutProgress])
-
-  const stopForegroundMonitor = useCallback(() => {
-    const aborter = foregroundMonitorAbortRef.current
-    if (aborter) {
-      aborter.abort()
-      foregroundMonitorAbortRef.current = null
-    }
-  }, [])
-
-  const loadLatestAssistantResponse = useCallback(async (baseURL: string, sessionID: string) => {
-    const requestID = latestAssistantRequestRef.current + 1
-    latestAssistantRequestRef.current = requestID
-
-    const base = baseURL.replace(/\/+$/, "")
-
-    try {
-      const response = await fetch(`${base}/session/${sessionID}/message?limit=60`)
-      if (!response.ok) {
-        throw new Error(`Session messages failed (${response.status})`)
-      }
-
-      const payload = (await response.json()) as unknown
-      const text = findLatestAssistantCompletionText(payload)
-
-      if (latestAssistantRequestRef.current !== requestID) return
-      if (activeSessionIdRef.current !== sessionID) return
-      setLatestAssistantResponse(text)
-      if (text) {
-        setAgentStateDismissed(false)
-      }
-    } catch {
-      if (latestAssistantRequestRef.current !== requestID) return
-      if (activeSessionIdRef.current !== sessionID) return
-      setLatestAssistantResponse("")
-    }
-  }, [])
-
-  const fetchSessionRuntimeStatus = useCallback(
-    async (baseURL: string, sessionID: string): Promise<SessionRuntimeStatus | null> => {
-      const base = baseURL.replace(/\/+$/, "")
-
-      try {
-        const response = await fetch(`${base}/session/status`)
-        if (!response.ok) {
-          throw new Error(`Session status failed (${response.status})`)
-        }
-
-        const payload = (await response.json()) as unknown
-        if (!payload || typeof payload !== "object") return null
-
-        const status = (payload as Record<string, unknown>)[sessionID]
-        if (!status || typeof status !== "object") return "idle"
-
-        const type = (status as { type?: unknown }).type
-        if (type === "busy" || type === "retry" || type === "idle") {
-          return type
-        }
-
-        return null
-      } catch {
-        return null
-      }
-    },
-    [],
-  )
-
-  const handleMonitorEvent = useCallback(
-    (eventType: MonitorEventType, job: MonitorJob) => {
-      setMonitorStatus(formatMonitorEventLabel(eventType))
-
-      if (eventType === "permission") {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
-        return
-      }
-
-      if (eventType === "complete") {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
-        void completePlayer.seekTo(0)
-        void completePlayer.play()
-        stopForegroundMonitor()
-        setMonitorJob(null)
-        void loadLatestAssistantResponse(job.opencodeBaseURL, job.sessionID)
-        return
-      }
-
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {})
-      stopForegroundMonitor()
-      setMonitorJob(null)
-    },
-    [completePlayer, loadLatestAssistantResponse, stopForegroundMonitor],
-  )
-
-  const startForegroundMonitor = useCallback(
-    (job: MonitorJob) => {
-      stopForegroundMonitor()
-
-      const abortController = new AbortController()
-      foregroundMonitorAbortRef.current = abortController
-
-      const base = job.opencodeBaseURL.replace(/\/+$/, "")
-
-      void (async () => {
-        try {
-          const response = await expoFetch(`${base}/event`, {
-            signal: abortController.signal,
-            headers: {
-              Accept: "text/event-stream",
-              "Cache-Control": "no-cache",
-            },
-          })
-
-          if (!response.ok || !response.body) {
-            throw new Error(`SSE monitor failed (${response.status})`)
-          }
-
-          for await (const message of parseSSEStream(response.body)) {
-            let parsed: OpenCodeEvent | null = null
-            try {
-              parsed = JSON.parse(message.data) as OpenCodeEvent
-            } catch {
-              continue
-            }
-
-            if (!parsed) continue
-            const sessionID = extractSessionID(parsed)
-            if (sessionID !== job.sessionID) continue
-
-            const eventType = classifyMonitorEvent(parsed)
-            if (!eventType) continue
-
-            const active = monitorJobRef.current
-            if (!active || active.id !== job.id) return
-            handleMonitorEvent(eventType, job)
-          }
-        } catch {
-          if (abortController.signal.aborted) return
-        }
-      })()
-    },
-    [handleMonitorEvent, stopForegroundMonitor],
-  )
-
-  const beginMonitoring = useCallback(
-    async (job: MonitorJob) => {
-      setMonitorJob(job)
-      setMonitorStatus("Monitoring…")
-      startForegroundMonitor(job)
-    },
-    [startForegroundMonitor],
-  )
-
-  useEffect(() => {
-    const active = monitorJobRef.current
-    if (!active) return
-
-    if (appState === "active") {
-      startForegroundMonitor(active)
-      return
-    }
-
-    stopForegroundMonitor()
-  }, [appState, startForegroundMonitor, stopForegroundMonitor])
-
-  useEffect(() => {
-    const active = monitorJobRef.current
-    if (!active) return
-    if (activeSessionId === active.sessionID) return
-
-    stopForegroundMonitor()
-    setMonitorJob(null)
-    setMonitorStatus("")
-  }, [activeSessionId, stopForegroundMonitor])
-
-  useEffect(() => {
-    setLatestAssistantResponse("")
-    setAgentStateDismissed(false)
-    if (!activeServerId || !activeSessionId) return
-
-    const server = serversRef.current.find((item) => item.id === activeServerId)
-    if (!server || server.status !== "online") return
-    void loadLatestAssistantResponse(server.url, activeSessionId)
-  }, [activeServerId, activeSessionId, loadLatestAssistantResponse])
-
-  useEffect(() => {
-    return () => {
-      stopForegroundMonitor()
-    }
-  }, [stopForegroundMonitor])
 
   const handleSendTranscript = useCallback(async () => {
     const text = transcribedText.trim()
@@ -1938,6 +1414,8 @@ export default function DictationScreen() {
     beginMonitoring,
     completeSend,
     isSending,
+    serversRef,
+    setMonitorStatus,
     sendOutProgress,
     sendPlayer,
     transcribedText,
@@ -2194,341 +1672,6 @@ export default function DictationScreen() {
     setWaveformLevels(next)
   }, [])
 
-  const refreshServerStatusAndSessions = useCallback(async (serverID: string, includeSessions = true) => {
-    const server = serversRef.current.find((s) => s.id === serverID)
-    if (!server) return
-    const req = (refreshSeqRef.current[serverID] ?? 0) + 1
-    refreshSeqRef.current[serverID] = req
-    const current = () => refreshSeqRef.current[serverID] === req
-
-    const candidates = serverBases(server.url)
-    const base = candidates[0] ?? server.url.replace(/\/+$/, "")
-    const healthURL = `${base}/health`
-    const sessionsURL = `${base}/experimental/session?limit=100`
-    let insecureRemote = false
-    try {
-      const parsedBase = new URL(base)
-      insecureRemote = parsedBase.protocol === "http:" && !looksLikeLocalHost(parsedBase.hostname)
-    } catch {
-      insecureRemote = base.startsWith("http://")
-    }
-    console.log("[Server] refresh:start", {
-      id: server.id,
-      name: server.name,
-      base,
-      healthURL,
-      sessionsURL,
-      includeSessions,
-    })
-
-    setServers((prev) => prev.map((s) => (s.id === serverID && includeSessions ? { ...s, sessionsLoading: true } : s)))
-
-    let activeBase = base
-    try {
-      let healthRes: Response | null = null
-      let healthErr: unknown
-
-      for (const item of candidates) {
-        const url = `${item}/health`
-        try {
-          const next = await fetch(url)
-          if (next.ok) {
-            healthRes = next
-            activeBase = item
-            if (item !== server.url.replace(/\/+$/, "") && current()) {
-              setServers((prev) => prev.map((s) => (s.id === serverID ? { ...s, url: item } : s)))
-              console.log("[Server] refresh:scheme-upgrade", {
-                id: server.id,
-                from: server.url,
-                to: item,
-              })
-            }
-            break
-          }
-          healthRes = next
-          activeBase = item
-        } catch (err) {
-          healthErr = err
-          console.log("[Server] health:attempt-error", {
-            id: server.id,
-            url,
-            error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-          })
-        }
-      }
-
-      const online = !!healthRes?.ok
-      if (!current()) {
-        console.log("[Server] refresh:stale-skip", { id: server.id, req })
-        return
-      }
-      console.log("[Server] health", {
-        id: server.id,
-        base: activeBase,
-        url: `${activeBase}/health`,
-        status: healthRes?.status ?? "fetch_error",
-        online,
-      })
-
-      if (!online) {
-        setServers((prev) =>
-          prev.map((s) => (s.id === serverID ? { ...s, status: "offline", sessionsLoading: false, sessions: [] } : s)),
-        )
-        console.log("[Server] refresh:offline", {
-          id: server.id,
-          base,
-          candidates,
-          error: healthErr instanceof Error ? `${healthErr.name}: ${healthErr.message}` : String(healthErr),
-        })
-        return
-      }
-
-      if (!includeSessions) {
-        setServers((prev) =>
-          prev.map((s) => (s.id === serverID ? { ...s, status: "online", sessionsLoading: false } : s)),
-        )
-        console.log("[Server] refresh:online", { id: server.id, base })
-        return
-      }
-
-      const resolvedSessionsURL = `${activeBase}/experimental/session?limit=100`
-      const sessionsRes = await fetch(resolvedSessionsURL)
-      if (!current()) {
-        console.log("[Server] refresh:stale-skip", { id: server.id, req })
-        return
-      }
-      if (!sessionsRes.ok) {
-        console.log("[Server] sessions:http-error", {
-          id: server.id,
-          url: resolvedSessionsURL,
-          status: sessionsRes.status,
-        })
-      }
-
-      const json = sessionsRes.ok ? await sessionsRes.json() : []
-      const sessions = parseSessionItems(json)
-
-      setServers((prev) =>
-        prev.map((s) => (s.id === serverID ? { ...s, status: "online", sessionsLoading: false, sessions } : s)),
-      )
-      console.log("[Server] sessions", { id: server.id, count: sessions.length })
-    } catch (err) {
-      if (!current()) {
-        console.log("[Server] refresh:stale-skip", { id: server.id, req })
-        return
-      }
-      setServers((prev) =>
-        prev.map((s) => (s.id === serverID ? { ...s, status: "offline", sessionsLoading: false, sessions: [] } : s)),
-      )
-      console.log("[Server] refresh:error", {
-        id: server.id,
-        base,
-        healthURL,
-        sessionsURL,
-        candidates,
-        insecureRemote,
-        error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-      })
-      if (insecureRemote) {
-        console.log("[Server] refresh:hint", {
-          id: server.id,
-          message: "Remote http:// host may be blocked by iOS ATS; prefer https:// for non-local hosts.",
-        })
-      }
-    }
-  }, [])
-
-  const refreshAllServerHealth = useCallback(() => {
-    const ids = serversRef.current.map((s) => s.id)
-    ids.forEach((id) => {
-      void refreshServerStatusAndSessions(id, false)
-    })
-  }, [refreshServerStatusAndSessions])
-
-  const syncSessionState = useCallback(
-    async (input: { serverID: string; sessionID: string; preserveStatusLabel?: boolean }) => {
-      await refreshServerStatusAndSessions(input.serverID)
-
-      const server = serversRef.current.find((item) => item.id === input.serverID)
-      if (!server || server.status !== "online") return
-
-      const runtimeStatus = await fetchSessionRuntimeStatus(server.url, input.sessionID)
-      await loadLatestAssistantResponse(server.url, input.sessionID)
-
-      if (runtimeStatus === "busy" || runtimeStatus === "retry") {
-        const nextJob: MonitorJob = {
-          id: `job-resume-${Date.now()}`,
-          sessionID: input.sessionID,
-          opencodeBaseURL: server.url.replace(/\/+$/, ""),
-          startedAt: Date.now(),
-        }
-
-        setMonitorJob(nextJob)
-        setMonitorStatus("Monitoring…")
-        if (appState === "active") {
-          startForegroundMonitor(nextJob)
-        }
-        return
-      }
-
-      if (runtimeStatus === "idle") {
-        stopForegroundMonitor()
-        setMonitorJob(null)
-        if (!input.preserveStatusLabel) {
-          setMonitorStatus("")
-        }
-      }
-    },
-    [
-      appState,
-      fetchSessionRuntimeStatus,
-      loadLatestAssistantResponse,
-      refreshServerStatusAndSessions,
-      startForegroundMonitor,
-      stopForegroundMonitor,
-    ],
-  )
-
-  const findServerForSession = useCallback(
-    async (sessionID: string, preferredServerID?: string | null): Promise<ServerItem | null> => {
-      if (!serversRef.current.length && !restoredRef.current) {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 150))
-          if (serversRef.current.length > 0 || restoredRef.current) {
-            break
-          }
-        }
-      }
-
-      if (preferredServerID) {
-        const preferred = serversRef.current.find((server) => server.serverID === preferredServerID)
-        if (preferred?.sessions.some((session) => session.id === sessionID)) {
-          return preferred
-        }
-        if (preferred) {
-          await refreshServerStatusAndSessions(preferred.id)
-          const refreshed = serversRef.current.find((server) => server.id === preferred.id)
-          if (refreshed?.sessions.some((session) => session.id === sessionID)) {
-            return refreshed
-          }
-        }
-      }
-
-      const direct = serversRef.current.find((server) => server.sessions.some((session) => session.id === sessionID))
-      if (direct) return direct
-
-      const ids = serversRef.current.map((server) => server.id)
-      for (const id of ids) {
-        await refreshServerStatusAndSessions(id)
-        const matched = serversRef.current.find(
-          (server) => server.id === id && server.sessions.some((session) => session.id === sessionID),
-        )
-        if (matched) {
-          return matched
-        }
-      }
-
-      return null
-    },
-    [refreshServerStatusAndSessions],
-  )
-
-  const handleNotificationPayload = useCallback(
-    async (payload: NotificationPayload, source: "received" | "response") => {
-      const activeServer = activeServerIdRef.current
-        ? serversRef.current.find((server) => server.id === activeServerIdRef.current)
-        : null
-      const matchesActiveSession =
-        !!payload.sessionID &&
-        activeSessionIdRef.current === payload.sessionID &&
-        (!payload.serverID || activeServer?.serverID === payload.serverID)
-
-      if (payload.eventType && (source === "response" || matchesActiveSession || !payload.sessionID)) {
-        setMonitorStatus(formatMonitorEventLabel(payload.eventType))
-      }
-
-      if (payload.eventType === "complete" && source === "received") {
-        void completePlayer.seekTo(0)
-        void completePlayer.play()
-      }
-
-      if (
-        (payload.eventType === "complete" || payload.eventType === "error") &&
-        (source === "response" || matchesActiveSession)
-      ) {
-        stopForegroundMonitor()
-        setMonitorJob(null)
-      }
-
-      if (!payload.sessionID) return
-
-      if (source === "response") {
-        const matched = await findServerForSession(payload.sessionID, payload.serverID)
-        if (!matched) {
-          console.log("[Notification] open:session-not-found", {
-            serverID: payload.serverID,
-            sessionID: payload.sessionID,
-            eventType: payload.eventType,
-          })
-          return
-        }
-
-        activeServerIdRef.current = matched.id
-        activeSessionIdRef.current = payload.sessionID
-        setActiveServerId(matched.id)
-        setActiveSessionId(payload.sessionID)
-        setDropdownMode("none")
-        setAgentStateDismissed(false)
-
-        await syncSessionState({
-          serverID: matched.id,
-          sessionID: payload.sessionID,
-          preserveStatusLabel: Boolean(payload.eventType),
-        })
-        return
-      }
-
-      if (!matchesActiveSession) return
-
-      const activeServerID = activeServerIdRef.current
-      if (!activeServerID) return
-
-      await syncSessionState({
-        serverID: activeServerID,
-        sessionID: payload.sessionID,
-        preserveStatusLabel: Boolean(payload.eventType),
-      })
-    },
-    [completePlayer, findServerForSession, stopForegroundMonitor, syncSessionState],
-  )
-
-  useEffect(() => {
-    notificationHandlerRef.current = (payload, source) => {
-      void handleNotificationPayload(payload, source)
-    }
-
-    if (!pendingNotificationEventsRef.current.length) return
-
-    const queued = [...pendingNotificationEventsRef.current]
-    pendingNotificationEventsRef.current = []
-    queued.forEach(({ payload, source }) => {
-      void handleNotificationPayload(payload, source)
-    })
-  }, [handleNotificationPayload])
-
-  useEffect(() => {
-    const previous = previousAppStateRef.current
-    previousAppStateRef.current = appState
-
-    if (appState !== "active" || previous === "active") return
-
-    const serverID = activeServerIdRef.current
-    const sessionID = activeSessionIdRef.current
-    if (!serverID || !sessionID) return
-
-    void syncSessionState({ serverID, sessionID })
-  }, [appState, syncSessionState])
-
   const toggleServerMenu = useCallback(() => {
     void Haptics.selectionAsync().catch(() => {})
     setDropdownMode((prev) => {
@@ -2551,24 +1694,22 @@ export default function DictationScreen() {
     setDropdownMode((prev) => (prev === "session" ? "none" : "session"))
   }, [activeServer, refreshServerStatusAndSessions])
 
-  const closeDropdown = useCallback(() => {
-    setDropdownMode("none")
-  }, [])
-
   const handleSelectServer = useCallback(
     (id: string) => {
-      setActiveServerId(id)
-      setActiveSessionId(null)
+      selectServer(id)
       setDropdownMode("none")
       void refreshServerStatusAndSessions(id)
     },
-    [refreshServerStatusAndSessions],
+    [refreshServerStatusAndSessions, selectServer],
   )
 
-  const handleSelectSession = useCallback((id: string) => {
-    setActiveSessionId(id)
-    setDropdownMode("none")
-  }, [])
+  const handleSelectSession = useCallback(
+    (id: string) => {
+      selectSession(id)
+      setDropdownMode("none")
+    },
+    [selectSession],
+  )
 
   const handleDeleteServer = useCallback(
     (id: string) => {
@@ -2581,86 +1722,9 @@ export default function DictationScreen() {
         }).catch(() => {})
       }
 
-      setServers((prev) => prev.filter((s) => s.id !== id))
-      setActiveServerId((prev) => (prev === id ? null : prev))
-      if (activeServerId === id) {
-        setActiveSessionId(null)
-      }
+      removeServer(id)
     },
-    [activeServerId, devicePushToken],
-  )
-
-  const addServer = useCallback(
-    (serverURL: string, relayURL: string, relaySecretRaw: string, serverIDRaw?: string) => {
-      const raw = serverURL.trim()
-      if (!raw) return false
-
-      const normalized = raw.startsWith("http://") || raw.startsWith("https://") ? raw : `http://${raw}`
-
-      const rawRelay = relayURL.trim()
-      const relayNormalizedRaw = rawRelay.length > 0 ? rawRelay : DEFAULT_RELAY_URL
-      const normalizedRelay =
-        relayNormalizedRaw.startsWith("http://") || relayNormalizedRaw.startsWith("https://")
-          ? relayNormalizedRaw
-          : `http://${relayNormalizedRaw}`
-
-      let parsed: URL
-      let relayParsed: URL
-      try {
-        parsed = new URL(normalized)
-        relayParsed = new URL(normalizedRelay)
-      } catch {
-        return false
-      }
-
-      const id = `srv-${Date.now()}`
-      const relaySecret = relaySecretRaw.trim()
-      const serverID = typeof serverIDRaw === "string" && serverIDRaw.length > 0 ? serverIDRaw : null
-      const url = `${parsed.protocol}//${parsed.host}`
-      const inferredName =
-        parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost" ? "Local OpenCode" : parsed.hostname
-      const relay = `${relayParsed.protocol}//${relayParsed.host}`
-      const existing = serversRef.current.find(
-        (item) =>
-          item.url === url &&
-          item.relayURL === relay &&
-          item.relaySecret.trim() === relaySecret &&
-          (!serverID || item.serverID === serverID || item.serverID === null),
-      )
-      if (existing) {
-        if (serverID && existing.serverID !== serverID) {
-          setServers((prev) =>
-            prev.map((item) => (item.id === existing.id ? { ...item, serverID: serverID ?? item.serverID } : item)),
-          )
-        }
-        setActiveServerId(existing.id)
-        setActiveSessionId(null)
-        setDropdownMode("none")
-        void refreshServerStatusAndSessions(existing.id)
-        return true
-      }
-
-      setServers((prev) => [
-        ...prev,
-        {
-          id,
-          name: inferredName,
-          url,
-          serverID,
-          relayURL: relay,
-          relaySecret,
-          status: "offline",
-          sessions: [],
-          sessionsLoading: false,
-        },
-      ])
-      setActiveServerId(id)
-      setActiveSessionId(null)
-      setDropdownMode("none")
-      void refreshServerStatusAndSessions(id)
-      return true
-    },
-    [refreshServerStatusAndSessions],
+    [devicePushToken, removeServer, serversRef],
   )
 
   const handleStartScan = useCallback(async () => {
@@ -2825,7 +1889,7 @@ export default function DictationScreen() {
       active = false
       sub.remove()
     }
-  }, [connectPairPayload])
+  }, [connectPairPayload, restoredRef])
 
   useEffect(() => {
     if (!activeServerId) return
@@ -2835,111 +1899,6 @@ export default function DictationScreen() {
     }, 15000)
     return () => clearInterval(timer)
   }, [activeServerId, refreshServerStatusAndSessions])
-
-  // Stable key that only changes when relay-relevant server properties change
-  // (id, relayURL, relaySecret), not on status/session/sessionsLoading updates.
-  const relayServersKey = useMemo(
-    () =>
-      servers
-        .filter((s) => s.relaySecret.trim().length > 0)
-        .map((s) => `${s.id}:${s.relayURL}:${s.relaySecret.trim()}`)
-        .join("|"),
-    [servers],
-  )
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return
-    if (!devicePushToken) return
-
-    const list = serversRef.current.filter((server) => server.relaySecret.trim().length > 0)
-    if (!list.length) return
-
-    const bundleId = Constants.expoConfig?.ios?.bundleIdentifier ?? "com.anomalyco.mobilevoice"
-    const apnsEnv = "production"
-    console.log("[Relay] env", {
-      dev: __DEV__,
-      node: process.env.NODE_ENV,
-      apnsEnv,
-    })
-    console.log("[Relay] register:batch", {
-      tokenSuffix: devicePushToken.slice(-8),
-      count: list.length,
-      apnsEnv,
-      bundleId,
-    })
-
-    void Promise.allSettled(
-      list.map(async (server) => {
-        const secret = server.relaySecret.trim()
-        const relay = server.relayURL
-        console.log("[Relay] register:start", {
-          id: server.id,
-          relay,
-          tokenSuffix: devicePushToken.slice(-8),
-          secretLength: secret.length,
-        })
-        try {
-          await registerRelayDevice({
-            relayBaseURL: relay,
-            secret,
-            deviceToken: devicePushToken,
-            bundleId,
-            apnsEnv,
-          })
-          console.log("[Relay] register:ok", { id: server.id, relay })
-        } catch (err) {
-          console.log("[Relay] register:error", {
-            id: server.id,
-            relay,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-      }),
-    ).catch(() => {})
-  }, [devicePushToken, relayServersKey])
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return
-    if (!devicePushToken) return
-    const previous = previousPushTokenRef.current
-    previousPushTokenRef.current = devicePushToken
-    if (!previous || previous === devicePushToken) return
-
-    const list = serversRef.current.filter((server) => server.relaySecret.trim().length > 0)
-    if (!list.length) return
-    console.log("[Relay] unregister:batch", {
-      previousSuffix: previous.slice(-8),
-      nextSuffix: devicePushToken.slice(-8),
-      count: list.length,
-    })
-
-    void Promise.allSettled(
-      list.map(async (server) => {
-        const secret = server.relaySecret.trim()
-        const relay = server.relayURL
-        console.log("[Relay] unregister:start", {
-          id: server.id,
-          relay,
-          tokenSuffix: previous.slice(-8),
-          secretLength: secret.length,
-        })
-        try {
-          await unregisterRelayDevice({
-            relayBaseURL: relay,
-            secret,
-            deviceToken: previous,
-          })
-          console.log("[Relay] unregister:ok", { id: server.id, relay })
-        } catch (err) {
-          console.log("[Relay] unregister:error", {
-            id: server.id,
-            relay,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-      }),
-    ).catch(() => {})
-  }, [devicePushToken, relayServersKey])
 
   const defaultModelInstalled = installedWhisperModels.includes(defaultWhisperModel)
   let onboardingProgressRaw = 0

@@ -24,6 +24,7 @@ Run all commands from `packages/mobile-voice`.
 - iOS run: `bun run ios`
 - Android run: `bun run android`
 - Lint: `bun run lint`
+- Typecheck: `bun run typecheck`
 - Expo doctor: `bunx expo-doctor`
 - Dependency compatibility check: `bunx expo install --check`
 - Export bundle smoke test: `bunx expo export --platform ios --clear`
@@ -31,6 +32,7 @@ Run all commands from `packages/mobile-voice`.
 ## Build / Verification Expectations
 
 - For JS-only changes: run `bun run lint` and verify app behavior via dev client.
+- For TS-heavy refactors: run `bun run typecheck` in addition to lint.
 - For native dependency/config/plugin changes: rebuild dev client via EAS before validation.
 - If notifications, camera, microphone, or audio-session behavior changes, verify on a physical iOS device.
 - Do not claim a fix unless you validated in Metro logs and app runtime behavior.
@@ -40,6 +42,7 @@ Run all commands from `packages/mobile-voice`.
 - This package currently has no dedicated unit test script.
 - Use targeted validation commands instead:
   - `bun run lint`
+  - `bun run typecheck`
   - `bunx expo export --platform ios --clear`
   - manual runtime test in dev client
 
