@@ -51,8 +51,11 @@
     "whisper.rn": "0.5.5"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~55.0.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "typescript": "~5.9.2"
   },
   "private": true
