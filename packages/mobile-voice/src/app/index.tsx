@@ -2934,6 +2934,76 @@ export default function DictationScreen() {
     : onboardingProgress >= 1
       ? "Model ready in background"
       : "Downloading model in background"
+  const onboardingStepCount = 4
+  const clampedOnboardingStep = Math.max(0, Math.min(onboardingStep, onboardingStepCount - 1))
+  const onboardingTitle =
+    clampedOnboardingStep === 0
+      ? "Allow mic access."
+      : clampedOnboardingStep === 1
+        ? "Turn on notifications."
+        : clampedOnboardingStep === 2
+          ? "Enable local network."
+          : "Pair your computer."
+  const onboardingBody =
+    clampedOnboardingStep === 0
+      ? "Control only listens while you hold the record button."
+      : clampedOnboardingStep === 1
+        ? "Get alerts when your OpenCode run finishes, fails, or needs your attention."
+        : clampedOnboardingStep === 2
+          ? "This lets Control discover your machine on the same network."
+          : "Start `opencode serve` on your computer, then scan the QR code to pair."
+  const onboardingPrimaryLabel =
+    clampedOnboardingStep === 0
+      ? microphonePermissionState === "pending"
+        ? "Requesting microphone..."
+        : "Allow microphone"
+      : clampedOnboardingStep === 1
+        ? notificationPermissionState === "pending"
+          ? "Requesting notifications..."
+          : "Allow notifications"
+        : clampedOnboardingStep === 2
+          ? localNetworkPermissionState === "pending"
+            ? "Requesting local network..."
+            : "Allow local network"
+          : "Scan OpenCode QR"
+  const onboardingPrimaryDisabled =
+    (clampedOnboardingStep === 0 && microphonePermissionState === "pending") ||
+    (clampedOnboardingStep === 1 && notificationPermissionState === "pending") ||
+    (clampedOnboardingStep === 2 && localNetworkPermissionState === "pending")
+  const onboardingSecondaryLabel =
+    clampedOnboardingStep === onboardingStepCount - 1 ? "I will do this later" : "Continue without granting"
+  const onboardingVisualTag =
+    clampedOnboardingStep === 0
+      ? "MIC"
+      : clampedOnboardingStep === 1
+        ? "PUSH"
+        : clampedOnboardingStep === 2
+          ? "LAN"
+          : "PAIR"
+  const onboardingVisualSurfaceStyle =
+    clampedOnboardingStep === 0
+      ? styles.onboardingVisualSurfaceMic
+      : clampedOnboardingStep === 1
+        ? styles.onboardingVisualSurfaceNotifications
+        : clampedOnboardingStep === 2
+          ? styles.onboardingVisualSurfaceNetwork
+          : styles.onboardingVisualSurfacePair
+  const onboardingVisualOrbStyle =
+    clampedOnboardingStep === 0
+      ? styles.onboardingVisualOrbMic
+      : clampedOnboardingStep === 1
+        ? styles.onboardingVisualOrbNotifications
+        : clampedOnboardingStep === 2
+          ? styles.onboardingVisualOrbNetwork
+          : styles.onboardingVisualOrbPair
+  const onboardingVisualTagStyle =
+    clampedOnboardingStep === 0
+      ? styles.onboardingVisualTagMic
+      : clampedOnboardingStep === 1
+        ? styles.onboardingVisualTagNotifications
+        : clampedOnboardingStep === 2
+          ? styles.onboardingVisualTagNetwork
+          : styles.onboardingVisualTagPair
   const onboardingSafeStyle = useMemo(
     () => [styles.onboardingRoot, { paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 16) }],
     [insets.bottom, insets.top],
@@ -2952,102 +3022,98 @@ export default function DictationScreen() {
       <SafeAreaView style={onboardingSafeStyle} edges={["left", "right"]}>
         <StatusBar style="light" />
 
-        <View style={styles.onboardingModelRow}>
-          <Text style={styles.onboardingModelText}>{onboardingModelStatus}</Text>
-          <View style={styles.onboardingModelTrack}>
-            <View
-              style={[
-                styles.onboardingModelFill,
-                { width: `${Math.max(onboardingProgressPct, onboardingProgress > 0 ? 6 : 0)}%` },
-              ]}
-            />
+        <View style={styles.onboardingShell}>
+          <View style={styles.onboardingTopRail}>
+            <View style={styles.onboardingModelRow}>
+              <Text style={styles.onboardingModelText}>{onboardingModelStatus}</Text>
+              <View style={styles.onboardingModelTrack}>
+                <View
+                  style={[
+                    styles.onboardingModelFill,
+                    { width: `${Math.max(onboardingProgressPct, onboardingProgress > 0 ? 6 : 0)}%` },
+                  ]}
+                />
+              </View>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.onboardingContent}>
-          {onboardingStep === 0 ? (
-            <View style={styles.onboardingStep}>
-              <Text style={styles.onboardingTitle}>Allow microphone</Text>
-              <Text style={styles.onboardingBody}>Enable microphone access so Control can record dictation.</Text>
-              <Pressable
-                onPress={() => {
+          <View style={styles.onboardingContent}>
+            <View style={[styles.onboardingVisualSurface, onboardingVisualSurfaceStyle]}>
+              <View style={[styles.onboardingVisualOrb, styles.onboardingVisualOrbOne, onboardingVisualOrbStyle]} />
+              <View style={[styles.onboardingVisualOrb, styles.onboardingVisualOrbTwo, onboardingVisualOrbStyle]} />
+              <View style={[styles.onboardingVisualTag, onboardingVisualTagStyle]}>
+                <Text style={styles.onboardingVisualTagText}>{onboardingVisualTag}</Text>
+              </View>
+            </View>
+
+            <View style={styles.onboardingCopyBlock}>
+              <Text
+                style={styles.onboardingEyebrow}
+              >{`STEP ${clampedOnboardingStep + 1} OF ${onboardingStepCount}`}</Text>
+              <Text style={styles.onboardingTitle}>{onboardingTitle}</Text>
+              <Text style={styles.onboardingBody}>{onboardingBody}</Text>
+            </View>
+          </View>
+
+          <View style={styles.onboardingFooter}>
+            <Pressable
+              onPress={() => {
+                if (clampedOnboardingStep === 0) {
                   void (async () => {
                     await handleRequestMicrophonePermission()
                     setOnboardingStep(1)
                   })()
-                }}
-                style={({ pressed }) => [styles.onboardingPrimaryButton, pressed && styles.clearButtonPressed]}
-                disabled={microphonePermissionState === "pending"}
-              >
-                <Text style={styles.onboardingPrimaryButtonText}>
-                  {microphonePermissionState === "pending" ? "Requesting..." : "Allow microphone"}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setOnboardingStep(1)}>
-                <Text style={styles.onboardingSecondaryText}>Continue</Text>
-              </Pressable>
-            </View>
-          ) : onboardingStep === 1 ? (
-            <View style={styles.onboardingStep}>
-              <Text style={styles.onboardingTitle}>Allow notifications</Text>
-              <Text style={styles.onboardingBody}>Get session updates when your run completes.</Text>
-              <Pressable
-                onPress={() => {
+                  return
+                }
+
+                if (clampedOnboardingStep === 1) {
                   void (async () => {
                     await handleRequestNotificationPermission()
                     setOnboardingStep(2)
                   })()
-                }}
-                style={({ pressed }) => [styles.onboardingPrimaryButton, pressed && styles.clearButtonPressed]}
-                disabled={notificationPermissionState === "pending"}
-              >
-                <Text style={styles.onboardingPrimaryButtonText}>
-                  {notificationPermissionState === "pending" ? "Requesting..." : "Allow notifications"}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setOnboardingStep(2)}>
-                <Text style={styles.onboardingSecondaryText}>Continue</Text>
-              </Pressable>
-            </View>
-          ) : onboardingStep === 2 ? (
-            <View style={styles.onboardingStep}>
-              <Text style={styles.onboardingTitle}>Allow local network</Text>
-              <Text style={styles.onboardingBody}>This lets Control find your computer on your network.</Text>
-              <Pressable
-                onPress={() => {
+                  return
+                }
+
+                if (clampedOnboardingStep === 2) {
                   void (async () => {
                     await handleRequestLocalNetworkPermission()
                     setOnboardingStep(3)
                   })()
-                }}
-                style={({ pressed }) => [styles.onboardingPrimaryButton, pressed && styles.clearButtonPressed]}
-                disabled={localNetworkPermissionState === "pending"}
-              >
-                <Text style={styles.onboardingPrimaryButtonText}>
-                  {localNetworkPermissionState === "pending" ? "Requesting..." : "Allow local network"}
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setOnboardingStep(3)}>
-                <Text style={styles.onboardingSecondaryText}>Continue</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.onboardingStep}>
-              <Text style={styles.onboardingTitle}>Connect your computer</Text>
-              <Text style={styles.onboardingBody}>
-                Start `opencode serve` on your computer, then scan the QR code to pair.
-              </Text>
-              <Pressable
-                onPress={() => completeOnboarding(true)}
-                style={({ pressed }) => [styles.onboardingPrimaryButton, pressed && styles.clearButtonPressed]}
-              >
-                <Text style={styles.onboardingPrimaryButtonText}>Scan OpenCode QR</Text>
-              </Pressable>
-              <Pressable onPress={() => completeOnboarding(false)}>
-                <Text style={styles.onboardingSecondaryText}>I will do this later</Text>
-              </Pressable>
-            </View>
-          )}
+                  return
+                }
+
+                completeOnboarding(true)
+              }}
+              style={({ pressed }) => [
+                styles.onboardingPrimaryButton,
+                onboardingPrimaryDisabled && styles.onboardingPrimaryButtonDisabled,
+                pressed && styles.clearButtonPressed,
+              ]}
+              disabled={onboardingPrimaryDisabled}
+            >
+              <Text style={styles.onboardingPrimaryButtonText}>{onboardingPrimaryLabel}</Text>
+              <SymbolView
+                name={{ ios: "arrow.right", android: "arrow_forward", web: "arrow_forward" }}
+                size={20}
+                weight="semibold"
+                tintColor="#FFFFFF"
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                if (clampedOnboardingStep < onboardingStepCount - 1) {
+                  setOnboardingStep((step) => Math.min(step + 1, onboardingStepCount - 1))
+                  return
+                }
+
+                completeOnboarding(false)
+              }}
+              style={({ pressed }) => [styles.onboardingSecondaryButton, pressed && styles.clearButtonPressed]}
+            >
+              <Text style={styles.onboardingSecondaryText}>{onboardingSecondaryLabel}</Text>
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
     )
@@ -3601,23 +3667,31 @@ const styles = StyleSheet.create({
   onboardingRoot: {
     flex: 1,
     backgroundColor: "#121212",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+  },
+  onboardingShell: {
+    flex: 1,
+  },
+  onboardingTopRail: {
+    gap: 8,
+    marginBottom: 10,
   },
   onboardingContent: {
     flex: 1,
     justifyContent: "center",
-  },
-  onboardingStep: {
-    gap: 14,
+    alignItems: "stretch",
+    gap: 22,
+    paddingHorizontal: 2,
   },
   onboardingModelRow: {
     gap: 6,
-    marginBottom: 12,
   },
   onboardingModelText: {
-    color: "#C3C3C3",
-    fontSize: 12,
-    fontWeight: "600",
+    color: "#A9A9A9",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.35,
+    textTransform: "uppercase",
   },
   onboardingModelTrack: {
     height: 4,
@@ -3631,37 +3705,160 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#FF5B47",
   },
-  onboardingTitle: {
-    color: "#F1F1F1",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  onboardingBody: {
-    color: "#A3A3A3",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  onboardingPrimaryButton: {
-    marginTop: 6,
-    height: 44,
-    borderRadius: 12,
+  onboardingVisualSurface: {
+    width: "100%",
+    minHeight: 176,
+    borderRadius: 26,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#4B2620",
+    overflow: "hidden",
+    backgroundColor: "#171717",
+    borderColor: "#2B2B2B",
+  },
+  onboardingVisualSurfaceMic: {
+    backgroundColor: "#1A2118",
+    borderColor: "#2F3D2D",
+  },
+  onboardingVisualSurfaceNotifications: {
+    backgroundColor: "#1A1D2A",
+    borderColor: "#303A5A",
+  },
+  onboardingVisualSurfaceNetwork: {
+    backgroundColor: "#1A2218",
+    borderColor: "#344930",
+  },
+  onboardingVisualSurfacePair: {
+    backgroundColor: "#1F1A27",
+    borderColor: "#413157",
+  },
+  onboardingVisualOrb: {
+    position: "absolute",
+    borderRadius: 999,
+    opacity: 0.22,
+  },
+  onboardingVisualOrbOne: {
+    width: 130,
+    height: 130,
+    top: -28,
+    left: -22,
+  },
+  onboardingVisualOrbTwo: {
+    width: 160,
+    height: 160,
+    bottom: -52,
+    right: -44,
+  },
+  onboardingVisualOrbMic: {
+    backgroundColor: "#61C372",
+  },
+  onboardingVisualOrbNotifications: {
+    backgroundColor: "#4A6EE0",
+  },
+  onboardingVisualOrbNetwork: {
+    backgroundColor: "#78B862",
+  },
+  onboardingVisualOrbPair: {
+    backgroundColor: "#9B6CDC",
+  },
+  onboardingVisualTag: {
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: "#70372D",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  onboardingVisualTagMic: {
+    backgroundColor: "#253A25",
+    borderColor: "#3A5C3A",
+  },
+  onboardingVisualTagNotifications: {
+    backgroundColor: "#223561",
+    borderColor: "#38518C",
+  },
+  onboardingVisualTagNetwork: {
+    backgroundColor: "#284122",
+    borderColor: "#3D6835",
+  },
+  onboardingVisualTagPair: {
+    backgroundColor: "#3B2859",
+    borderColor: "#5A3D86",
+  },
+  onboardingVisualTagText: {
+    color: "#F6F7F8",
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: 1.8,
+  },
+  onboardingCopyBlock: {
+    alignItems: "flex-start",
+    gap: 10,
+    width: "100%",
+  },
+  onboardingEyebrow: {
+    color: "#7F7F7F",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.3,
+  },
+  onboardingTitle: {
+    color: "#F1F1F1",
+    fontSize: 34,
+    fontWeight: "800",
+    textAlign: "left",
+    letterSpacing: -1,
+    lineHeight: 38,
+  },
+  onboardingBody: {
+    color: "#B4B4B4",
+    fontSize: 18,
+    lineHeight: 25,
+    textAlign: "left",
+    paddingHorizontal: 0,
+  },
+  onboardingFooter: {
+    gap: 10,
+    paddingTop: 6,
+  },
+  onboardingPrimaryButton: {
+    height: 56,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1D6FF4",
+    borderWidth: 2,
+    borderColor: "#1557C3",
+    flexDirection: "row",
+    gap: 10,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  onboardingPrimaryButtonDisabled: {
+    opacity: 0.6,
   },
   onboardingPrimaryButtonText: {
-    color: "#FFD9D2",
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 17,
     fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  onboardingSecondaryButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 2,
   },
   onboardingSecondaryText: {
-    color: "#A8A8A8",
-    fontSize: 13,
+    color: "#959CAA",
+    fontSize: 14,
     fontWeight: "600",
-    textAlign: "center",
-    paddingVertical: 4,
+    textAlign: "left",
   },
   dismissOverlay: {
     ...StyleSheet.absoluteFillObject,
