@@ -81,6 +81,12 @@
         "projectId": "50b3dac3-8b5e-4142-b749-65ecf7b2904d"
       }
     },
-    "owner": "anomaly-co"
+    "owner": "anomaly-co",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/50b3dac3-8b5e-4142-b749-65ecf7b2904d"
+    }
   }
 }
