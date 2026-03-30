@@ -8,11 +8,17 @@ export type SessionItem = {
   id: string
   title: string
   updated: number
+  directory?: string
+  workspaceID?: string
+  projectID?: string
 }
 
 type ServerSessionPayload = {
   id?: unknown
   title?: unknown
+  directory?: unknown
+  workspaceID?: unknown
+  projectID?: unknown
   time?: {
     updated?: unknown
   }
@@ -50,11 +56,21 @@ export function parseSessionItems(payload: unknown): SessionItem[] {
 
   return payload
     .filter((item): item is ServerSessionPayload => !!item && typeof item === "object")
-    .map((item) => ({
-      id: String(item.id ?? ""),
-      title: String(item.title ?? item.id ?? "Untitled session"),
-      updated: Number(item.time?.updated ?? 0),
-    }))
+    .map((item) => {
+      const directory = typeof item.directory === "string" && item.directory.length > 0 ? item.directory : undefined
+      const workspaceID =
+        typeof item.workspaceID === "string" && item.workspaceID.length > 0 ? item.workspaceID : undefined
+      const projectID = typeof item.projectID === "string" && item.projectID.length > 0 ? item.projectID : undefined
+
+      return {
+        id: String(item.id ?? ""),
+        title: String(item.title ?? item.id ?? "Untitled session"),
+        updated: Number(item.time?.updated ?? 0),
+        directory,
+        workspaceID,
+        projectID,
+      }
+    })
     .filter((item) => item.id.length > 0)
     .sort((a, b) => b.updated - a.updated)
 }

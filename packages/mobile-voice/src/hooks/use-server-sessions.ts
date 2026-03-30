@@ -320,6 +320,113 @@ export function useServerSessions() {
     [refreshServerStatusAndSessions],
   )
 
+  const createSession = useCallback(
+    async (
+      serverID: string,
+      options?: {
+        directory?: string
+        workspaceID?: string
+        title?: string
+      },
+    ) => {
+      const server = serversRef.current.find((item) => item.id === serverID)
+      if (!server) {
+        return null
+      }
+
+      const base = server.url.replace(/\/+$/, "")
+      const params = new URLSearchParams()
+      const directory = options?.directory?.trim()
+      const workspaceID = options?.workspaceID?.trim()
+      const title = options?.title?.trim()
+
+      if (directory) {
+        params.set("directory", directory)
+      }
+
+      const body: {
+        workspaceID?: string
+        title?: string
+      } = {}
+
+      if (workspaceID) {
+        body.workspaceID = workspaceID
+      }
+
+      if (title) {
+        body.title = title
+      }
+
+      const query = params.toString()
+      const endpoint = `${base}/session${query ? `?${query}` : ""}`
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        })
+
+        if (!response.ok) {
+          console.log("[Server] session:create:http-error", {
+            id: server.id,
+            endpoint,
+            status: response.status,
+          })
+          return null
+        }
+
+        const payload = (await response.json()) as unknown
+        const parsed = parseSessionItems([payload])[0]
+
+        if (!parsed) {
+          void refreshServerStatusAndSessions(serverID)
+          return null
+        }
+
+        const created = parsed.updated > 0 ? parsed : { ...parsed, updated: Date.now() }
+
+        setServers((prev) =>
+          prev.map((item) => {
+            if (item.id !== serverID) return item
+
+            const sessions = [created, ...item.sessions.filter((session) => session.id !== created.id)].sort(
+              (a, b) => b.updated - a.updated,
+            )
+
+            return {
+              ...item,
+              status: "online",
+              sessionsLoading: false,
+              sessions,
+            }
+          }),
+        )
+        setActiveServerId(serverID)
+        setActiveSessionId(created.id)
+
+        console.log("[Server] session:create", {
+          id: server.id,
+          sessionID: created.id,
+          hasDirectory: Boolean(created.directory),
+          hasWorkspaceID: Boolean(created.workspaceID),
+        })
+
+        return created
+      } catch (err) {
+        console.log("[Server] session:create:error", {
+          id: server.id,
+          endpoint,
+          error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        })
+        return null
+      }
+    },
+    [refreshServerStatusAndSessions],
+  )
+
   const findServerForSession = useCallback(
     async (sessionID: string, preferredServerID?: string | null): Promise<ServerItem | null> => {
       if (!serversRef.current.length && !restoredRef.current) {
@@ -381,6 +488,7 @@ export function useServerSessions() {
     selectSession,
     removeServer,
     addServer,
+    createSession,
     findServerForSession,
   }
 }

@@ -11,6 +11,7 @@ import {
   LayoutChangeEvent,
   Linking,
   Platform,
+  Switch,
 } from "react-native"
 import Animated, {
   useSharedValue,
@@ -34,8 +35,9 @@ import { AudioPcmStreamAdapter } from "whisper.rn/src/realtime-transcription/ada
 import { AudioManager } from "react-native-audio-api"
 import * as FileSystem from "expo-file-system/legacy"
 import { fetch as expoFetch } from "expo/fetch"
+import { buildPermissionCardModel } from "@/lib/pending-permissions"
 import { unregisterRelayDevice } from "@/lib/relay-client"
-import { useMonitoring, type MonitorJob } from "@/hooks/use-monitoring"
+import { useMonitoring, type MonitorJob, type PermissionDecision } from "@/hooks/use-monitoring"
 import { looksLikeLocalHost, useServerSessions } from "@/hooks/use-server-sessions"
 import { ensureNotificationPermissions, getDevicePushToken } from "@/notifications/monitoring-notifications"
 
@@ -77,15 +79,6 @@ const WHISPER_MODELS = [
   "ggml-medium-q5_0.bin",
   "ggml-medium-q8_0.bin",
   "ggml-medium.bin",
-  "ggml-large-v1.bin",
-  "ggml-large-v2-q5_0.bin",
-  "ggml-large-v2-q8_0.bin",
-  "ggml-large-v2.bin",
-  "ggml-large-v3-q5_0.bin",
-  "ggml-large-v3-turbo-q5_0.bin",
-  "ggml-large-v3-turbo-q8_0.bin",
-  "ggml-large-v3-turbo.bin",
-  "ggml-large-v3.bin",
 ] as const
 
 type WhisperModelID = (typeof WHISPER_MODELS)[number]
@@ -119,15 +112,6 @@ const WHISPER_MODEL_LABELS: Record<WhisperModelID, string> = {
   "ggml-medium-q5_0.bin": "medium q5_0",
   "ggml-medium-q8_0.bin": "medium q8_0",
   "ggml-medium.bin": "medium",
-  "ggml-large-v1.bin": "large-v1",
-  "ggml-large-v2-q5_0.bin": "large-v2 q5_0",
-  "ggml-large-v2-q8_0.bin": "large-v2 q8_0",
-  "ggml-large-v2.bin": "large-v2",
-  "ggml-large-v3-q5_0.bin": "large-v3 q5_0",
-  "ggml-large-v3-turbo-q5_0.bin": "large-v3 turbo q5_0",
-  "ggml-large-v3-turbo-q8_0.bin": "large-v3 turbo q8_0",
-  "ggml-large-v3-turbo.bin": "large-v3 turbo",
-  "ggml-large-v3.bin": "large-v3",
 }
 
 const WHISPER_MODEL_SIZES: Record<WhisperModelID, number> = {
@@ -155,15 +139,6 @@ const WHISPER_MODEL_SIZES: Record<WhisperModelID, number> = {
   "ggml-medium-q5_0.bin": 539212467,
   "ggml-medium-q8_0.bin": 823369779,
   "ggml-medium.bin": 1533763059,
-  "ggml-large-v1.bin": 3094623691,
-  "ggml-large-v2-q5_0.bin": 1080732091,
-  "ggml-large-v2-q8_0.bin": 1656129691,
-  "ggml-large-v2.bin": 3094623691,
-  "ggml-large-v3-q5_0.bin": 1081140203,
-  "ggml-large-v3-turbo-q5_0.bin": 574041195,
-  "ggml-large-v3-turbo-q8_0.bin": 874188075,
-  "ggml-large-v3-turbo.bin": 1624555275,
-  "ggml-large-v3.bin": 3095033483,
 }
 
 function isWhisperModelID(value: unknown): value is WhisperModelID {
@@ -271,6 +246,7 @@ type Scan = {
 type WhisperSavedState = {
   defaultModel: WhisperModelID
   mode: TranscriptionMode
+  autoSendOnDictationEnd: boolean
 }
 
 type OnboardingSavedState = {
@@ -402,6 +378,7 @@ export default function DictationScreen() {
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [isPreparingWhisperModel, setIsPreparingWhisperModel] = useState(true)
   const [transcriptionMode, setTranscriptionMode] = useState<TranscriptionMode>(DEFAULT_TRANSCRIPTION_MODE)
+  const [autoSendOnDictationEnd, setAutoSendOnDictationEnd] = useState(false)
   const [isTranscribingBulk, setIsTranscribingBulk] = useState(false)
   const [whisperError, setWhisperError] = useState("")
   const [transcribedText, setTranscribedText] = useState("")
@@ -413,6 +390,7 @@ export default function DictationScreen() {
   const [agentStateDismissed, setAgentStateDismissed] = useState(false)
   const [dropdownMode, setDropdownMode] = useState<DropdownMode>("none")
   const [dropdownRenderMode, setDropdownRenderMode] = useState<Exclude<DropdownMode, "none">>("server")
+  const [sessionCreateMode, setSessionCreateMode] = useState<"same" | "root" | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
   const [camGranted, setCamGranted] = useState(false)
   const [waveformLevels, setWaveformLevels] = useState<number[]>(Array.from({ length: 24 }, () => 0))
@@ -437,6 +415,7 @@ export default function DictationScreen() {
   const bulkAudioChunksRef = useRef<Uint8Array[]>([])
   const bulkTranscriptionJobRef = useRef(0)
   const downloadProgressRef = useRef(0)
+  const autoSendSignatureRef = useRef("")
   const waveformPulseIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sendSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scanLockRef = useRef(false)
@@ -462,15 +441,20 @@ export default function DictationScreen() {
     selectSession,
     removeServer,
     addServer,
+    createSession,
     findServerForSession,
   } = useServerSessions()
 
   const {
     beginMonitoring,
+    activePermissionRequest,
     devicePushToken,
     latestAssistantResponse,
     monitorJob,
     monitorStatus,
+    pendingPermissionCount,
+    respondingPermissionID,
+    respondToPermission,
     setDevicePushToken,
     setMonitorStatus,
   } = useMonitoring({
@@ -727,6 +711,7 @@ export default function DictationScreen() {
 
       let nextDefaultModel: WhisperModelID = DEFAULT_WHISPER_MODEL
       let nextMode: TranscriptionMode = DEFAULT_TRANSCRIPTION_MODE
+      let nextAutoSendOnDictationEnd = false
       try {
         const data = await FileSystem.readAsStringAsync(WHISPER_SETTINGS_FILE)
         if (data) {
@@ -736,6 +721,9 @@ export default function DictationScreen() {
           }
           if (isTranscriptionMode(parsed.mode)) {
             nextMode = parsed.mode
+          }
+          if (parsed.autoSendOnDictationEnd === true) {
+            nextAutoSendOnDictationEnd = true
           }
         }
       } catch {
@@ -747,6 +735,7 @@ export default function DictationScreen() {
       whisperRestoredRef.current = true
       setDefaultWhisperModel(nextDefaultModel)
       setTranscriptionMode(nextMode)
+      setAutoSendOnDictationEnd(nextAutoSendOnDictationEnd)
 
       await refreshInstalledWhisperModels()
 
@@ -768,9 +757,13 @@ export default function DictationScreen() {
 
   useEffect(() => {
     if (!whisperRestoredRef.current) return
-    const payload: WhisperSavedState = { defaultModel: defaultWhisperModel, mode: transcriptionMode }
+    const payload: WhisperSavedState = {
+      defaultModel: defaultWhisperModel,
+      mode: transcriptionMode,
+      autoSendOnDictationEnd,
+    }
     void FileSystem.writeAsStringAsync(WHISPER_SETTINGS_FILE, JSON.stringify(payload)).catch(() => {})
-  }, [defaultWhisperModel, transcriptionMode])
+  }, [autoSendOnDictationEnd, defaultWhisperModel, transcriptionMode])
 
   useEffect(() => {
     return () => {
@@ -1140,6 +1133,26 @@ export default function DictationScreen() {
     setAgentStateDismissed(true)
   }, [])
 
+  const handlePermissionDecision = useCallback(
+    (reply: PermissionDecision) => {
+      if (!activePermissionRequest || !activeServerId) return
+
+      void Haptics.selectionAsync().catch(() => {})
+      void respondToPermission({
+        serverID: activeServerId,
+        sessionID: activePermissionRequest.sessionID,
+        requestID: activePermissionRequest.id,
+        reply,
+      }).catch((error) => {
+        Alert.alert(
+          "Could not send decision",
+          error instanceof Error ? error.message : "OpenCode did not accept that decision.",
+        )
+      })
+    },
+    [activePermissionRequest, activeServerId, respondToPermission],
+  )
+
   const resetTranscriptState = useCallback(() => {
     if (isRecordingRef.current) {
       stopRecording()
@@ -1454,6 +1467,7 @@ export default function DictationScreen() {
 
   const modelDownloading = downloadingModelID !== null
   const modelLoading = isPreparingWhisperModel || activeWhisperModel == null || modelDownloading || isTranscribingBulk
+  const dictationSettingsLocked = isRecording || isTranscribingBulk || isSending
   let modelLoadingState: "downloading" | "loading" | "ready" = "ready"
   if (modelDownloading) {
     modelLoadingState = "downloading"
@@ -1466,20 +1480,29 @@ export default function DictationScreen() {
     : WHISPER_MODEL_LABELS[defaultWhisperModel]
   const hasTranscript = transcribedText.trim().length > 0
   const hasAssistantResponse = latestAssistantResponse.trim().length > 0
+  const activePermissionCard = activePermissionRequest ? buildPermissionCardModel(activePermissionRequest) : null
+  const hasPendingPermission = activePermissionRequest !== null && activePermissionCard !== null
   const hasAgentActivity = hasAssistantResponse || monitorStatus.trim().length > 0 || monitorJob !== null
-  const shouldShowAgentStateCard = hasAgentActivity && !agentStateDismissed
+  const shouldShowAgentStateCard = !hasPendingPermission && hasAgentActivity && !agentStateDismissed
   const showsCompleteState = monitorStatus.toLowerCase().includes("complete")
   let agentStateIcon: "loading" | "done" = "loading"
   if (monitorJob === null && (hasAssistantResponse || showsCompleteState)) {
     agentStateIcon = "done"
   }
   const agentStateText = hasAssistantResponse ? latestAssistantResponse : "Waiting for agent…"
-  const shouldShowSend = hasCompletedSession && hasTranscript
+  const shouldShowSend = hasCompletedSession && hasTranscript && !hasPendingPermission
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
   const activeSession = activeServer?.sessions.find((s) => s.id === activeSessionId) ?? null
   const canSendToSession = !!activeServer && activeServer.status === "online" && !!activeSession
+  const isReplyingToActivePermission =
+    activePermissionRequest !== null && respondingPermissionID === activePermissionRequest.id
+  const displayedTranscript = isSending ? "" : transcribedText
   const isDropdownOpen = dropdownMode !== "none"
   const effectiveDropdownMode = isDropdownOpen ? dropdownMode : dropdownRenderMode
+  const isCreatingSession = sessionCreateMode !== null
+  const showSessionCreationChoices =
+    effectiveDropdownMode === "session" && !!activeServer && activeServer.status === "online"
+  const sessionCreationChoiceCount = showSessionCreationChoices ? (activeSession ? 2 : 1) : 0
   const headerTitle = activeServer?.name ?? "No server configured"
   let headerDotStyle = styles.serverStatusOffline
   if (activeServer?.status === "online") {
@@ -1533,6 +1556,46 @@ export default function DictationScreen() {
           easing: Easing.bezier(0.22, 0.61, 0.36, 1),
         })
   }, [shouldShowSend, sendVisibility])
+
+  useEffect(() => {
+    const text = transcribedText.trim()
+    if (!hasCompletedSession || text.length === 0) {
+      autoSendSignatureRef.current = ""
+      return
+    }
+
+    if (
+      !autoSendOnDictationEnd ||
+      isRecording ||
+      isTranscribingBulk ||
+      isSending ||
+      hasPendingPermission ||
+      !activeServerId ||
+      !activeSessionId
+    ) {
+      return
+    }
+
+    const signature = `${activeServerId}:${activeSessionId}:${transcriptionMode}:${text}`
+    if (autoSendSignatureRef.current === signature) {
+      return
+    }
+
+    autoSendSignatureRef.current = signature
+    void handleSendTranscript()
+  }, [
+    activeServerId,
+    activeSessionId,
+    autoSendOnDictationEnd,
+    handleSendTranscript,
+    hasCompletedSession,
+    hasPendingPermission,
+    isRecording,
+    isSending,
+    isTranscribingBulk,
+    transcriptionMode,
+    transcribedText,
+  ])
 
   // Parent clips outer half of center-stroke, so only inner half is visible.
   // borderWidth 6 → 3px visible inward, borderWidth 12 → 6px visible inward.
@@ -1590,8 +1653,15 @@ export default function DictationScreen() {
   const menuRows =
     effectiveDropdownMode === "server" ? Math.max(servers.length, 1) : Math.max(activeServer?.sessions.length ?? 0, 1)
   const expandedRowsHeight = Math.min(menuRows, DROPDOWN_VISIBLE_ROWS) * 42
-  const addServerExtraHeight = effectiveDropdownMode === "server" ? 38 : 8
-  const expandedHeaderHeight = 51 + 12 + expandedRowsHeight + addServerExtraHeight
+  const dropdownFooterExtraHeight =
+    effectiveDropdownMode === "server"
+      ? 38
+      : sessionCreationChoiceCount === 2
+        ? 72
+        : sessionCreationChoiceCount === 1
+          ? 38
+          : 8
+  const expandedHeaderHeight = 51 + 12 + expandedRowsHeight + dropdownFooterExtraHeight
 
   const animatedHeaderStyle = useAnimatedStyle(() => ({
     height: interpolate(serverMenuProgress.value, [0, 1], [51, expandedHeaderHeight], Extrapolation.CLAMP),
@@ -1710,6 +1780,49 @@ export default function DictationScreen() {
     },
     [selectSession],
   )
+
+  const handleCreateRootSession = useCallback(() => {
+    if (!activeServer || activeServer.status !== "online" || isCreatingSession) {
+      return
+    }
+
+    setSessionCreateMode("root")
+    void createSession(activeServer.id)
+      .then((created) => {
+        if (!created) {
+          Alert.alert("Could not create session", "Please check that your server is online and try again.")
+          return
+        }
+
+        setDropdownMode("none")
+      })
+      .finally(() => {
+        setSessionCreateMode(null)
+      })
+  }, [activeServer, createSession, isCreatingSession])
+
+  const handleCreateSessionLikeCurrent = useCallback(() => {
+    if (!activeServer || activeServer.status !== "online" || !activeSession || isCreatingSession) {
+      return
+    }
+
+    setSessionCreateMode("same")
+    void createSession(activeServer.id, {
+      directory: activeSession.directory,
+      workspaceID: activeSession.workspaceID,
+    })
+      .then((created) => {
+        if (!created) {
+          Alert.alert("Could not create session", "Please check that your server is online and try again.")
+          return
+        }
+
+        setDropdownMode("none")
+      })
+      .finally(() => {
+        setSessionCreateMode(null)
+      })
+  }, [activeServer, activeSession, createSession, isCreatingSession])
 
   const handleDeleteServer = useCallback(
     (id: string) => {
@@ -2212,6 +2325,55 @@ export default function DictationScreen() {
               <Pressable onPress={() => void handleStartScan()} style={styles.addServerButton}>
                 <Text style={styles.addServerButtonText}>Add server by scanning QR code</Text>
               </Pressable>
+            ) : effectiveDropdownMode === "session" && activeServer?.status === "online" ? (
+              <View style={styles.sessionMenuActions}>
+                {activeSession ? (
+                  <Pressable
+                    onPress={handleCreateSessionLikeCurrent}
+                    disabled={isCreatingSession}
+                    style={({ pressed }) => [
+                      styles.serverRow,
+                      styles.sessionMenuActionRow,
+                      isCreatingSession && styles.sessionMenuActionButtonDisabled,
+                      pressed && styles.clearButtonPressed,
+                    ]}
+                  >
+                    <View style={styles.sessionMenuActionInner}>
+                      <View style={styles.sessionMenuActionIconSlot}>
+                        <SymbolView
+                          name={{ ios: "folder.badge.plus", android: "create_new_folder", web: "create_new_folder" }}
+                          size={12}
+                          tintColor="#9BA3B5"
+                        />
+                      </View>
+                      <Text style={styles.sessionMenuActionText}>
+                        {sessionCreateMode === "same" ? "Creating workspace session..." : "New session with workspace"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+
+                <Pressable
+                  onPress={handleCreateRootSession}
+                  disabled={isCreatingSession}
+                  style={({ pressed }) => [
+                    styles.serverRow,
+                    styles.sessionMenuActionRow,
+                    styles.serverRowLast,
+                    isCreatingSession && styles.sessionMenuActionButtonDisabled,
+                    pressed && styles.clearButtonPressed,
+                  ]}
+                >
+                  <View style={styles.sessionMenuActionInner}>
+                    <View style={styles.sessionMenuActionIconSlot}>
+                      <SymbolView name={{ ios: "plus", android: "add", web: "add" }} size={12} tintColor="#9BA3B5" />
+                    </View>
+                    <Text style={styles.sessionMenuActionText}>
+                      {sessionCreateMode === "root" ? "Creating new session..." : "New session"}
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
             ) : null}
           </Animated.View>
         </Animated.View>
@@ -2219,7 +2381,91 @@ export default function DictationScreen() {
 
       {/* Transcription area */}
       <View style={styles.transcriptionArea}>
-        {shouldShowAgentStateCard ? (
+        {hasPendingPermission && activePermissionCard ? (
+          <View style={[styles.splitCard, styles.permissionCard]}>
+            <View style={styles.permissionHeaderRow}>
+              <View style={styles.permissionStatusDot} />
+              <View style={styles.permissionHeaderCopy}>
+                <Text style={styles.replyCardLabel}>Permission</Text>
+                <Text style={styles.permissionStatusText}>
+                  {isReplyingToActivePermission
+                    ? monitorStatus || "Sending decision…"
+                    : pendingPermissionCount > 1
+                      ? `${pendingPermissionCount} requests pending`
+                      : "Action needed"}
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView style={styles.permissionScroll} contentContainerStyle={styles.permissionContent}>
+              <Text style={styles.permissionEyebrow}>{activePermissionCard.eyebrow}</Text>
+              <Text style={styles.permissionTitle}>{activePermissionCard.title}</Text>
+              <Text style={styles.permissionBody}>{activePermissionCard.body}</Text>
+
+              {activePermissionCard.sections.map((section, index) => (
+                <View
+                  key={`permission-section-${section.label}-${index}`}
+                  style={[
+                    styles.permissionSection,
+                    index === activePermissionCard.sections.length - 1 && styles.permissionSectionLast,
+                  ]}
+                >
+                  <Text style={styles.permissionSectionLabel}>{section.label}</Text>
+                  <Text style={[styles.permissionSectionText, section.mono && styles.permissionSectionTextMono]}>
+                    {section.text}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.permissionFooter}>
+              <Pressable
+                onPress={() => handlePermissionDecision("once")}
+                disabled={isReplyingToActivePermission}
+                style={({ pressed }) => [
+                  styles.permissionPrimaryButton,
+                  isReplyingToActivePermission && styles.permissionActionDisabled,
+                  pressed && styles.clearButtonPressed,
+                ]}
+              >
+                {isReplyingToActivePermission ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.permissionPrimaryButtonText}>Allow once</Text>
+                )}
+              </Pressable>
+
+              <View style={styles.permissionSecondaryRow}>
+                {activePermissionRequest.always.length > 0 ? (
+                  <Pressable
+                    onPress={() => handlePermissionDecision("always")}
+                    disabled={isReplyingToActivePermission}
+                    style={({ pressed }) => [
+                      styles.permissionSecondaryButton,
+                      isReplyingToActivePermission && styles.permissionActionDisabled,
+                      pressed && styles.clearButtonPressed,
+                    ]}
+                  >
+                    <Text style={styles.permissionSecondaryButtonText}>Always allow</Text>
+                  </Pressable>
+                ) : null}
+
+                <Pressable
+                  onPress={() => handlePermissionDecision("reject")}
+                  disabled={isReplyingToActivePermission}
+                  style={({ pressed }) => [
+                    styles.permissionRejectButton,
+                    activePermissionRequest.always.length === 0 && styles.permissionRejectButtonWide,
+                    isReplyingToActivePermission && styles.permissionActionDisabled,
+                    pressed && styles.clearButtonPressed,
+                  ]}
+                >
+                  <Text style={styles.permissionRejectButtonText}>Reject</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : shouldShowAgentStateCard ? (
           <View style={styles.splitCardStack}>
             <View style={[styles.splitCard, styles.replyCard]}>
               <View style={styles.agentStateHeaderRow}>
@@ -2282,9 +2528,9 @@ export default function DictationScreen() {
                 onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
               >
                 <Animated.View style={animatedTranscriptSendStyle}>
-                  {transcribedText ? (
-                    <Text style={styles.transcriptionText}>{transcribedText}</Text>
-                  ) : (
+                  {displayedTranscript ? (
+                    <Text style={styles.transcriptionText}>{displayedTranscript}</Text>
+                  ) : isSending ? null : (
                     <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
                   )}
                 </Animated.View>
@@ -2342,9 +2588,9 @@ export default function DictationScreen() {
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
               <Animated.View style={animatedTranscriptSendStyle}>
-                {transcribedText ? (
-                  <Text style={styles.transcriptionText}>{transcribedText}</Text>
-                ) : (
+                {displayedTranscript ? (
+                  <Text style={styles.transcriptionText}>{displayedTranscript}</Text>
+                ) : isSending ? null : (
                   <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
                 )}
               </Animated.View>
@@ -2367,60 +2613,61 @@ export default function DictationScreen() {
         )}
       </View>
 
-      {/* Record button */}
-      <View style={styles.controlsRow} onLayout={handleControlsLayout}>
-        <Pressable
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          disabled={!permissionGranted || modelLoading}
-          style={[styles.recordPressable, !permissionGranted && styles.recordButtonDisabled]}
-        >
-          <View style={styles.recordButton}>
-            {isTranscribingBulk ? (
-              <View style={styles.recordBusyCenter}>
-                <ActivityIndicator color="#FF2E3F" size="small" />
-              </View>
-            ) : modelLoadingState !== "ready" ? (
-              <>
-                <View
-                  style={[
-                    styles.loadFill,
-                    modelLoadingState === "loading" && styles.loadFillPending,
-                    { width: modelLoadingState === "downloading" ? `${Math.max(pct, 3)}%` : "100%" },
-                  ]}
-                />
-                <View style={styles.loadOverlay} pointerEvents="none">
-                  <Text style={styles.loadText}>
-                    {modelLoadingState === "downloading"
-                      ? `Downloading ${loadingModelLabel} ${pct}%`
-                      : `Loading ${loadingModelLabel}`}
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <Animated.View style={[styles.recordBorder, animatedBorderStyle]} pointerEvents="none" />
-                <Animated.View style={[styles.recordDot, animatedDotStyle]} />
-              </>
-            )}
-          </View>
-        </Pressable>
-
-        <Animated.View style={[styles.sendSlot, animatedSendStyle]} pointerEvents={shouldShowSend ? "auto" : "none"}>
+      {hasPendingPermission ? null : (
+        <View style={styles.controlsRow} onLayout={handleControlsLayout}>
           <Pressable
-            onPress={handleSendTranscript}
-            style={({ pressed }) => [
-              styles.sendButton,
-              (isSending || !hasTranscript || !canSendToSession) && styles.sendButtonDisabled,
-              pressed && styles.clearButtonPressed,
-            ]}
-            disabled={isSending || !hasTranscript || !canSendToSession}
-            hitSlop={8}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            disabled={!permissionGranted || modelLoading}
+            style={[styles.recordPressable, !permissionGranted && styles.recordButtonDisabled]}
           >
-            <Text style={styles.sendIcon}>↑</Text>
+            <View style={styles.recordButton}>
+              {isTranscribingBulk ? (
+                <View style={styles.recordBusyCenter}>
+                  <ActivityIndicator color="#FF2E3F" size="small" />
+                </View>
+              ) : modelLoadingState !== "ready" ? (
+                <>
+                  <View
+                    style={[
+                      styles.loadFill,
+                      modelLoadingState === "loading" && styles.loadFillPending,
+                      { width: modelLoadingState === "downloading" ? `${Math.max(pct, 3)}%` : "100%" },
+                    ]}
+                  />
+                  <View style={styles.loadOverlay} pointerEvents="none">
+                    <Text style={styles.loadText}>
+                      {modelLoadingState === "downloading"
+                        ? `Downloading ${loadingModelLabel} ${pct}%`
+                        : `Loading ${loadingModelLabel}`}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Animated.View style={[styles.recordBorder, animatedBorderStyle]} pointerEvents="none" />
+                  <Animated.View style={[styles.recordDot, animatedDotStyle]} />
+                </>
+              )}
+            </View>
           </Pressable>
-        </Animated.View>
-      </View>
+
+          <Animated.View style={[styles.sendSlot, animatedSendStyle]} pointerEvents={shouldShowSend ? "auto" : "none"}>
+            <Pressable
+              onPress={handleSendTranscript}
+              style={({ pressed }) => [
+                styles.sendButton,
+                (isSending || !hasTranscript || !canSendToSession) && styles.sendButtonDisabled,
+                pressed && styles.clearButtonPressed,
+              ]}
+              disabled={isSending || !hasTranscript || !canSendToSession}
+              hitSlop={8}
+            >
+              <Text style={styles.sendIcon}>↑</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      )}
 
       <Modal
         visible={whisperSettingsOpen}
@@ -2464,55 +2711,42 @@ export default function DictationScreen() {
                 <Text style={styles.settingsTextRowValue}>{WHISPER_MODEL_LABELS[defaultWhisperModel]}</Text>
               </View>
 
-              <Pressable
-                onPress={() => setTranscriptionMode("bulk")}
-                disabled={isRecording || isTranscribingBulk}
-                style={({ pressed }) => [
-                  styles.settingsTextRow,
-                  (isRecording || isTranscribingBulk) && styles.settingsInlinePressableDisabled,
-                  pressed && styles.clearButtonPressed,
-                ]}
-              >
+              <View style={styles.settingsTextRow}>
                 <View style={styles.settingsOptionCopy}>
-                  <Text style={styles.settingsTextRowTitle}>On Release</Text>
-                  <Text style={styles.settingsTextRowMeta}>Transcribe after release</Text>
+                  <Text style={styles.settingsTextRowTitle}>Realtime dictation</Text>
+                  <Text style={styles.settingsTextRowMeta}>Turn off to transcribe after release</Text>
                 </View>
-                <Text
-                  style={[
-                    styles.settingsTextRowAction,
-                    transcriptionMode === "bulk" && styles.settingsTextRowActionActive,
-                  ]}
-                >
-                  {transcriptionMode === "bulk" ? "Selected" : "Use"}
-                </Text>
-              </Pressable>
+                <Switch
+                  value={transcriptionMode === "realtime"}
+                  onValueChange={(enabled) => setTranscriptionMode(enabled ? "realtime" : "bulk")}
+                  disabled={dictationSettingsLocked}
+                  trackColor={{ false: "#2D2D31", true: "#6A3A33" }}
+                  thumbColor={transcriptionMode === "realtime" ? "#FF6B56" : "#F2F2F2"}
+                  ios_backgroundColor="#2D2D31"
+                />
+              </View>
 
-              <Pressable
-                onPress={() => setTranscriptionMode("realtime")}
-                disabled={isRecording || isTranscribingBulk}
-                style={({ pressed }) => [
-                  styles.settingsTextRow,
-                  (isRecording || isTranscribingBulk) && styles.settingsInlinePressableDisabled,
-                  pressed && styles.clearButtonPressed,
-                ]}
-              >
+              <View style={styles.settingsTextRow}>
                 <View style={styles.settingsOptionCopy}>
-                  <Text style={styles.settingsTextRowTitle}>Realtime</Text>
-                  <Text style={styles.settingsTextRowMeta}>Transcribe while you speak</Text>
+                  <Text style={styles.settingsTextRowTitle}>Auto send on dictation end</Text>
+                  <Text style={styles.settingsTextRowMeta}>Send the transcript as soon as recording finishes</Text>
                 </View>
-                <Text
-                  style={[
-                    styles.settingsTextRowAction,
-                    transcriptionMode === "realtime" && styles.settingsTextRowActionActive,
-                  ]}
-                >
-                  {transcriptionMode === "realtime" ? "Selected" : "Use"}
-                </Text>
-              </Pressable>
+                <Switch
+                  value={autoSendOnDictationEnd}
+                  onValueChange={setAutoSendOnDictationEnd}
+                  disabled={dictationSettingsLocked}
+                  trackColor={{ false: "#2D2D31", true: "#6A3A33" }}
+                  thumbColor={autoSendOnDictationEnd ? "#FF6B56" : "#F2F2F2"}
+                  ios_backgroundColor="#2D2D31"
+                />
+              </View>
             </View>
 
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionLabel}>MODELS:</Text>
+              <View style={styles.settingsTextRow}>
+                <Text style={styles.settingsMutedText}>Mobile devices currently support models up to `medium`.</Text>
+              </View>
               {WHISPER_MODELS.map((modelID) => {
                 const installed = installedWhisperModels.includes(modelID)
                 const isDefault = defaultWhisperModel === modelID
@@ -2995,6 +3229,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  sessionMenuActions: {
+    marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: "#222733",
+  },
+  sessionMenuActionRow: {
+    paddingVertical: 9,
+  },
+  sessionMenuActionInner: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  sessionMenuActionIconSlot: {
+    width: 9,
+    height: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sessionMenuActionButtonDisabled: {
+    opacity: 0.55,
+  },
+  sessionMenuActionText: {
+    flex: 1,
+    color: "#D6DAE4",
+    fontSize: 14,
+    fontWeight: "500",
+  },
   statusLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -3059,6 +3322,152 @@ const styles = StyleSheet.create({
   },
   replyCard: {
     paddingTop: 16,
+  },
+  permissionCard: {
+    paddingTop: 16,
+  },
+  permissionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  permissionHeaderCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  permissionStatusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#FFB347",
+  },
+  permissionEyebrow: {
+    color: "#FFB347",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+  permissionStatusText: {
+    color: "#9099AA",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  permissionScroll: {
+    flex: 1,
+  },
+  permissionContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 14,
+  },
+  permissionTitle: {
+    color: "#F7F8FB",
+    fontSize: 30,
+    fontWeight: "800",
+    lineHeight: 36,
+    letterSpacing: -0.7,
+  },
+  permissionBody: {
+    color: "#B2BDCF",
+    fontSize: 17,
+    fontWeight: "500",
+    lineHeight: 24,
+  },
+  permissionSection: {
+    gap: 6,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#242424",
+  },
+  permissionSectionLast: {
+    borderBottomWidth: 0,
+  },
+  permissionSectionLabel: {
+    color: "#7F8798",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
+  },
+  permissionSectionText: {
+    color: "#E7E7E7",
+    fontSize: 14,
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  permissionSectionTextMono: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" }),
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#D4D7DE",
+  },
+  permissionFooter: {
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 18,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#21252F",
+  },
+  permissionPrimaryButton: {
+    minHeight: 54,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1D6FF4",
+    borderWidth: 2,
+    borderColor: "#1557C3",
+    paddingHorizontal: 16,
+  },
+  permissionPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  permissionSecondaryRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  permissionSecondaryButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1C1E22",
+    borderWidth: 1,
+    borderColor: "#32353D",
+    paddingHorizontal: 12,
+  },
+  permissionSecondaryButtonText: {
+    color: "#E0E3EA",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  permissionRejectButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#31181C",
+    borderWidth: 1,
+    borderColor: "#5E2B34",
+    paddingHorizontal: 12,
+  },
+  permissionRejectButtonWide: {
+    flex: 1,
+  },
+  permissionRejectButtonText: {
+    color: "#FFCCD2",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  permissionActionDisabled: {
+    opacity: 0.6,
   },
   transcriptionPanel: {
     flex: 1,
@@ -3282,6 +3691,9 @@ const styles = StyleSheet.create({
     borderBottomColor: "#242424",
     paddingVertical: 10,
   },
+  settingsToggleRow: {
+    alignItems: "flex-start",
+  },
   settingsMutedText: {
     color: "#868686",
     fontSize: 12,
@@ -3317,6 +3729,38 @@ const styles = StyleSheet.create({
   },
   settingsTextRowActionActive: {
     color: "#FFD8D2",
+  },
+  settingsModeToggle: {
+    flexDirection: "row",
+    backgroundColor: "#17181B",
+    borderWidth: 1,
+    borderColor: "#292A2E",
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+    alignSelf: "stretch",
+  },
+  settingsModeToggleOption: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  settingsModeToggleOptionActive: {
+    backgroundColor: "#3F201B",
+  },
+  settingsModeToggleOptionPressed: {
+    opacity: 0.82,
+  },
+  settingsModeToggleText: {
+    color: "#9A9A9A",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  settingsModeToggleTextActive: {
+    color: "#FFF0EC",
   },
   settingsInlineRow: {
     flexDirection: "row",

@@ -21,6 +21,11 @@ import {
   type OpenCodeEvent,
   type MonitorEventType,
 } from "@/lib/opencode-events"
+import {
+  parsePendingPermissionRequest,
+  parsePendingPermissionRequests,
+  type PendingPermissionRequest,
+} from "@/lib/pending-permissions"
 import { registerRelayDevice, unregisterRelayDevice } from "@/lib/relay-client"
 import { parseSSEStream } from "@/lib/sse"
 import { getDevicePushToken, onPushTokenChange } from "@/notifications/monitoring-notifications"
@@ -32,6 +37,8 @@ export type MonitorJob = {
   opencodeBaseURL: string
   startedAt: number
 }
+
+export type PermissionDecision = "once" | "always" | "reject"
 
 type SessionRuntimeStatus = "idle" | "busy" | "retry"
 
@@ -114,6 +121,8 @@ export function useMonitoring({
   const [monitorJob, setMonitorJob] = useState<MonitorJob | null>(null)
   const [monitorStatus, setMonitorStatus] = useState("")
   const [latestAssistantResponse, setLatestAssistantResponse] = useState("")
+  const [pendingPermissions, setPendingPermissions] = useState<PendingPermissionRequest[]>([])
+  const [replyingPermissionID, setReplyingPermissionID] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState)
 
   const foregroundMonitorAbortRef = useRef<AbortController | null>(null)
@@ -127,6 +136,19 @@ export function useMonitoring({
   const previousPushTokenRef = useRef<string | null>(null)
   const previousAppStateRef = useRef<AppStateStatus>(AppState.currentState)
   const latestAssistantRequestRef = useRef(0)
+  const latestPermissionRequestRef = useRef(0)
+
+  const upsertPendingPermission = useCallback(
+    (request: PendingPermissionRequest) => {
+      setPendingPermissions((current) => {
+        const next = current.filter((item) => item.id !== request.id)
+        return [request, ...next]
+      })
+      closeDropdown()
+      setAgentStateDismissed(false)
+    },
+    [closeDropdown, setAgentStateDismissed],
+  )
 
   useEffect(() => {
     monitorJobRef.current = monitorJob
@@ -243,6 +265,38 @@ export function useMonitoring({
     [activeSessionIdRef, setAgentStateDismissed],
   )
 
+  const loadPendingPermissions = useCallback(
+    async (baseURL: string, sessionID: string) => {
+      const requestID = latestPermissionRequestRef.current + 1
+      latestPermissionRequestRef.current = requestID
+
+      const base = baseURL.replace(/\/+$/, "")
+
+      try {
+        const response = await fetch(`${base}/permission`)
+        if (!response.ok) {
+          throw new Error(`Permission list failed (${response.status})`)
+        }
+
+        const payload = (await response.json()) as unknown
+        const requests = parsePendingPermissionRequests(payload).filter((item) => item.sessionID === sessionID)
+
+        if (latestPermissionRequestRef.current !== requestID) return
+        if (activeSessionIdRef.current !== sessionID) return
+
+        setPendingPermissions(requests)
+        if (requests.length > 0) {
+          closeDropdown()
+          setAgentStateDismissed(false)
+        }
+      } catch {
+        if (latestPermissionRequestRef.current !== requestID) return
+        if (activeSessionIdRef.current !== sessionID) return
+      }
+    },
+    [activeSessionIdRef, closeDropdown, setAgentStateDismissed],
+  )
+
   const fetchSessionRuntimeStatus = useCallback(
     async (baseURL: string, sessionID: string): Promise<SessionRuntimeStatus | null> => {
       const base = baseURL.replace(/\/+$/, "")
@@ -278,6 +332,7 @@ export function useMonitoring({
 
       if (eventType === "permission") {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {})
+        void loadPendingPermissions(job.opencodeBaseURL, job.sessionID)
         return
       }
 
@@ -295,7 +350,7 @@ export function useMonitoring({
       stopForegroundMonitor()
       setMonitorJob(null)
     },
-    [completePlayer, loadLatestAssistantResponse, stopForegroundMonitor],
+    [completePlayer, loadLatestAssistantResponse, loadPendingPermissions, stopForegroundMonitor],
   )
 
   const startForegroundMonitor = useCallback(
@@ -333,6 +388,13 @@ export function useMonitoring({
             const sessionID = extractSessionID(parsed)
             if (sessionID !== job.sessionID) continue
 
+            if (parsed.type === "permission.asked") {
+              const request = parsePendingPermissionRequest(parsed.properties)
+              if (request) {
+                upsertPendingPermission(request)
+              }
+            }
+
             const eventType = classifyMonitorEvent(parsed)
             if (!eventType) continue
 
@@ -345,7 +407,7 @@ export function useMonitoring({
         }
       })()
     },
-    [handleMonitorEvent, stopForegroundMonitor],
+    [handleMonitorEvent, stopForegroundMonitor, upsertPendingPermission],
   )
 
   const beginMonitoring = useCallback(
@@ -381,13 +443,22 @@ export function useMonitoring({
 
   useEffect(() => {
     setLatestAssistantResponse("")
+    setPendingPermissions([])
     setAgentStateDismissed(false)
     if (!activeServerId || !activeSessionId) return
 
     const server = serversRef.current.find((item) => item.id === activeServerId)
     if (!server || server.status !== "online") return
     void loadLatestAssistantResponse(server.url, activeSessionId)
-  }, [activeServerId, activeSessionId, loadLatestAssistantResponse, serversRef, setAgentStateDismissed])
+    void loadPendingPermissions(server.url, activeSessionId)
+  }, [
+    activeServerId,
+    activeSessionId,
+    loadLatestAssistantResponse,
+    loadPendingPermissions,
+    serversRef,
+    setAgentStateDismissed,
+  ])
 
   useEffect(() => {
     return () => {
@@ -404,6 +475,7 @@ export function useMonitoring({
 
       const runtimeStatus = await fetchSessionRuntimeStatus(server.url, input.sessionID)
       await loadLatestAssistantResponse(server.url, input.sessionID)
+      await loadPendingPermissions(server.url, input.sessionID)
 
       if (runtimeStatus === "busy" || runtimeStatus === "retry") {
         const nextJob: MonitorJob = {
@@ -433,6 +505,7 @@ export function useMonitoring({
       appState,
       fetchSessionRuntimeStatus,
       loadLatestAssistantResponse,
+      loadPendingPermissions,
       refreshServerStatusAndSessions,
       serversRef,
       startForegroundMonitor,
@@ -548,6 +621,62 @@ export function useMonitoring({
     void syncSessionState({ serverID, sessionID })
   }, [activeServerIdRef, activeSessionIdRef, appState, syncSessionState])
 
+  const respondToPermission = useCallback(
+    async (input: { serverID: string; sessionID: string; requestID: string; reply: PermissionDecision }) => {
+      const server = serversRef.current.find((item) => item.id === input.serverID)
+      if (!server) {
+        throw new Error("Server unavailable")
+      }
+
+      const base = server.url.replace(/\/+$/, "")
+      setReplyingPermissionID(input.requestID)
+      setMonitorStatus(input.reply === "reject" ? "Rejecting request…" : "Sending approval…")
+      let removed: PendingPermissionRequest | undefined
+      setPendingPermissions((current) => {
+        removed = current.find((item) => item.id === input.requestID)
+        return current.filter((item) => item.id !== input.requestID)
+      })
+
+      try {
+        const response = await fetch(`${base}/permission/${input.requestID}/reply`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reply: input.reply }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Permission reply failed (${response.status})`)
+        }
+
+        await syncSessionState({
+          serverID: input.serverID,
+          sessionID: input.sessionID,
+        })
+      } catch (error) {
+        if (removed) {
+          setPendingPermissions((current) => {
+            const restored = removed
+            if (!restored) {
+              return current
+            }
+            if (current.some((item) => item.id === restored.id)) {
+              return current
+            }
+            return [restored, ...current]
+          })
+        }
+        throw error
+      } finally {
+        setReplyingPermissionID((current) => (current === input.requestID ? null : current))
+      }
+    },
+    [serversRef, syncSessionState],
+  )
+
+  const activePermissionRequest = pendingPermissions[0] ?? null
+
   const relayServersKey = useMemo(
     () =>
       servers
@@ -658,6 +787,10 @@ export function useMonitoring({
     monitorStatus,
     setMonitorStatus,
     latestAssistantResponse,
+    activePermissionRequest,
+    pendingPermissionCount: pendingPermissions.length,
+    respondingPermissionID: replyingPermissionID,
+    respondToPermission,
     beginMonitoring,
   }
 }
