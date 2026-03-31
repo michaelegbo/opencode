@@ -294,15 +294,6 @@ async function post(input: { type: Type; sessionID: string }) {
 
   const content = await notify(input)
 
-  console.log("[ APN RELAY ] posting event", {
-    serverID: next.pair.serverID,
-    relayURL: next.relayURL,
-    secretHash: secretHash(next.relaySecret),
-    type: input.type,
-    sessionID: input.sessionID,
-    title: content.title,
-  })
-
   log.info("[ APN RELAY ] posting event", {
     serverID: next.pair.serverID,
     relayURL: next.relayURL,
@@ -328,15 +319,6 @@ async function post(input: { type: Type; sessionID: string }) {
   })
     .then(async (res) => {
       if (res.ok) {
-        console.log("[ APN RELAY ] relay accepted event", {
-          status: res.status,
-          serverID: next.pair.serverID,
-          secretHash: secretHash(next.relaySecret),
-          type: input.type,
-          sessionID: input.sessionID,
-          title: content.title,
-        })
-
         log.info("[ APN RELAY ] relay accepted event", {
           status: res.status,
           serverID: next.pair.serverID,

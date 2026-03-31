@@ -10,11 +10,17 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.anomalyco.mobilevoice",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "entitlements": {
         "com.apple.developer.kernel.extended-virtual-addressing": true
       },
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app needs microphone access for live speech-to-text dictation.",
+        "NSMicrophoneUsageDescription": "Control uses the microphone while you hold Record to turn your speech into text for an OpenCode session.",
+        "NSCameraUsageDescription": "Control uses the camera to scan the OpenCode pairing QR code shown on your computer.",
+        "NSLocalNetworkUsageDescription": "Control uses your local network to discover and connect to OpenCode servers running on your computer.",
+        "NSBonjourServices": ["_http._tcp."],
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
@@ -23,8 +29,7 @@
               "NSExceptionAllowsInsecureHTTPLoads": true
             }
           }
-        },
-        "ITSAppUsesNonExemptEncryption": false
+        }
       }
     },
     "android": {
@@ -40,7 +45,10 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE"
       ],
       "predictiveBackGestureEnabled": false
     },

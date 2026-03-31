@@ -37,8 +37,9 @@ import * as FileSystem from "expo-file-system/legacy"
 import { fetch as expoFetch } from "expo/fetch"
 import { buildPermissionCardModel } from "@/lib/pending-permissions"
 import { unregisterRelayDevice } from "@/lib/relay-client"
+import { useMdnsDiscovery } from "@/hooks/use-mdns-discovery"
 import { useMonitoring, type MonitorJob, type PermissionDecision } from "@/hooks/use-monitoring"
-import { looksLikeLocalHost, useServerSessions } from "@/hooks/use-server-sessions"
+import { DEFAULT_RELAY_URL, looksLikeLocalHost, useServerSessions } from "@/hooks/use-server-sessions"
 import { ensureNotificationPermissions, getDevicePushToken } from "@/notifications/monitoring-notifications"
 
 const CONTROL_HEIGHT = 86
@@ -227,6 +228,20 @@ function formatSessionUpdated(updatedMs: number): string {
   } catch {
     return date.toLocaleTimeString()
   }
+}
+
+function formatWorkingDirectory(directory?: string): string {
+  if (!directory) return "Not available"
+
+  if (directory.startsWith("/Users/")) {
+    const segments = directory.split("/")
+    if (segments.length >= 4) {
+      const tail = segments.slice(3).join("/")
+      return tail.length > 0 ? `~/${tail}` : "~"
+    }
+  }
+
+  return directory
 }
 
 type DropdownMode = "none" | "server" | "session"
@@ -638,10 +653,17 @@ export default function DictationScreen() {
     findServerForSession,
   } = useServerSessions()
 
+  const { discoveredServers, discoveryStatus, discoveryError, discoveryAvailable, refreshDiscovery } = useMdnsDiscovery(
+    {
+      enabled: onboardingComplete && localNetworkPermissionState !== "denied",
+    },
+  )
+
   const {
     beginMonitoring,
     activePermissionRequest,
     devicePushToken,
+    latestAssistantContext,
     latestAssistantResponse,
     monitorJob,
     monitorStatus,
@@ -1755,7 +1777,29 @@ export default function DictationScreen() {
   const agentStateText = hasAssistantResponse ? latestAssistantResponse : "Waiting for agent…"
   const shouldShowSend = hasCompletedSession && hasTranscript && !hasPendingPermission
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
+  const discoveredServerOptions = useMemo(() => {
+    const saved = new Set(servers.map((server) => server.url.replace(/\/+$/, "")))
+    return discoveredServers.filter((server) => !saved.has(server.url.replace(/\/+$/, "")))
+  }, [discoveredServers, servers])
+  const discoveredServerEmptyLabel =
+    discoveryStatus === "error"
+      ? "Unable to discover local servers"
+      : discoveryStatus === "scanning"
+        ? "Scanning local network..."
+        : "No local servers found"
   const activeSession = activeServer?.sessions.find((s) => s.id === activeSessionId) ?? null
+  let currentSessionModelLabel = "Not available"
+  if (latestAssistantContext?.modelID) {
+    currentSessionModelLabel = latestAssistantContext.modelID
+    if (latestAssistantContext.providerID) {
+      currentSessionModelLabel = `${latestAssistantContext.providerID}/${latestAssistantContext.modelID}`
+    }
+  }
+  const currentSessionDirectory = latestAssistantContext?.workingDirectory ?? activeSession?.directory
+  const currentSessionUpdated = activeSession ? formatSessionUpdated(activeSession.updated) : ""
+  const sessionList = activeSession
+    ? (activeServer?.sessions ?? []).filter((session) => session.id !== activeSession.id)
+    : (activeServer?.sessions ?? [])
   const canSendToSession = !!activeServer && activeServer.status === "online" && !!activeSession
   const isReplyingToActivePermission =
     activePermissionRequest !== null && respondingPermissionID === activePermissionRequest.id
@@ -1956,8 +2000,8 @@ export default function DictationScreen() {
     ],
   }))
 
-  const menuRows =
-    effectiveDropdownMode === "server" ? Math.max(servers.length, 1) : Math.max(activeServer?.sessions.length ?? 0, 1)
+  const serverMenuRows = 2 + Math.max(servers.length, 1) + Math.max(discoveredServerOptions.length, 1)
+  const menuRows = effectiveDropdownMode === "server" ? serverMenuRows : Math.max(activeServer?.sessions.length ?? 0, 1)
   const expandedRowsHeight = Math.min(menuRows, DROPDOWN_VISIBLE_ROWS) * 42
   const dropdownFooterExtraHeight =
     effectiveDropdownMode === "server"
@@ -2069,10 +2113,11 @@ export default function DictationScreen() {
       }
       if (next === "server") {
         refreshAllServerHealth()
+        refreshDiscovery()
       }
       return next
     })
-  }, [refreshAllServerHealth])
+  }, [refreshAllServerHealth, refreshDiscovery])
 
   const toggleSessionMenu = useCallback(() => {
     if (!activeServer || activeServer.status !== "online") return
@@ -2156,6 +2201,20 @@ export default function DictationScreen() {
       removeServer(id)
     },
     [devicePushToken, removeServer, serversRef],
+  )
+
+  const handleConnectDiscoveredServer = useCallback(
+    (url: string) => {
+      const ok = addServer(url, DEFAULT_RELAY_URL, "")
+      if (!ok) {
+        Alert.alert("Could not add server", "The discovered server could not be added. Try scanning the QR code.")
+        return
+      }
+
+      setDropdownMode("none")
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {})
+    },
+    [addServer],
   )
 
   const handleStartScan = useCallback(async () => {
@@ -2467,9 +2526,9 @@ export default function DictationScreen() {
   }
   const onboardingSteps = [
     {
-      title: "Allow mic access.",
+      title: "Microphone access.",
       body: "Control only listens while you hold the record button.",
-      primaryLabel: microphonePermissionState === "pending" ? "Requesting microphone..." : "Allow microphone",
+      primaryLabel: microphonePermissionState === "pending" ? "Requesting microphone access..." : "Continue",
       primaryDisabled: microphonePermissionState === "pending",
       secondaryLabel: "Continue without granting",
       visualTag: "MIC",
@@ -2480,7 +2539,7 @@ export default function DictationScreen() {
     {
       title: "Turn on notifications.",
       body: "Get alerts when your OpenCode run finishes, fails, or needs your attention.",
-      primaryLabel: notificationPermissionState === "pending" ? "Requesting notifications..." : "Allow notifications",
+      primaryLabel: notificationPermissionState === "pending" ? "Requesting notification access..." : "Continue",
       primaryDisabled: notificationPermissionState === "pending",
       secondaryLabel: "Continue without granting",
       visualTag: "PUSH",
@@ -2489,9 +2548,9 @@ export default function DictationScreen() {
       visualTagStyle: styles.onboardingVisualTagNotifications,
     },
     {
-      title: "Enable local network.",
+      title: "Local network access.",
       body: "This lets Control discover your machine on the same network.",
-      primaryLabel: localNetworkPermissionState === "pending" ? "Requesting local network..." : "Allow local network",
+      primaryLabel: localNetworkPermissionState === "pending" ? "Requesting local network access..." : "Continue",
       primaryDisabled: localNetworkPermissionState === "pending",
       secondaryLabel: "Continue without granting",
       visualTag: "LAN",
@@ -2501,10 +2560,10 @@ export default function DictationScreen() {
     },
     {
       title: "Pair your computer.",
-      body: "Start `opencode serve` on your computer, then scan the QR code to pair.",
-      primaryLabel: "Scan OpenCode QR",
+      body: "Start `opencode serve --mdns` on your computer. Control can discover nearby servers automatically, or you can scan a QR code.",
+      primaryLabel: "Scan OpenCode QR (optional)",
       primaryDisabled: false,
-      secondaryLabel: "I will do this later",
+      secondaryLabel: "Skip and use discovery",
       visualTag: "PAIR",
       visualSurfaceStyle: styles.onboardingVisualSurfacePair,
       visualOrbStyle: styles.onboardingVisualOrbPair,
@@ -2705,52 +2764,133 @@ export default function DictationScreen() {
               bounces={false}
             >
               {effectiveDropdownMode === "server" ? (
-                servers.length === 0 ? (
-                  <Text style={styles.serverEmptyText}>No servers yet</Text>
-                ) : (
-                  servers.map((server) => (
-                    <Pressable
-                      key={server.id}
-                      onPress={() => handleSelectServer(server.id)}
-                      style={({ pressed }) => [styles.serverRow, pressed && styles.serverRowPressed]}
-                    >
-                      <View
-                        style={[
-                          styles.serverStatusDot,
-                          server.status === "online" ? styles.serverStatusActive : styles.serverStatusOffline,
-                        ]}
-                      />
-                      <Text style={styles.serverNameText}>{server.name}</Text>
-                      <Pressable onPress={() => handleDeleteServer(server.id)} hitSlop={8}>
-                        <Text style={styles.serverDeleteIcon}>✕</Text>
+                <>
+                  <Text style={styles.serverGroupLabel}>Saved:</Text>
+
+                  {servers.length === 0 ? (
+                    <Text style={[styles.serverEmptyText, styles.serverGroupEmptyText]}>No saved servers</Text>
+                  ) : (
+                    servers.map((server) => (
+                      <Pressable
+                        key={server.id}
+                        onPress={() => handleSelectServer(server.id)}
+                        style={({ pressed }) => [styles.serverRow, pressed && styles.serverRowPressed]}
+                      >
+                        <View
+                          style={[
+                            styles.serverStatusDot,
+                            server.status === "online" ? styles.serverStatusActive : styles.serverStatusOffline,
+                          ]}
+                        />
+                        <Text style={styles.serverNameText}>{server.name}</Text>
+                        <Pressable onPress={() => handleDeleteServer(server.id)} hitSlop={8}>
+                          <Text style={styles.serverDeleteIcon}>✕</Text>
+                        </Pressable>
                       </Pressable>
-                    </Pressable>
-                  ))
-                )
+                    ))
+                  )}
+
+                  <View style={styles.serverGroupHeaderRow}>
+                    <Text style={styles.serverGroupLabel}>Discovered:</Text>
+                    {discoveryStatus === "scanning" ? <ActivityIndicator size="small" color="#8790A3" /> : null}
+                  </View>
+
+                  {!discoveryAvailable ? (
+                    <Text style={[styles.serverEmptyText, styles.serverGroupEmptyText]}>
+                      Discovery unavailable in this build
+                    </Text>
+                  ) : discoveredServerOptions.length === 0 ? (
+                    <Text style={[styles.serverEmptyText, styles.serverGroupEmptyText]}>
+                      {discoveredServerEmptyLabel}
+                    </Text>
+                  ) : (
+                    discoveredServerOptions.map((server, index) => (
+                      <Pressable
+                        key={server.id}
+                        onPress={() => handleConnectDiscoveredServer(server.url)}
+                        style={({ pressed }) => [
+                          styles.serverRow,
+                          index === discoveredServerOptions.length - 1 && styles.serverRowLast,
+                          pressed && styles.serverRowPressed,
+                        ]}
+                      >
+                        <View style={[styles.serverStatusDot, styles.serverStatusChecking]} />
+                        <View style={styles.discoveredServerCopy}>
+                          <Text style={styles.serverNameText} numberOfLines={1}>
+                            {server.name}
+                          </Text>
+                          <Text style={styles.discoveredServerMeta} numberOfLines={1} ellipsizeMode="middle">
+                            {server.url}
+                          </Text>
+                        </View>
+                        <Text style={styles.discoveredServerAction}>Connect</Text>
+                      </Pressable>
+                    ))
+                  )}
+
+                  {discoveryStatus === "error" && discoveryError ? (
+                    <Text style={styles.discoveryErrorText} numberOfLines={1} ellipsizeMode="tail">
+                      {discoveryError}
+                    </Text>
+                  ) : null}
+                </>
               ) : activeServer ? (
-                activeServer.sessions.length === 0 ? (
-                  activeServer.sessionsLoading ? null : (
-                    <Text style={styles.serverEmptyText}>No sessions available</Text>
-                  )
-                ) : (
-                  activeServer.sessions.map((session, index) => (
-                    <Pressable
-                      key={session.id}
-                      onPress={() => handleSelectSession(session.id)}
-                      style={({ pressed }) => [
-                        styles.serverRow,
-                        index === activeServer.sessions.length - 1 && styles.serverRowLast,
-                        pressed && styles.serverRowPressed,
-                      ]}
-                    >
-                      <View style={[styles.serverStatusDot, styles.serverStatusActive]} />
-                      <Text style={styles.serverNameText} numberOfLines={1}>
-                        {session.title}
+                <>
+                  {activeSession ? (
+                    <>
+                      <View style={styles.currentSessionSummary}>
+                        <Text style={styles.currentSessionLabel}>Current session</Text>
+
+                        <View style={styles.currentSessionMetaRow}>
+                          <Text style={styles.currentSessionMetaKey}>Working dir</Text>
+                          <Text style={styles.currentSessionMetaValue} numberOfLines={1} ellipsizeMode="middle">
+                            {formatWorkingDirectory(currentSessionDirectory)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.currentSessionMetaRow}>
+                          <Text style={styles.currentSessionMetaKey}>Model</Text>
+                          <Text style={styles.currentSessionMetaValue} numberOfLines={1} ellipsizeMode="middle">
+                            {currentSessionModelLabel}
+                          </Text>
+                        </View>
+
+                        <View style={styles.currentSessionMetaRow}>
+                          <Text style={styles.currentSessionMetaKey}>Updated</Text>
+                          <Text style={styles.currentSessionMetaValue}>{currentSessionUpdated || "Just now"}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.currentSessionDivider} />
+                    </>
+                  ) : null}
+
+                  {sessionList.length === 0 ? (
+                    activeServer.sessionsLoading ? null : (
+                      <Text style={styles.serverEmptyText}>
+                        {activeSession ? "No other sessions available" : "No sessions available"}
                       </Text>
-                      <Text style={styles.sessionUpdatedText}>{formatSessionUpdated(session.updated)}</Text>
-                    </Pressable>
-                  ))
-                )
+                    )
+                  ) : (
+                    sessionList.map((session, index) => (
+                      <Pressable
+                        key={session.id}
+                        onPress={() => handleSelectSession(session.id)}
+                        style={({ pressed }) => [
+                          styles.serverRow,
+                          index === sessionList.length - 1 && styles.serverRowLast,
+                          pressed && styles.serverRowPressed,
+                        ]}
+                      >
+                        <View style={[styles.serverStatusDot, styles.serverStatusActive]} />
+                        <Text style={styles.serverNameText} numberOfLines={1}>
+                          {session.title}
+                        </Text>
+                        <Text style={styles.sessionUpdatedText}>{formatSessionUpdated(session.updated)}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </>
               ) : (
                 <Text style={styles.serverEmptyText}>Select a server first</Text>
               )}
@@ -3756,11 +3896,67 @@ const styles = StyleSheet.create({
   dropdownListContent: {
     paddingBottom: 2,
   },
+  currentSessionSummary: {
+    paddingHorizontal: 4,
+    paddingTop: 2,
+    paddingBottom: 8,
+    gap: 5,
+  },
+  currentSessionLabel: {
+    color: "#A3ACC0",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  currentSessionMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  currentSessionMetaKey: {
+    width: 74,
+    color: "#7C8599",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  currentSessionMetaValue: {
+    flex: 1,
+    color: "#D7DCE6",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  currentSessionDivider: {
+    width: "100%",
+    height: 1,
+    backgroundColor: "#222733",
+    marginBottom: 4,
+  },
+  serverGroupHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  serverGroupLabel: {
+    color: "#8F97AA",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
   serverEmptyText: {
     color: "#6F7686",
-    fontSize: 13,
+    fontSize: 14,
     textAlign: "center",
     paddingVertical: 10,
+  },
+  serverGroupEmptyText: {
+    textAlign: "left",
+    paddingHorizontal: 4,
+    paddingVertical: 8,
   },
   serverRow: {
     flexDirection: "row",
@@ -3794,14 +3990,35 @@ const styles = StyleSheet.create({
   serverNameText: {
     flex: 1,
     color: "#D6DAE4",
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "500",
   },
   sessionUpdatedText: {
     color: "#8E96A8",
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "500",
     marginLeft: 8,
+  },
+  discoveredServerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  discoveredServerMeta: {
+    color: "#818A9E",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  discoveredServerAction: {
+    color: "#B9C2D8",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  discoveryErrorText: {
+    color: "#7D8598",
+    fontSize: 11,
+    fontWeight: "500",
+    paddingHorizontal: 4,
+    paddingTop: 4,
   },
   serverDeleteIcon: {
     color: "#8C93A3",
@@ -3845,7 +4062,7 @@ const styles = StyleSheet.create({
   sessionMenuActionText: {
     flex: 1,
     color: "#D6DAE4",
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "500",
   },
   statusLeft: {

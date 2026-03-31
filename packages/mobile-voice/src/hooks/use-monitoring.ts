@@ -121,6 +121,7 @@ export function useMonitoring({
   const [monitorJob, setMonitorJob] = useState<MonitorJob | null>(null)
   const [monitorStatus, setMonitorStatus] = useState("")
   const [latestAssistantResponse, setLatestAssistantResponse] = useState("")
+  const [latestAssistantContext, setLatestAssistantContext] = useState<LatestAssistantContext | null>(null)
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermissionRequest[]>([])
   const [replyingPermissionID, setReplyingPermissionID] = useState<string | null>(null)
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState)
@@ -248,18 +249,20 @@ export function useMonitoring({
         }
 
         const payload = (await response.json()) as unknown
-        const text = findLatestAssistantCompletionText(payload)
+        const latest = findLatestAssistantCompletion(payload)
 
         if (latestAssistantRequestRef.current !== requestID) return
         if (activeSessionIdRef.current !== sessionID) return
-        setLatestAssistantResponse(text)
-        if (text) {
+        setLatestAssistantResponse(latest.text)
+        setLatestAssistantContext(latest.context)
+        if (latest.text) {
           setAgentStateDismissed(false)
         }
       } catch {
         if (latestAssistantRequestRef.current !== requestID) return
         if (activeSessionIdRef.current !== sessionID) return
         setLatestAssistantResponse("")
+        setLatestAssistantContext(null)
       }
     },
     [activeSessionIdRef, setAgentStateDismissed],
@@ -443,6 +446,7 @@ export function useMonitoring({
 
   useEffect(() => {
     setLatestAssistantResponse("")
+    setLatestAssistantContext(null)
     setPendingPermissions([])
     setAgentStateDismissed(false)
     if (!activeServerId || !activeSessionId) return
@@ -787,6 +791,7 @@ export function useMonitoring({
     monitorStatus,
     setMonitorStatus,
     latestAssistantResponse,
+    latestAssistantContext,
     activePermissionRequest,
     pendingPermissionCount: pendingPermissions.length,
     respondingPermissionID: replyingPermissionID,
@@ -798,6 +803,10 @@ export function useMonitoring({
 type SessionMessageInfo = {
   role?: unknown
   time?: unknown
+  modelID?: unknown
+  providerID?: unknown
+  path?: unknown
+  agent?: unknown
 }
 
 type SessionMessagePart = {
@@ -810,6 +819,18 @@ type SessionMessagePayload = {
   parts?: unknown
 }
 
+type LatestAssistantContext = {
+  providerID: string | null
+  modelID: string | null
+  workingDirectory: string | null
+  agent: string | null
+}
+
+type LatestAssistantSnapshot = {
+  text: string
+  context: LatestAssistantContext | null
+}
+
 function cleanTranscriptText(text: string): string {
   return text.replace(/[ \t]+$/gm, "").trimEnd()
 }
@@ -818,8 +839,39 @@ function cleanSessionText(text: string): string {
   return cleanTranscriptText(text).trimStart()
 }
 
-function findLatestAssistantCompletionText(payload: unknown): string {
-  if (!Array.isArray(payload)) return ""
+function maybeString(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function extractAssistantContext(info: SessionMessageInfo): LatestAssistantContext | null {
+  const providerID = maybeString(info.providerID)
+  const modelID = maybeString(info.modelID)
+  const pathValue = info.path
+  const pathRecord = pathValue && typeof pathValue === "object" ? (pathValue as { cwd?: unknown }) : null
+  const workingDirectory = maybeString(pathRecord?.cwd)
+  const agent = maybeString(info.agent)
+
+  if (!providerID && !modelID && !workingDirectory && !agent) {
+    return null
+  }
+
+  return {
+    providerID,
+    modelID,
+    workingDirectory,
+    agent,
+  }
+}
+
+function findLatestAssistantCompletion(payload: unknown): LatestAssistantSnapshot {
+  if (!Array.isArray(payload)) {
+    return {
+      text: "",
+      context: null,
+    }
+  }
 
   for (let index = payload.length - 1; index >= 0; index -= 1) {
     const candidate = payload[index] as SessionMessagePayload
@@ -832,6 +884,7 @@ function findLatestAssistantCompletionText(payload: unknown): string {
     const time = info.time as { completed?: unknown } | undefined
     if (!time || typeof time !== "object") continue
     if (typeof time.completed !== "number") continue
+    const context = extractAssistantContext(info)
 
     const parts = Array.isArray(candidate.parts) ? (candidate.parts as SessionMessagePart[]) : []
     const text = parts
@@ -840,10 +893,16 @@ function findLatestAssistantCompletionText(payload: unknown): string {
       .filter((part) => part.length > 0)
       .join("\n\n")
 
-    if (text.length > 0) {
-      return text
+    if (text.length > 0 || context) {
+      return {
+        text,
+        context,
+      }
     }
   }
 
-  return ""
+  return {
+    text: "",
+    context: null,
+  }
 }

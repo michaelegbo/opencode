@@ -123,6 +123,46 @@ Run all commands from `packages/mobile-voice`.
 - Rebuild the dev client after native module additions or changes.
 - For optional native capability usage, prefer runtime fallback paths instead of hard crashes.
 
+## Expo Native Config (EAS)
+
+- Treat `packages/mobile-voice/app.json` as the source of truth for iOS native metadata in EAS cloud builds.
+- Do not rely on manual edits in `ios/mobilevoice/Info.plist`, entitlements files, or `PrivacyInfo.xcprivacy`; for this package they are generated outputs.
+- Keep generated native folders untracked in git (`/ios`, `/android`) to avoid mixed CNG/bare behavior during EAS builds.
+- Put App Store compliance and permission metadata in app config using these fields:
+  - `expo.ios.infoPlist` for Info.plist keys (usage strings, ATS, Bonjour, and related keys).
+  - `expo.ios.config.usesNonExemptEncryption` for export-compliance encryption declaration.
+  - `expo.ios.entitlements` for iOS entitlements.
+  - `expo.ios.privacyManifests` for Apple privacy manifest declarations.
+- Keep `app.json` entries explicit and review-friendly:
+  - Permission descriptions should be complete, product-specific sentences.
+  - Compliance keys should be set intentionally rather than relying on implicit defaults.
+  - Preserve existing JSON style in this package (concise arrays and stable key grouping).
+- After native config changes, verify resolved config with `bunx expo config --type prebuild --json` and check the resulting `ios` fields.
+
+Example shape:
+
+```json
+{
+  "expo": {
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "...",
+        "NSMicrophoneUsageDescription": "..."
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.kernel.extended-virtual-addressing": true
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": []
+      }
+    }
+  }
+}
+```
+
 ## Common Pitfalls
 
 - Black screen + "No script URL provided" often means a stale dev client binary.
