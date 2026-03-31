@@ -340,6 +340,84 @@ it.live("loop calls LLM and returns assistant message", () =>
   ),
 )
 
+it.live("static loop returns assistant text through local provider", () =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ llm }) {
+      const session = yield* Effect.promise(() =>
+        Session.create({
+          title: "Prompt provider",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+
+      yield* Effect.promise(() =>
+        SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "hello" }],
+        }),
+      )
+
+      yield* llm.text("world")
+
+      const result = yield* Effect.promise(() => SessionPrompt.loop({ sessionID: session.id }))
+      expect(result.info.role).toBe("assistant")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
+      expect(yield* llm.hits).toHaveLength(1)
+      expect(yield* llm.pending).toBe(0)
+    }),
+    { git: true, config: providerCfg },
+  ),
+)
+
+it.live("static loop consumes queued replies across turns", () =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ llm }) {
+      const session = yield* Effect.promise(() =>
+        Session.create({
+          title: "Prompt provider turns",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        }),
+      )
+
+      yield* Effect.promise(() =>
+        SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "hello one" }],
+        }),
+      )
+
+      yield* llm.text("world one")
+
+      const first = yield* Effect.promise(() => SessionPrompt.loop({ sessionID: session.id }))
+      expect(first.info.role).toBe("assistant")
+      expect(first.parts.some((part) => part.type === "text" && part.text === "world one")).toBe(true)
+
+      yield* Effect.promise(() =>
+        SessionPrompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "hello two" }],
+        }),
+      )
+
+      yield* llm.text("world two")
+
+      const second = yield* Effect.promise(() => SessionPrompt.loop({ sessionID: session.id }))
+      expect(second.info.role).toBe("assistant")
+      expect(second.parts.some((part) => part.type === "text" && part.text === "world two")).toBe(true)
+
+      expect(yield* llm.hits).toHaveLength(2)
+      expect(yield* llm.pending).toBe(0)
+    }),
+    { git: true, config: providerCfg },
+  ),
+)
+
 it.live("loop continues when finish is tool-calls", () =>
   provideTmpdirServer(
     Effect.fnUntraced(function* ({ llm }) {

@@ -1,6 +1,5 @@
-import { Effect, ScopedCache, Scope } from "effect"
+import { Effect, Fiber, ScopedCache, Scope, ServiceMap } from "effect"
 import { Instance, type InstanceContext } from "@/project/instance"
-import { bind as bindInstance } from "./instance-bind"
 import { InstanceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
 
@@ -12,17 +11,24 @@ export interface InstanceState<A, E = never, R = never> {
 }
 
 export namespace InstanceState {
-  export const bind = bindInstance
+  export const bind = <F extends (...args: any[]) => any>(fn: F): F => {
+    try {
+      return Instance.bind(fn)
+    } catch {}
+    const fiber = Fiber.getCurrent()
+    const ctx = fiber ? ServiceMap.getReferenceUnsafe(fiber.services, InstanceRef) : undefined
+    if (!ctx) return fn
+    return ((...args: any[]) => Instance.restore(ctx, () => fn(...args))) as F
+  }
 
-  export const context = Effect.gen(function* () {
-    const ref = yield* InstanceRef
-    return ref ?? Instance.current
-  })
+  export const context = Effect.fnUntraced(function* () {
+    return (yield* InstanceRef) ?? Instance.current
+  })()
 
-  export const directory = Effect.gen(function* () {
-    const ref = yield* InstanceRef
-    return ref ? ref.directory : Instance.directory
-  })
+  export const directory = Effect.fnUntraced(function* () {
+    const ctx = yield* InstanceRef
+    return ctx ? ctx.directory : Instance.directory
+  })()
 
   export const make = <A, E = never, R = never>(
     init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
@@ -31,9 +37,9 @@ export namespace InstanceState {
       const cache = yield* ScopedCache.make<string, A, E, R>({
         capacity: Number.POSITIVE_INFINITY,
         lookup: () =>
-          Effect.gen(function* () {
+          Effect.fnUntraced(function* () {
             return yield* init(yield* context)
-          }),
+          })(),
       })
 
       const off = registerDisposer((directory) => Effect.runPromise(ScopedCache.invalidate(cache, directory)))

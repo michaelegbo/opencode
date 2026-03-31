@@ -498,10 +498,10 @@ export namespace Session {
         permission?: Permission.Ruleset
         workspaceID?: WorkspaceID
       }) {
-        const dir = yield* InstanceState.directory
+        const directory = yield* InstanceState.directory
         return yield* createNext({
           parentID: input?.parentID,
-          directory: dir,
+          directory,
           title: input?.title,
           permission: input?.permission,
           workspaceID: input?.workspaceID,
@@ -509,11 +509,11 @@ export namespace Session {
       })
 
       const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
-        const dir = yield* InstanceState.directory
+        const directory = yield* InstanceState.directory
         const original = yield* get(input.sessionID)
         const title = getForkedTitle(original.title)
         const session = yield* createNext({
-          directory: dir,
+          directory,
           workspaceID: original.workspaceID,
           title,
         })
