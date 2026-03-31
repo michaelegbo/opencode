@@ -33,6 +33,7 @@ import { Log } from "../../src/util/log"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { TestLLMServer } from "../lib/llm-server"
 
 Log.init({ print: false })
 
@@ -309,6 +310,7 @@ const env = SessionPrompt.layer.pipe(
 )
 
 const it = testEffect(env)
+const http = testEffect(Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer, TestLLMServer.layer))
 const unix = process.platform !== "win32" ? it.effect : it.effect.skip
 
 // Config that registers a custom "test" provider with a "test-model" model
@@ -340,6 +342,22 @@ const cfg = {
       },
     },
   },
+}
+
+function providerCfg(url: string) {
+  return {
+    ...cfg,
+    provider: {
+      ...cfg.provider,
+      test: {
+        ...cfg.provider.test,
+        options: {
+          ...cfg.provider.test.options,
+          baseURL: url,
+        },
+      },
+    },
+  }
 }
 
 const user = Effect.fn("test.user")(function* (sessionID: SessionID, text: string) {
@@ -432,22 +450,37 @@ it.live("loop exits immediately when last assistant has stop finish", () =>
   ),
 )
 
-it.live("loop calls LLM and returns assistant message", () =>
-  provideTmpdirInstance(
-    (dir) =>
-      Effect.gen(function* () {
-        const { test, prompt, chat } = yield* boot()
-        yield* test.reply(...replyStop("world"))
-        yield* user(chat.id, "hello")
+http.live("loop calls LLM and returns assistant message", () =>
+  Effect.gen(function* () {
+    const llm = yield* TestLLMServer
+    return yield* provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const chat = yield* Effect.promise(() =>
+            Session.create({
+              title: "Pinned",
+              permission: [{ permission: "*", pattern: "*", action: "allow" }],
+            }),
+          )
+          yield* Effect.promise(() =>
+            SessionPrompt.prompt({
+              sessionID: chat.id,
+              agent: "build",
+              noReply: true,
+              parts: [{ type: "text", text: "hello" }],
+            }),
+          )
+          yield* llm.text("world")
 
-        const result = yield* prompt.loop({ sessionID: chat.id })
-        expect(result.info.role).toBe("assistant")
-        const parts = result.parts.filter((p) => p.type === "text")
-        expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
-        expect(yield* test.calls).toBe(1)
-      }),
-    { git: true, config: cfg },
-  ),
+          const result = yield* Effect.promise(() => SessionPrompt.loop({ sessionID: chat.id }))
+          expect(result.info.role).toBe("assistant")
+          const parts = result.parts.filter((p) => p.type === "text")
+          expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
+          expect(yield* llm.hits).toHaveLength(1)
+        }),
+      { git: true, config: providerCfg(llm.url) },
+    )
+  }),
 )
 
 it.live("loop continues when finish is tool-calls", () =>
