@@ -1,5 +1,6 @@
 import { Effect, Fiber, ScopedCache, Scope, ServiceMap } from "effect"
 import { Instance, type InstanceContext } from "@/project/instance"
+import { Context } from "@/util/context"
 import { InstanceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
 
@@ -14,7 +15,9 @@ export namespace InstanceState {
   export const bind = <F extends (...args: any[]) => any>(fn: F): F => {
     try {
       return Instance.bind(fn)
-    } catch {}
+    } catch (err) {
+      if (!(err instanceof Context.NotFound)) throw err
+    }
     const fiber = Fiber.getCurrent()
     const ctx = fiber ? ServiceMap.getReferenceUnsafe(fiber.services, InstanceRef) : undefined
     if (!ctx) return fn
@@ -25,10 +28,7 @@ export namespace InstanceState {
     return (yield* InstanceRef) ?? Instance.current
   })()
 
-  export const directory = Effect.fnUntraced(function* () {
-    const ctx = yield* InstanceRef
-    return ctx ? ctx.directory : Instance.directory
-  })()
+  export const directory = Effect.map(context, (ctx) => ctx.directory)
 
   export const make = <A, E = never, R = never>(
     init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
@@ -74,6 +74,9 @@ export namespace InstanceState {
       return yield* ScopedCache.invalidate(self.cache, yield* directory)
     })
 
-  /** Run a sync function with Instance ALS restored from the InstanceRef. */
+  /**
+   * Effect finalizers run on the fiber scheduler after the original async
+   * boundary, so ALS reads like Instance.directory can be gone by then.
+   */
   export const withALS = <T>(fn: () => T) => Effect.map(context, (ctx) => Instance.restore(ctx, fn))
 }

@@ -1,6 +1,7 @@
 import { Effect, Layer, ManagedRuntime } from "effect"
 import * as ServiceMap from "effect/ServiceMap"
 import { Instance } from "@/project/instance"
+import { Context } from "@/util/context"
 import { InstanceRef } from "./instance-ref"
 
 export const memoMap = Layer.makeMemoMapUnsafe()
@@ -9,7 +10,9 @@ function attach<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R>
   try {
     const ctx = Instance.current
     return Effect.provideService(effect, InstanceRef, ctx)
-  } catch {}
+  } catch (err) {
+    if (!(err instanceof Context.NotFound)) throw err
+  }
   return effect
 }
 
