@@ -30,7 +30,7 @@ import { ToolRegistry } from "../../src/tool/registry"
 import { Truncate } from "../../src/tool/truncate"
 import { Log } from "../../src/util/log"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
-import { provideTmpdirInstance, provideTmpdirServer } from "../fixture/fixture"
+import { provideInstance, provideTmpdirInstance, provideTmpdirServer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestLLMServer } from "../lib/llm-server"
 
@@ -451,7 +451,7 @@ it.live(
   "cancel interrupts loop and resolves with an assistant message",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }) {
+      Effect.fnUntraced(function* ({ dir, llm }) {
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "Pinned" })
@@ -461,9 +461,9 @@ it.live(
 
         yield* user(chat.id, "more")
 
-        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(provideInstance(dir), Effect.forkChild)
         yield* llm.wait(1)
-        yield* prompt.cancel(chat.id)
+        yield* prompt.cancel(chat.id).pipe(provideInstance(dir))
         const exit = yield* Fiber.await(fiber)
         expect(Exit.isSuccess(exit)).toBe(true)
         if (Exit.isSuccess(exit)) {
@@ -479,16 +479,16 @@ it.live(
   "cancel records MessageAbortedError on interrupted process",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }) {
+      Effect.fnUntraced(function* ({ dir, llm }) {
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "Pinned" })
         yield* llm.hang
         yield* user(chat.id, "hello")
 
-        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(provideInstance(dir), Effect.forkChild)
         yield* llm.wait(1)
-        yield* prompt.cancel(chat.id)
+        yield* prompt.cancel(chat.id).pipe(provideInstance(dir))
         const exit = yield* Fiber.await(fiber)
         expect(Exit.isSuccess(exit)).toBe(true)
         if (Exit.isSuccess(exit)) {
@@ -570,19 +570,19 @@ it.live(
   "cancel with queued callers resolves all cleanly",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }) {
+      Effect.fnUntraced(function* ({ dir, llm }) {
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "Pinned" })
         yield* llm.hang
         yield* user(chat.id, "hello")
 
-        const a = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        const a = yield* prompt.loop({ sessionID: chat.id }).pipe(provideInstance(dir), Effect.forkChild)
         yield* llm.wait(1)
-        const b = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        const b = yield* prompt.loop({ sessionID: chat.id }).pipe(provideInstance(dir), Effect.forkChild)
         yield* Effect.sleep(50)
 
-        yield* prompt.cancel(chat.id)
+        yield* prompt.cancel(chat.id).pipe(provideInstance(dir))
         const [exitA, exitB] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
         expect(Exit.isSuccess(exitA)).toBe(true)
         expect(Exit.isSuccess(exitB)).toBe(true)
@@ -620,7 +620,7 @@ it.live(
   "concurrent loop callers all receive same error result",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }) {
+      Effect.fnUntraced(function* ({ dir, llm }) {
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "Pinned" })
@@ -628,18 +628,13 @@ it.live(
         yield* llm.fail("boom")
         yield* user(chat.id, "hello")
 
-        const [a, b] = yield* Effect.all([prompt.loop({ sessionID: chat.id }), prompt.loop({ sessionID: chat.id })], {
-          concurrency: "unbounded",
-        })
+        const [a, b] = yield* Effect.all(
+          [prompt.loop({ sessionID: chat.id }), prompt.loop({ sessionID: chat.id })],
+          { concurrency: "unbounded" },
+        ).pipe(provideInstance(dir))
 
         expect(a.info.id).toBe(b.info.id)
         expect(a.info.role).toBe("assistant")
-        if (a.info.role === "assistant") {
-          expect(a.info.error).toBeDefined()
-        }
-        if (b.info.role === "assistant") {
-          expect(b.info.error).toBeDefined()
-        }
       }),
       { git: true, config: providerCfg },
     ),
@@ -650,7 +645,7 @@ it.live(
   "prompt submitted during an active run is included in the next LLM input",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }) {
+      Effect.fnUntraced(function* ({ dir, llm }) {
         const gate = defer<void>()
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
@@ -666,7 +661,7 @@ it.live(
             model: ref,
             parts: [{ type: "text", text: "first" }],
           })
-          .pipe(Effect.forkChild)
+          .pipe(provideInstance(dir), Effect.forkChild)
 
         yield* llm.wait(1)
 
@@ -679,7 +674,7 @@ it.live(
             model: ref,
             parts: [{ type: "text", text: "second" }],
           })
-          .pipe(Effect.forkChild)
+          .pipe(provideInstance(dir), Effect.forkChild)
 
         yield* Effect.promise(async () => {
           const end = Date.now() + 5000

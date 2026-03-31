@@ -1,6 +1,6 @@
 import { NodeHttpServer } from "@effect/platform-node"
 import * as Http from "node:http"
-import { Effect, Layer, ServiceMap, Stream } from "effect"
+import { Deferred, Effect, Layer, ServiceMap, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
@@ -21,10 +21,20 @@ type Step =
   | {
       type: "hang"
     }
+  | {
+      type: "hold"
+      text: string
+      wait: PromiseLike<unknown>
+    }
 
 type Hit = {
   url: URL
   body: Record<string, unknown>
+}
+
+type Wait = {
+  count: number
+  ready: Deferred.Deferred<void>
 }
 
 function sse(lines: unknown[]) {
@@ -113,7 +123,12 @@ function tool(step: Extract<Step, { type: "tool" }>, seq: number) {
 }
 
 function fail(step: Extract<Step, { type: "fail" }>) {
-  return HttpServerResponse.text(step.message, { status: 500 })
+  return HttpServerResponse.stream(
+    Stream.fromIterable([
+      'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}\n\n',
+    ]).pipe(Stream.encodeText, Stream.concat(Stream.fail(new Error(step.message)))),
+    { contentType: "text/event-stream" },
+  )
 }
 
 function hang() {
@@ -125,6 +140,36 @@ function hang() {
   )
 }
 
+function hold(step: Extract<Step, { type: "hold" }>) {
+  return HttpServerResponse.stream(
+    Stream.fromIterable([
+      'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}\n\n',
+    ]).pipe(
+      Stream.encodeText,
+      Stream.concat(
+        Stream.fromEffect(Effect.promise(() => step.wait)).pipe(
+          Stream.flatMap(() =>
+            Stream.fromIterable([
+              `data: ${JSON.stringify({
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: { content: step.text } }],
+              })}\n\n`,
+              `data: ${JSON.stringify({
+                id: "chatcmpl-test",
+                object: "chat.completion.chunk",
+                choices: [{ delta: {}, finish_reason: "stop" }],
+              })}\n\n`,
+              "data: [DONE]\n\n",
+            ]).pipe(Stream.encodeText),
+          ),
+        ),
+      ),
+    ),
+    { contentType: "text/event-stream" },
+  )
+}
+
 namespace TestLLMServer {
   export interface Service {
     readonly url: string
@@ -132,8 +177,10 @@ namespace TestLLMServer {
     readonly tool: (tool: string, input: unknown) => Effect.Effect<void>
     readonly fail: (message?: string) => Effect.Effect<void>
     readonly hang: Effect.Effect<void>
+    readonly hold: (text: string, wait: PromiseLike<unknown>) => Effect.Effect<void>
     readonly hits: Effect.Effect<Hit[]>
     readonly calls: Effect.Effect<number>
+    readonly wait: (count: number) => Effect.Effect<void>
     readonly inputs: Effect.Effect<Record<string, unknown>[]>
     readonly pending: Effect.Effect<number>
   }
@@ -149,10 +196,18 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
       let hits: Hit[] = []
       let list: Step[] = []
       let seq = 0
+      let waits: Wait[] = []
 
       const push = (step: Step) => {
         list = [...list, step]
       }
+
+      const notify = Effect.fnUntraced(function* () {
+        const ready = waits.filter((item) => hits.length >= item.count)
+        if (!ready.length) return
+        waits = waits.filter((item) => hits.length < item.count)
+        yield* Effect.forEach(ready, (item) => Deferred.succeed(item.ready, void 0))
+      })
 
       const pull = () => {
         const step = list[0]
@@ -177,10 +232,12 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
               body: json && typeof json === "object" ? (json as Record<string, unknown>) : {},
             },
           ]
+          yield* notify()
           if (next.step.type === "text") return text(next.step)
           if (next.step.type === "tool") return tool(next.step, next.seq)
           if (next.step.type === "fail") return fail(next.step)
-          return hang()
+          if (next.step.type === "hang") return hang()
+          return hold(next.step)
         }),
       )
 
@@ -203,8 +260,17 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
         hang: Effect.gen(function* () {
           push({ type: "hang" })
         }).pipe(Effect.withSpan("TestLLMServer.hang")),
+        hold: Effect.fn("TestLLMServer.hold")(function* (text: string, wait: PromiseLike<unknown>) {
+          push({ type: "hold", text, wait })
+        }),
         hits: Effect.sync(() => [...hits]),
         calls: Effect.sync(() => hits.length),
+        wait: Effect.fn("TestLLMServer.wait")(function* (count: number) {
+          if (hits.length >= count) return
+          const ready = yield* Deferred.make<void>()
+          waits = [...waits, { count, ready }]
+          yield* Deferred.await(ready)
+        }),
         inputs: Effect.sync(() => hits.map((hit) => hit.body)),
         pending: Effect.sync(() => list.length),
       })

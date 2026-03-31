@@ -8,22 +8,22 @@ export const InstanceRef = ServiceMap.Reference<InstanceContext | undefined>("~o
   defaultValue: () => undefined,
 })
 
-const context = Effect.gen(function* () {
-  const ref = yield* InstanceRef
-  return ref ?? Instance.current
-})
-
-const directory = Effect.gen(function* () {
-  const ref = yield* InstanceRef
-  return ref ? ref.directory : Instance.directory
-})
-
 export interface InstanceState<A, E = never, R = never> {
   readonly [TypeId]: typeof TypeId
   readonly cache: ScopedCache.ScopedCache<string, A, E, R>
 }
 
 export namespace InstanceState {
+  export const context = Effect.gen(function* () {
+    const ref = yield* InstanceRef
+    return ref ?? Instance.current
+  })
+
+  export const directory = Effect.gen(function* () {
+    const ref = yield* InstanceRef
+    return ref ? ref.directory : Instance.directory
+  })
+
   export const make = <A, E = never, R = never>(
     init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
   ): Effect.Effect<InstanceState<A, E, Exclude<R, Scope.Scope>>, never, R | Scope.Scope> =>
