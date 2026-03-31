@@ -3,9 +3,12 @@ import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Effect, FileSystem, ServiceMap } from "effect"
+import type * as PlatformError from "effect/PlatformError"
+import type * as Scope from "effect/Scope"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import type { Config } from "../../src/config/config"
 import { Instance } from "../../src/project/instance"
+import { TestLLMServer } from "../lib/llm-server"
 
 // Strip null bytes from paths (defensive fix for CI environment issues)
 function sanitizePath(p: string): string {
@@ -137,5 +140,22 @@ export function provideTmpdirInstance<A, E, R>(
 
     provided = true
     return yield* self(path).pipe(provideInstance(path))
+  })
+}
+
+export function provideTmpdirServer<A, E, R>(
+  self: (input: { dir: string; llm: TestLLMServer["Service"] }) => Effect.Effect<A, E, R>,
+  options?: { git?: boolean; config?: (url: string) => Partial<Config.Info> },
+): Effect.Effect<
+  A,
+  E | PlatformError.PlatformError,
+  R | TestLLMServer | FileSystem.FileSystem | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> {
+  return Effect.gen(function* () {
+    const llm = yield* TestLLMServer
+    return yield* provideTmpdirInstance((dir) => self({ dir, llm }), {
+      git: options?.git,
+      config: options?.config?.(llm.url),
+    })
   })
 }

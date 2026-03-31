@@ -14,6 +14,13 @@ type Step =
       tool: string
       input: unknown
     }
+  | {
+      type: "fail"
+      message: string
+    }
+  | {
+      type: "hang"
+    }
 
 type Hit = {
   url: URL
@@ -105,16 +112,34 @@ function tool(step: Extract<Step, { type: "tool" }>, seq: number) {
   ])
 }
 
-export class TestLLMServer extends ServiceMap.Service<
-  TestLLMServer,
-  {
+function fail(step: Extract<Step, { type: "fail" }>) {
+  return HttpServerResponse.text(step.message, { status: 500 })
+}
+
+function hang() {
+  return HttpServerResponse.stream(
+    Stream.fromIterable([
+      'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}\n\n',
+    ]).pipe(Stream.encodeText, Stream.concat(Stream.never)),
+    { contentType: "text/event-stream" },
+  )
+}
+
+namespace TestLLMServer {
+  export interface Service {
     readonly url: string
     readonly text: (value: string) => Effect.Effect<void>
     readonly tool: (tool: string, input: unknown) => Effect.Effect<void>
+    readonly fail: (message?: string) => Effect.Effect<void>
+    readonly hang: Effect.Effect<void>
     readonly hits: Effect.Effect<Hit[]>
+    readonly calls: Effect.Effect<number>
+    readonly inputs: Effect.Effect<Record<string, unknown>[]>
     readonly pending: Effect.Effect<number>
   }
->()("@test/LLMServer") {
+}
+
+export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServer.Service>()("@test/LLMServer") {
   static readonly layer = Layer.effect(
     TestLLMServer,
     Effect.gen(function* () {
@@ -153,7 +178,9 @@ export class TestLLMServer extends ServiceMap.Service<
             },
           ]
           if (next.step.type === "text") return text(next.step)
-          return tool(next.step, next.seq)
+          if (next.step.type === "tool") return tool(next.step, next.seq)
+          if (next.step.type === "fail") return fail(next.step)
+          return hang()
         }),
       )
 
@@ -170,7 +197,15 @@ export class TestLLMServer extends ServiceMap.Service<
         tool: Effect.fn("TestLLMServer.tool")(function* (tool: string, input: unknown) {
           push({ type: "tool", tool, input })
         }),
+        fail: Effect.fn("TestLLMServer.fail")(function* (message = "boom") {
+          push({ type: "fail", message })
+        }),
+        hang: Effect.gen(function* () {
+          push({ type: "hang" })
+        }).pipe(Effect.withSpan("TestLLMServer.hang")),
         hits: Effect.sync(() => [...hits]),
+        calls: Effect.sync(() => hits.length),
+        inputs: Effect.sync(() => hits.map((hit) => hit.body)),
         pending: Effect.sync(() => list.length),
       })
     }),
