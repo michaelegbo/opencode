@@ -52,7 +52,7 @@ function makeConfig(url: string) {
 }
 
 describe("session.prompt provider integration", () => {
-  it.effect("loop returns assistant text through local provider", () =>
+  it.live("loop returns assistant text through local provider", () =>
     Effect.gen(function* () {
       const llm = yield* TestLLMServer
       return yield* provideTmpdirInstance(
@@ -87,7 +87,7 @@ describe("session.prompt provider integration", () => {
     }),
   )
 
-  it.effect("loop consumes queued replies across turns", () =>
+  it.live("loop consumes queued replies across turns", () =>
     Effect.gen(function* () {
       const llm = yield* TestLLMServer
       return yield* provideTmpdirInstance(

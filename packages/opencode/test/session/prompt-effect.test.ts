@@ -416,7 +416,7 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 
 // Loop semantics
 
-it.effect("loop exits immediately when last assistant has stop finish", () =>
+it.live("loop exits immediately when last assistant has stop finish", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -432,7 +432,7 @@ it.effect("loop exits immediately when last assistant has stop finish", () =>
   ),
 )
 
-it.effect("loop calls LLM and returns assistant message", () =>
+it.live("loop calls LLM and returns assistant message", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -450,7 +450,7 @@ it.effect("loop calls LLM and returns assistant message", () =>
   ),
 )
 
-it.effect("loop continues when finish is tool-calls", () =>
+it.live("loop continues when finish is tool-calls", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -471,7 +471,7 @@ it.effect("loop continues when finish is tool-calls", () =>
   ),
 )
 
-it.effect("failed subtask preserves metadata on error tool state", () =>
+it.live("failed subtask preserves metadata on error tool state", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -532,7 +532,7 @@ it.effect("failed subtask preserves metadata on error tool state", () =>
   ),
 )
 
-it.effect("loop sets status to busy then idle", () =>
+it.live("loop sets status to busy then idle", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -567,7 +567,7 @@ it.effect("loop sets status to busy then idle", () =>
 
 // Cancel semantics
 
-it.effect(
+it.live(
   "cancel interrupts loop and resolves with an assistant message",
   () =>
     provideTmpdirInstance(
@@ -598,7 +598,7 @@ it.effect(
   30_000,
 )
 
-it.effect(
+it.live(
   "cancel records MessageAbortedError on interrupted process",
   () =>
     provideTmpdirInstance(
@@ -632,7 +632,7 @@ it.effect(
   30_000,
 )
 
-it.effect(
+it.live(
   "cancel finalizes subtask tool state",
   () =>
     provideTmpdirInstance(
@@ -695,7 +695,7 @@ it.effect(
   30_000,
 )
 
-it.effect(
+it.live(
   "cancel with queued callers resolves all cleanly",
   () =>
     provideTmpdirInstance(
@@ -733,7 +733,7 @@ it.effect(
 
 // Queue semantics
 
-it.effect("concurrent loop callers get same result", () =>
+it.live("concurrent loop callers get same result", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -752,7 +752,7 @@ it.effect("concurrent loop callers get same result", () =>
   ),
 )
 
-it.effect("concurrent loop callers all receive same error result", () =>
+it.live("concurrent loop callers all receive same error result", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -780,7 +780,7 @@ it.effect("concurrent loop callers all receive same error result", () =>
   ),
 )
 
-it.effect(
+it.live(
   "prompt submitted during an active run is included in the next LLM input",
   () =>
     provideTmpdirInstance(
@@ -860,7 +860,7 @@ it.effect(
   30_000,
 )
 
-it.effect(
+it.live(
   "assertNotBusy throws BusyError when loop running",
   () =>
     provideTmpdirInstance(
@@ -897,7 +897,7 @@ it.effect(
   30_000,
 )
 
-it.effect("assertNotBusy succeeds when idle", () =>
+it.live("assertNotBusy succeeds when idle", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -914,7 +914,7 @@ it.effect("assertNotBusy succeeds when idle", () =>
 
 // Shell semantics
 
-it.effect(
+it.live(
   "shell rejects with BusyError when loop running",
   () =>
     provideTmpdirInstance(
