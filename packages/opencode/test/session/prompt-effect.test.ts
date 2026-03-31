@@ -452,7 +452,7 @@ it.live("loop exits immediately when last assistant has stop finish", () =>
 
 http.live("loop calls LLM and returns assistant message", () =>
   provideTmpdirServer(
-    Effect.fnUntraced(function* ({ llm }: { dir: string; llm: TestLLMServer["Service"] }) {
+    Effect.fnUntraced(function* ({ llm }) {
       const chat = yield* Effect.promise(() =>
         Session.create({
           title: "Pinned",
@@ -1039,7 +1039,7 @@ http.live(
   "loop waits while shell runs and starts after shell exits",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }: { dir: string; llm: TestLLMServer["Service"] }) {
+      Effect.fnUntraced(function* ({ llm }) {
         const chat = yield* Effect.promise(() =>
           Session.create({
             title: "Pinned",
@@ -1077,7 +1077,7 @@ http.live(
   "shell completion resumes queued loop callers",
   () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }: { dir: string; llm: TestLLMServer["Service"] }) {
+      Effect.fnUntraced(function* ({ llm }) {
         const chat = yield* Effect.promise(() =>
           Session.create({
             title: "Pinned",

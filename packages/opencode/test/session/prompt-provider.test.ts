@@ -54,7 +54,7 @@ function makeConfig(url: string) {
 describe("session.prompt provider integration", () => {
   it.live("loop returns assistant text through local provider", () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }: { dir: string; llm: TestLLMServer["Service"] }) {
+      Effect.fnUntraced(function* ({ llm }) {
         const session = yield* Effect.promise(() =>
           Session.create({
             title: "Prompt provider",
@@ -85,7 +85,7 @@ describe("session.prompt provider integration", () => {
 
   it.live("loop consumes queued replies across turns", () =>
     provideTmpdirServer(
-      Effect.fnUntraced(function* ({ llm }: { dir: string; llm: TestLLMServer["Service"] }) {
+      Effect.fnUntraced(function* ({ llm }) {
         const session = yield* Effect.promise(() =>
           Session.create({
             title: "Prompt provider turns",
