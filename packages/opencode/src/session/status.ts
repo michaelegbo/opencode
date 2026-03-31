@@ -11,6 +11,7 @@ export namespace SessionStatus {
     .union([
       z.object({
         type: z.literal("idle"),
+        suggestion: z.string().optional(),
       }),
       z.object({
         type: z.literal("retry"),

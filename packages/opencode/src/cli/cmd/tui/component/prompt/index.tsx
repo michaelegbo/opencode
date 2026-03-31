@@ -841,8 +841,20 @@ export function Prompt(props: PromptProps) {
     return !!current
   })
 
+  const suggestion = createMemo(() => {
+    if (!props.sessionID) return
+    if (store.mode !== "normal") return
+    if (store.prompt.input) return
+    const current = status()
+    if (current.type !== "idle") return
+    const value = current.suggestion?.trim()
+    if (!value) return
+    return value
+  })
+
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
+    if (suggestion()) return suggestion()
     if (store.mode === "shell") {
       if (!shell().length) return undefined
       const example = shell()[store.placeholder % shell().length]
@@ -932,6 +944,16 @@ export function Prompt(props: PromptProps) {
                 if (props.disabled) {
                   e.preventDefault()
                   return
+                }
+                if (!store.prompt.input && e.name === "right" && !e.ctrl && !e.meta && !e.shift && !e.super) {
+                  const value = suggestion()
+                  if (value) {
+                    input.setText(value)
+                    setStore("prompt", "input", value)
+                    input.gotoBufferEnd()
+                    e.preventDefault()
+                    return
+                  }
                 }
                 // Check clipboard for images before terminal-handled paste runs.
                 // This helps terminals that forward Ctrl+V to the app; Windows

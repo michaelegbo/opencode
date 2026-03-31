@@ -126,6 +126,7 @@ export type EventPermissionReplied = {
 export type SessionStatus =
   | {
       type: "idle"
+      suggestion?: string
     }
   | {
       type: "retry"
