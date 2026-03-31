@@ -4,10 +4,13 @@ import { Deferred, Effect, Layer, ServiceMap, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 
+type Usage = { input: number; output: number }
+
 type Step =
   | {
       type: "text"
       text: string
+      usage?: Usage
     }
   | {
       type: "tool"
@@ -17,6 +20,11 @@ type Step =
   | {
       type: "fail"
       message: string
+    }
+  | {
+      type: "httpError"
+      status: number
+      body: unknown
     }
   | {
       type: "hang"
@@ -47,6 +55,18 @@ function sse(lines: unknown[]) {
 }
 
 function text(step: Extract<Step, { type: "text" }>) {
+  const finish: Record<string, unknown> = {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    choices: [{ delta: {}, finish_reason: "stop" }],
+  }
+  if (step.usage) {
+    finish.usage = {
+      prompt_tokens: step.usage.input,
+      completion_tokens: step.usage.output,
+      total_tokens: step.usage.input + step.usage.output,
+    }
+  }
   return sse([
     {
       id: "chatcmpl-test",
@@ -58,12 +78,15 @@ function text(step: Extract<Step, { type: "text" }>) {
       object: "chat.completion.chunk",
       choices: [{ delta: { content: step.text } }],
     },
-    {
-      id: "chatcmpl-test",
-      object: "chat.completion.chunk",
-      choices: [{ delta: {}, finish_reason: "stop" }],
-    },
+    finish,
   ])
+}
+
+function httpError(step: Extract<Step, { type: "httpError" }>) {
+  return HttpServerResponse.text(JSON.stringify(step.body), {
+    status: step.status,
+    contentType: "application/json",
+  })
 }
 
 function tool(step: Extract<Step, { type: "tool" }>, seq: number) {
@@ -173,9 +196,10 @@ function hold(step: Extract<Step, { type: "hold" }>) {
 namespace TestLLMServer {
   export interface Service {
     readonly url: string
-    readonly text: (value: string) => Effect.Effect<void>
+    readonly text: (value: string, opts?: { usage?: Usage }) => Effect.Effect<void>
     readonly tool: (tool: string, input: unknown) => Effect.Effect<void>
     readonly fail: (message?: string) => Effect.Effect<void>
+    readonly error: (status: number, body: unknown) => Effect.Effect<void>
     readonly hang: Effect.Effect<void>
     readonly hold: (text: string, wait: PromiseLike<unknown>) => Effect.Effect<void>
     readonly hits: Effect.Effect<Hit[]>
@@ -236,6 +260,7 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
           if (next.step.type === "text") return text(next.step)
           if (next.step.type === "tool") return tool(next.step, next.seq)
           if (next.step.type === "fail") return fail(next.step)
+          if (next.step.type === "httpError") return httpError(next.step)
           if (next.step.type === "hang") return hang()
           return hold(next.step)
         }),
@@ -248,8 +273,8 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
           server.address._tag === "TcpAddress"
             ? `http://127.0.0.1:${server.address.port}/v1`
             : `unix://${server.address.path}/v1`,
-        text: Effect.fn("TestLLMServer.text")(function* (value: string) {
-          push({ type: "text", text: value })
+        text: Effect.fn("TestLLMServer.text")(function* (value: string, opts?: { usage?: Usage }) {
+          push({ type: "text", text: value, usage: opts?.usage })
         }),
         tool: Effect.fn("TestLLMServer.tool")(function* (tool: string, input: unknown) {
           push({ type: "tool", tool, input })
@@ -260,6 +285,9 @@ export class TestLLMServer extends ServiceMap.Service<TestLLMServer, TestLLMServ
         hang: Effect.gen(function* () {
           push({ type: "hang" })
         }).pipe(Effect.withSpan("TestLLMServer.hang")),
+        error: Effect.fn("TestLLMServer.error")(function* (status: number, body: unknown) {
+          push({ type: "httpError", status, body })
+        }),
         hold: Effect.fn("TestLLMServer.hold")(function* (text: string, wait: PromiseLike<unknown>) {
           push({ type: "hold", text, wait })
         }),
