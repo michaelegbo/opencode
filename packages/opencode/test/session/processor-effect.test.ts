@@ -1,7 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { expect } from "bun:test"
-import { APICallError, jsonSchema, tool } from "ai"
-import { Cause, Effect, Exit, Fiber, Layer, ServiceMap, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import type { Agent } from "../../src/agent/agent"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -20,18 +19,11 @@ import { SessionStatus } from "../../src/session/status"
 import { Snapshot } from "../../src/snapshot"
 import { Log } from "../../src/util/log"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
-import { provideTmpdirInstance, provideTmpdirServer } from "../fixture/fixture"
+import { provideTmpdirServer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { TestLLMServer } from "../lib/llm-server"
+import { reply, TestLLMServer } from "../lib/llm-server"
 
 Log.init({ print: false })
-
-const DEBUG = process.env.OPENCODE_TEST_DEBUG === "1"
-
-function trace(label: string, value: unknown) {
-  if (!DEBUG) return
-  console.log(label, JSON.stringify(value, null, 2))
-}
 
 const ref = {
   providerID: ProviderID.make("test"),
@@ -168,109 +160,6 @@ const env = Layer.mergeAll(TestLLMServer.layer, SessionProcessor.layer.pipe(Laye
 
 const it = testEffect(env)
 
-// ---------------------------------------------------------------------------
-// TestLLM kept only for the reasoning test
-// TODO: reasoning events not available via OpenAI-compatible SSE
-// ---------------------------------------------------------------------------
-type Script = Stream.Stream<LLM.Event, unknown> | ((input: LLM.StreamInput) => Stream.Stream<LLM.Event, unknown>)
-
-class TestLLM extends ServiceMap.Service<
-  TestLLM,
-  {
-    readonly push: (stream: Script) => Effect.Effect<void>
-    readonly reply: (...items: LLM.Event[]) => Effect.Effect<void>
-    readonly calls: Effect.Effect<number>
-    readonly inputs: Effect.Effect<LLM.StreamInput[]>
-  }
->()("@test/SessionProcessorLLM") {}
-
-function reasoningUsage(input = 1, output = 1, total = input + output) {
-  return {
-    inputTokens: input,
-    outputTokens: output,
-    totalTokens: total,
-    inputTokenDetails: {
-      noCacheTokens: undefined,
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-    },
-    outputTokenDetails: {
-      textTokens: undefined,
-      reasoningTokens: undefined,
-    },
-  }
-}
-
-const reasoningLlm = Layer.unwrap(
-  Effect.gen(function* () {
-    const queue: Script[] = []
-    const inputs: LLM.StreamInput[] = []
-    let calls = 0
-
-    const push = Effect.fn("TestLLM.push")((item: Script) => {
-      queue.push(item)
-      return Effect.void
-    })
-
-    const reply = Effect.fn("TestLLM.reply")((...items: LLM.Event[]) => push(Stream.make(...items)))
-    return Layer.mergeAll(
-      Layer.succeed(
-        LLM.Service,
-        LLM.Service.of({
-          stream: (input) => {
-            calls += 1
-            inputs.push(input)
-            const item = queue.shift() ?? Stream.empty
-            return typeof item === "function" ? item(input) : item
-          },
-        }),
-      ),
-      Layer.succeed(
-        TestLLM,
-        TestLLM.of({
-          push,
-          reply,
-          calls: Effect.sync(() => calls),
-          inputs: Effect.sync(() => [...inputs]),
-        }),
-      ),
-    )
-  }),
-)
-
-const reasoningDeps = Layer.mergeAll(
-  Session.defaultLayer,
-  Snapshot.defaultLayer,
-  AgentSvc.defaultLayer,
-  Permission.layer,
-  Plugin.defaultLayer,
-  Config.defaultLayer,
-  status,
-  reasoningLlm,
-).pipe(Layer.provideMerge(infra))
-const reasoningEnv = SessionProcessor.layer.pipe(Layer.provideMerge(reasoningDeps))
-const reasoningIt = testEffect(reasoningEnv)
-
-function reasoningModel(context: number): Provider.Model {
-  return {
-    id: "test-model",
-    providerID: "test",
-    name: "Test",
-    limit: { context, output: 10 },
-    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-    capabilities: {
-      toolcall: true,
-      attachment: false,
-      reasoning: false,
-      temperature: true,
-      input: { text: true, image: false, audio: false, video: false },
-      output: { text: true, image: false, audio: false, video: false },
-    },
-    api: { npm: "@ai-sdk/anthropic" },
-    options: {},
-  } as Provider.Model
-}
-
 const boot = Effect.fn("test.boot")(function* () {
   const processors = yield* SessionProcessor.Service
   const session = yield* Session.Service
@@ -367,12 +256,6 @@ it.live("session.processor effect tests stop after token overflow requests compa
 
         const parts = yield* Effect.promise(() => MessageV2.parts(msg.id))
 
-        trace("overflow", {
-          value,
-          parts: parts.map((part) => part.type),
-          inputs: yield* llm.inputs,
-        })
-
         expect(value).toBe("compact")
         expect(parts.some((part) => part.type === "text" && part.text === "after")).toBe(true)
         expect(parts.some((part) => part.type === "step-finish")).toBe(true)
@@ -381,57 +264,66 @@ it.live("session.processor effect tests stop after token overflow requests compa
   ),
 )
 
-// TODO: reasoning events not available via OpenAI-compatible SSE
-reasoningIt.live("session.processor effect tests reset reasoning state across retries", () =>
-  provideTmpdirInstance(
-    (dir) =>
+it.live("session.processor effect tests capture reasoning from http mock", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
       Effect.gen(function* () {
-        const test = yield* TestLLM
-        const processors = yield* SessionProcessor.Service
-        const session = yield* Session.Service
+        const { processors, session, provider } = yield* boot()
 
-        yield* test.push(
-          Stream.fromIterable<LLM.Event>([
-            { type: "start" },
-            { type: "reasoning-start", id: "r" },
-            { type: "reasoning-delta", id: "r", text: "one" },
-          ]).pipe(
-            Stream.concat(
-              Stream.fail(
-                new APICallError({
-                  message: "boom",
-                  url: "https://example.com/v1/chat/completions",
-                  requestBodyValues: {},
-                  statusCode: 503,
-                  responseHeaders: { "retry-after-ms": "0" },
-                  responseBody: '{"error":"boom"}',
-                  isRetryable: true,
-                }),
-              ),
-            ),
-          ),
-        )
-
-        yield* test.reply(
-          { type: "start" },
-          { type: "reasoning-start", id: "r" },
-          { type: "reasoning-delta", id: "r", text: "two" },
-          { type: "reasoning-end", id: "r" },
-          {
-            type: "finish-step",
-            finishReason: "stop",
-            rawFinishReason: "stop",
-            response: { id: "res", modelId: "test-model", timestamp: new Date() },
-            providerMetadata: undefined,
-            usage: reasoningUsage(),
-          },
-          { type: "finish", finishReason: "stop", rawFinishReason: "stop", totalUsage: reasoningUsage() },
-        )
+        yield* llm.push(reply().reason("think").text("done").stop())
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "reason")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
-        const mdl = reasoningModel(100)
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "reason" }],
+          tools: {},
+        })
+
+        const parts = yield* Effect.promise(() => MessageV2.parts(msg.id))
+        const reasoning = parts.find((part): part is MessageV2.ReasoningPart => part.type === "reasoning")
+        const text = parts.find((part): part is MessageV2.TextPart => part.type === "text")
+
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(1)
+        expect(reasoning?.text).toBe("think")
+        expect(text?.text).toBe("done")
+      }),
+    { git: true, config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests reset reasoning state across retries", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.push(reply().reason("one").reset(), reply().reason("two").stop())
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "reason")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
         const handle = yield* processors.create({
           assistantMessage: msg,
           sessionID: chat.id,
@@ -459,11 +351,11 @@ reasoningIt.live("session.processor effect tests reset reasoning state across re
         const reasoning = parts.filter((part): part is MessageV2.ReasoningPart => part.type === "reasoning")
 
         expect(value).toBe("continue")
-        expect(yield* test.calls).toBe(2)
+        expect(yield* llm.calls).toBe(2)
         expect(reasoning.some((part) => part.text === "two")).toBe(true)
         expect(reasoning.some((part) => part.text === "onetwo")).toBe(false)
       }),
-    { git: true },
+    { git: true, config: (url) => providerCfg(url) },
   ),
 )
 
@@ -500,13 +392,6 @@ it.live("session.processor effect tests do not retry unknown json errors", () =>
           system: [],
           messages: [{ role: "user", content: "json" }],
           tools: {},
-        })
-
-        trace("unknown-error", {
-          value,
-          calls: yield* llm.calls,
-          inputs: yield* llm.inputs,
-          error: handle.message.error,
         })
 
         expect(value).toBe("stop")
@@ -664,9 +549,8 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const { processors, session, provider } = yield* boot()
-        const wait = new Promise<{ output: string }>(() => {})
 
-        yield* llm.tool("bash", { cmd: "pwd" })
+        yield* llm.toolHang("bash", { cmd: "pwd" })
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "tool abort")
@@ -693,26 +577,16 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
             agent: agent(),
             system: [],
             messages: [{ role: "user", content: "tool abort" }],
-            tools: {
-              bash: tool({
-                description: "Run shell commands",
-                inputSchema: jsonSchema({
-                  type: "object",
-                  properties: {
-                    cmd: { type: "string" },
-                  },
-                  required: ["cmd"],
-                }),
-                execute: async () => wait,
-              }),
-            },
+            tools: {},
           })
           .pipe(Effect.forkChild)
 
         yield* llm.wait(1)
         yield* Effect.promise(async () => {
           const end = Date.now() + 500
-          while (!handle.partFromToolCall("call_1") && Date.now() < end) {
+          while (Date.now() < end) {
+            const parts = await MessageV2.parts(msg.id)
+            if (parts.some((part) => part.type === "tool")) return
             await Bun.sleep(10)
           }
         })
@@ -724,16 +598,6 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
         }
         const parts = yield* Effect.promise(() => MessageV2.parts(msg.id))
         const call = parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
-
-        trace("tool-abort", {
-          calls: yield* llm.calls,
-          inputs: yield* llm.inputs,
-          pending: handle.partFromToolCall("call_1"),
-          parts: parts.map((part) => ({
-            type: part.type,
-            ...(part.type === "tool" ? { state: part.state.status } : {}),
-          })),
-        })
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
