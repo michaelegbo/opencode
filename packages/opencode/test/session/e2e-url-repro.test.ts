@@ -26,6 +26,7 @@ import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "../../src/provider/provider"
+import { ModelID, ProviderID } from "../../src/provider/schema"
 import { SessionCompaction } from "../../src/session/compaction"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
@@ -95,7 +96,7 @@ const filetime = Layer.succeed(
 
 const status = SessionStatus.layer.pipe(Layer.provideMerge(Bus.layer))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
-const patchModel = { providerID: "openai", modelID: "gpt-5.4" } as const
+const patchModel = { providerID: ProviderID.make("openai"), modelID: ModelID.make("gpt-5.4") } as const
 
 function makeHttp() {
   const deps = Layer.mergeAll(
