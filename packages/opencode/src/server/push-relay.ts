@@ -28,6 +28,7 @@ type State = {
   pair: Pair
   stop: () => void
   seen: Map<string, number>
+  parent: Map<string, string | undefined>
   gc: number
 }
 
@@ -75,6 +76,60 @@ function secretHash(input: string) {
 
 function serverID(input: { relayURL: string; relaySecret: string }) {
   return createHash("sha256").update(`${input.relayURL}|${input.relaySecret}`).digest("hex").slice(0, 16)
+}
+
+function recordSession(event: Event) {
+  if (!obj(event.properties)) return
+  const next = state
+  if (!next) return
+
+  if (event.type !== "session.created" && event.type !== "session.updated" && event.type !== "session.deleted") {
+    return
+  }
+
+  const info = obj(event.properties.info) ? event.properties.info : undefined
+  const id = str(info?.id)
+  if (!id) return
+
+  if (event.type === "session.deleted") {
+    next.parent.delete(id)
+    return
+  }
+
+  next.parent.set(id, str(info?.parentID))
+}
+
+function routeSession(sessionID: string) {
+  const next = state
+  if (!next) {
+    return {
+      sessionID,
+      subagent: false,
+    }
+  }
+
+  const visited = new Set<string>()
+  let current = sessionID
+  let target = sessionID
+  let subagent = false
+
+  while (true) {
+    if (visited.has(current)) break
+    visited.add(current)
+
+    if (!next.parent.has(current)) break
+    const parentID = next.parent.get(current)
+    if (!parentID) break
+
+    subagent = true
+    target = parentID
+    current = parentID
+  }
+
+  return {
+    sessionID: target,
+    subagent,
+  }
 }
 
 /**
@@ -167,17 +222,21 @@ function list(hostname: string, port: number, advertised: string[] = []) {
 }
 
 function map(event: Event): { type: Type; sessionID: string } | undefined {
+  recordSession(event)
+
   if (!obj(event.properties)) return
 
   if (event.type === "permission.asked") {
     const sessionID = str(event.properties.sessionID)
     if (!sessionID) return
-    return { type: "permission", sessionID }
+    const route = routeSession(sessionID)
+    return { type: "permission", sessionID: route.sessionID }
   }
 
   if (event.type === "session.error") {
     const sessionID = str(event.properties.sessionID)
     if (!sessionID) return
+    if (routeSession(sessionID).subagent) return
     if (!shouldNotifyError(event.properties.error)) return
     return { type: "error", sessionID }
   }
@@ -187,6 +246,7 @@ function map(event: Event): { type: Type; sessionID: string } | undefined {
   if (!sessionID) return
   if (!obj(event.properties.status)) return
   if (event.properties.status.type !== "idle") return
+  if (routeSession(sessionID).subagent) return
   return { type: "complete", sessionID }
 }
 
@@ -405,6 +465,7 @@ export namespace PushRelay {
       pair,
       stop: unsub,
       seen: new Map(),
+      parent: new Map(),
       gc: 0,
     }
 

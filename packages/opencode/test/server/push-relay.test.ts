@@ -14,6 +14,16 @@ function emit(type: string, properties: unknown) {
   })
 }
 
+function created(sessionID: string, parentID?: string) {
+  emit("session.created", {
+    sessionID,
+    info: {
+      id: sessionID,
+      parentID,
+    },
+  })
+}
+
 async function waitForCalls(count: number) {
   for (let i = 0; i < 50; i++) {
     if (fetchMock.mock.calls.length >= count) return
@@ -100,5 +110,44 @@ describe("push relay event mapping", () => {
 
     await waitForCalls(1)
     expect(callBody()?.eventType).toBe("permission")
+  })
+
+  test("does not relay subagent completion events", async () => {
+    created("ses_root")
+    created("ses_subagent", "ses_root")
+
+    emit("session.status", {
+      sessionID: "ses_subagent",
+      status: { type: "idle" },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(fetchMock.mock.calls.length).toBe(0)
+  })
+
+  test("does not relay subagent errors", async () => {
+    created("ses_root")
+    created("ses_subagent", "ses_root")
+
+    emit("session.error", {
+      sessionID: "ses_subagent",
+      error: { name: "UnknownError", data: { message: "boom" } },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(fetchMock.mock.calls.length).toBe(0)
+  })
+
+  test("relays subagent permission prompts to parent session", async () => {
+    created("ses_root")
+    created("ses_subagent", "ses_root")
+
+    emit("permission.asked", {
+      sessionID: "ses_subagent",
+    })
+
+    await waitForCalls(1)
+    expect(callBody()?.eventType).toBe("permission")
+    expect(callBody()?.sessionID).toBe("ses_root")
   })
 })
