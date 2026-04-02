@@ -1458,11 +1458,11 @@ export namespace Provider {
         return yield* Effect.promise(async () => {
           const url = e2eURL()
           if (url) {
-            const language = createOpenAI({
+            const language = createOpenAICompatible({
               name: model.providerID,
               apiKey: "test-key",
               baseURL: url,
-            }).responses(model.api.id)
+            }).chatModel(model.api.id)
             s.models.set(key, language)
             return language
           }
