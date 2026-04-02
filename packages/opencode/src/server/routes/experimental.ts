@@ -13,6 +13,49 @@ import { errors } from "../error"
 import { lazy } from "../../util/lazy"
 import { WorkspaceRoutes } from "./workspace"
 import { PushRelay } from "../push-relay"
+import * as QRCode from "qrcode"
+
+const PushPairPayload = z
+  .object({
+    v: z.literal(1),
+    serverID: z.string().optional(),
+    relayURL: z.string(),
+    relaySecret: z.string(),
+    hosts: z.array(z.string()),
+  })
+  .meta({ ref: "PushPairPayload" })
+
+const PushPairResult = z
+  .discriminatedUnion("enabled", [
+    z.object({
+      enabled: z.literal(false),
+    }),
+    z.object({
+      enabled: z.literal(true),
+      hosts: z.array(z.string()),
+      qr: z.string(),
+    }),
+  ])
+  .meta({ ref: "PushPairResult" })
+
+const pushPairQROptions = {
+  errorCorrectionLevel: "M" as const,
+  margin: 1,
+  width: 256,
+}
+
+function pushPairLink(payload: z.infer<typeof PushPairPayload>) {
+  return `mobilevoice:///?pair=${encodeURIComponent(JSON.stringify(payload))}`
+}
+
+async function pushPairQRCode(payload: z.infer<typeof PushPairPayload>) {
+  return QRCode.toDataURL(pushPairLink(payload), pushPairQROptions)
+}
+
+async function pushPairQRCodePNG(payload: z.infer<typeof PushPairPayload>) {
+  const data = await pushPairQRCode(payload)
+  return Buffer.from(data.replace(/^data:image\/png;base64,/, ""), "base64")
+}
 
 export const ExperimentalRoutes = lazy(() =>
   new Hono()
@@ -267,6 +310,70 @@ export const ExperimentalRoutes = lazy(() =>
       }),
       async (c) => {
         return c.json(await MCP.resources())
+      },
+    )
+    .get(
+      "/push/pair",
+      describeRoute({
+        summary: "Get push relay pairing QR",
+        description: "Get the active push relay pairing payload and QR code for mobile setup.",
+        operationId: "experimental.push.pair",
+        responses: {
+          200: {
+            description: "Push relay pairing info",
+            content: {
+              "application/json": {
+                schema: resolver(PushPairResult),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        const pair = PushRelay.pair()
+        if (!pair) {
+          return c.json({
+            enabled: false,
+          })
+        }
+
+        const qr = await pushPairQRCode(pair)
+
+        return c.json({
+          enabled: true,
+          hosts: pair.hosts,
+          qr,
+        })
+      },
+    )
+    .get(
+      "/push/pair/qr",
+      describeRoute({
+        summary: "Get push relay pairing QR image",
+        description: "Render the active push relay pairing QR code as a PNG image.",
+        operationId: "experimental.push.pair.qr",
+        responses: {
+          200: {
+            description: "Push relay pairing QR image",
+            content: {
+              "image/png": {
+                schema: { type: "string", format: "binary" } as any,
+              },
+            },
+          },
+          404: {
+            description: "Push relay pairing is not enabled",
+          },
+        },
+      }),
+      async (c) => {
+        const pair = PushRelay.pair()
+        if (!pair) {
+          return c.text("Push pairing is not enabled", 404)
+        }
+
+        c.header("Content-Type", "image/png")
+        return c.body(await pushPairQRCodePNG(pair))
       },
     )
     .get(
