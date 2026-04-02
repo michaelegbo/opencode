@@ -235,22 +235,24 @@ export namespace SyncEvent {
           throw new Error(`SyncEvent.run: running old versions of events is not allowed: ${def.type}`)
         }
 
-        Database.transaction(
-          (tx) => {
-            const id = EventID.ascending()
-            const row = tx
-              .select({ seq: EventSequenceTable.seq })
-              .from(EventSequenceTable)
-              .where(eq(EventSequenceTable.aggregate_id, agg))
-              .get()
-            const seq = row?.seq != null ? row.seq + 1 : 0
+        yield* Effect.sync(() =>
+          Database.transaction(
+            (tx) => {
+              const id = EventID.ascending()
+              const row = tx
+                .select({ seq: EventSequenceTable.seq })
+                .from(EventSequenceTable)
+                .where(eq(EventSequenceTable.aggregate_id, agg))
+                .get()
+              const seq = row?.seq != null ? row.seq + 1 : 0
 
-            const event = { id, seq, aggregateID: agg, data }
-            process(def, event, { publish: true })
-          },
-          {
-            behavior: "immediate",
-          },
+              const event = { id, seq, aggregateID: agg, data }
+              process(def, event, { publish: true })
+            },
+            {
+              behavior: "immediate",
+            },
+          ),
         )
       })
 
