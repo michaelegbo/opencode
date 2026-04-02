@@ -55,6 +55,15 @@ function str(input: unknown) {
   return typeof input === "string" && input.length > 0 ? input : undefined
 }
 
+function shouldNotifyError(input: unknown) {
+  if (!obj(input)) return true
+  const name = str(input.name)
+  if (!name) return true
+  if (name === "ContextOverflowError") return false
+  if (name === "MessageAbortedError") return false
+  return true
+}
+
 function norm(input: string) {
   return input.replace(/\/+$/, "")
 }
@@ -169,13 +178,8 @@ function map(event: Event): { type: Type; sessionID: string } | undefined {
   if (event.type === "session.error") {
     const sessionID = str(event.properties.sessionID)
     if (!sessionID) return
+    if (!shouldNotifyError(event.properties.error)) return
     return { type: "error", sessionID }
-  }
-
-  if (event.type === "session.idle") {
-    const sessionID = str(event.properties.sessionID)
-    if (!sessionID) return
-    return { type: "complete", sessionID }
   }
 
   if (event.type !== "session.status") return
