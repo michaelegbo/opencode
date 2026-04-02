@@ -27,6 +27,7 @@ import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+import { Server } from "../../src/server/server"
 import { SessionCompaction } from "../../src/session/compaction"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
@@ -223,6 +224,90 @@ it.live("e2eURL routes apply_patch through mock server", () =>
             },
           },
         },
+      }),
+    },
+  ),
+)
+
+it.live("server message route produces diff through mock server", () =>
+  provideTmpdirServer(
+    Effect.fnUntraced(function* ({ dir, llm }) {
+      const prev = process.env.OPENCODE_E2E_LLM_URL
+      process.env.OPENCODE_E2E_LLM_URL = llm.url
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (prev === undefined) delete process.env.OPENCODE_E2E_LLM_URL
+          else process.env.OPENCODE_E2E_LLM_URL = prev
+        }),
+      )
+
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "e2e route test",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const app = Server.Default()
+      const patch = ["*** Begin Patch", "*** Add File: route-test.txt", "+line 1", "+line 2", "*** End Patch"].join(
+        "\n",
+      )
+
+      yield* llm.toolMatch(
+        (hit) => JSON.stringify(hit.body).includes("Your only valid response is one apply_patch tool call"),
+        "apply_patch",
+        { patchText: patch },
+      )
+      yield* llm.text("done")
+
+      const res = yield* Effect.promise(() =>
+        Promise.resolve(
+          app.request(`/session/${session.id}/message`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-opencode-directory": dir,
+            },
+            body: JSON.stringify({
+              agent: "build",
+              system: [
+                "You are seeding deterministic e2e UI state.",
+                "Your only valid response is one apply_patch tool call.",
+                `Use this JSON input: ${JSON.stringify({ patchText: patch })}`,
+                "Do not call any other tools.",
+                "Do not output plain text.",
+              ].join("\n"),
+              parts: [{ type: "text", text: "Apply the provided patch exactly once." }],
+            }),
+          }),
+        ),
+      )
+      expect(res.status).toBe(200)
+      yield* Effect.promise(() => res.json())
+
+      const calls = yield* llm.calls
+      expect(calls).toBe(2)
+
+      const content = yield* Effect.promise(() =>
+        Bun.file(`${dir}/route-test.txt`)
+          .text()
+          .catch(() => "NOT FOUND"),
+      )
+      expect(content).toContain("line 1")
+
+      let diff: Awaited<ReturnType<typeof SessionSummary.diff>> = []
+      for (let i = 0; i < 30; i++) {
+        diff = yield* Effect.promise(() => SessionSummary.diff({ sessionID: session.id }))
+        if (diff.length > 0) break
+        yield* Effect.sleep("100 millis")
+      }
+
+      expect(diff.length).toBeGreaterThan(0)
+    }),
+    {
+      git: true,
+      config: () => ({
+        model: "openai/gpt-5.4",
+        agent: { build: { model: "openai/gpt-5.4" } },
+        provider: { openai: { options: { apiKey: "test-openai-key" } } },
       }),
     },
   ),
