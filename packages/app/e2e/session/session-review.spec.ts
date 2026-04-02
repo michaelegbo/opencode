@@ -67,9 +67,13 @@ async function patchWithMock(
 
   await expect.poll(() => llm.calls().then((c) => c > callsBefore), { timeout: 30_000 }).toBe(true)
   await expect
-    .poll(async () => (await sdk.session.get({ sessionID }).then((res) => res.data?.summary?.files)) ?? 0, {
-      timeout: 120_000,
-    })
+    .poll(
+      async () => {
+        const diff = await sdk.session.diff({ sessionID }).then((res) => res.data ?? [])
+        return diff.length
+      },
+      { timeout: 120_000 },
+    )
     .toBeGreaterThan(0)
 }
 
