@@ -1,6 +1,6 @@
 import { waitSessionIdle, withSession } from "../actions"
 import { test, expect } from "../fixtures"
-import { inputMatch } from "../prompt/mock"
+import { promptMatch } from "../prompt/mock"
 
 const count = 14
 
@@ -47,7 +47,7 @@ async function patchWithMock(
   patchText: string,
 ) {
   const callsBefore = await llm.calls()
-  await llm.toolMatch(inputMatch({ patchText }), "apply_patch", { patchText })
+  await llm.toolMatch(promptMatch("Apply the provided patch exactly once."), "apply_patch", { patchText })
   await sdk.session.promptAsync({
     sessionID,
     agent: "build",
