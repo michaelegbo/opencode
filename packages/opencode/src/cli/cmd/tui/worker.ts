@@ -13,6 +13,7 @@ import { Flag } from "@/flag/flag"
 import { setTimeout as sleep } from "node:timers/promises"
 import { writeHeapSnapshot } from "node:v8"
 import { WorkspaceID } from "@/control-plane/schema"
+import { Memory } from "@/debug/memory"
 
 await Log.init({
   print: process.argv.includes("--print-logs"),
@@ -34,6 +35,8 @@ process.on("uncaughtException", (e) => {
     e: e instanceof Error ? e.message : e,
   })
 })
+
+const stopMem = Memory.start("server")
 
 // Subscribe to global events and forward them via RPC
 GlobalBus.on("event", (event) => {
@@ -156,6 +159,7 @@ export const rpc = {
   },
   async shutdown() {
     Log.Default.info("worker shutting down")
+    stopMem()
     if (eventStream.abort) eventStream.abort.abort()
     await Instance.disposeAll()
     if (server) await server.stop(true)

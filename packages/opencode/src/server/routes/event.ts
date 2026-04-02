@@ -32,7 +32,7 @@ export const EventRoutes = () =>
       c.header("X-Accel-Buffering", "no")
       c.header("X-Content-Type-Options", "nosniff")
       return streamSSE(c, async (stream) => {
-        const q = new AsyncQueue<string | null>()
+        const q = new AsyncQueue<string | null>({ name: "sse:event" })
         let done = false
 
         q.push(
@@ -58,6 +58,7 @@ export const EventRoutes = () =>
           clearInterval(heartbeat)
           unsub()
           q.push(null)
+          q.done()
           log.info("event disconnected")
         }
 

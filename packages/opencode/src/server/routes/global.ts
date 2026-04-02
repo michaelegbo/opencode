@@ -17,9 +17,9 @@ const log = Log.create({ service: "server" })
 
 export const GlobalDisposedEvent = BusEvent.define("global.disposed", z.object({}))
 
-async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>) => () => void) {
+async function streamEvents(c: Context, name: string, subscribe: (q: AsyncQueue<string | null>) => () => void) {
   return streamSSE(c, async (stream) => {
-    const q = new AsyncQueue<string | null>()
+    const q = new AsyncQueue<string | null>({ name })
     let done = false
 
     q.push(
@@ -49,6 +49,7 @@ async function streamEvents(c: Context, subscribe: (q: AsyncQueue<string | null>
       clearInterval(heartbeat)
       unsub()
       q.push(null)
+      q.done()
       log.info("global event disconnected")
     }
 
@@ -122,7 +123,7 @@ export const GlobalRoutes = lazy(() =>
         c.header("X-Accel-Buffering", "no")
         c.header("X-Content-Type-Options", "nosniff")
 
-        return streamEvents(c, (q) => {
+        return streamEvents(c, "sse:global", (q) => {
           async function handler(event: any) {
             q.push(JSON.stringify(event))
           }
@@ -161,7 +162,7 @@ export const GlobalRoutes = lazy(() =>
         c.header("Cache-Control", "no-cache, no-transform")
         c.header("X-Accel-Buffering", "no")
         c.header("X-Content-Type-Options", "nosniff")
-        return streamEvents(c, (q) => {
+        return streamEvents(c, "sse:sync", (q) => {
           return SyncEvent.subscribeAll(({ def, event }) => {
             // TODO: don't pass def, just pass the type (and it should
             // be versioned)
