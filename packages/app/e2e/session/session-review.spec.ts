@@ -40,26 +40,12 @@ function edit(file: string, prev: string, next: string) {
   )
 }
 
-async function patchModel(sdk: Parameters<typeof withSession>[0]) {
-  const all = await sdk.provider.list().then((res) => res.data?.all ?? [])
-  for (const provider of all) {
-    for (const model of Object.values(provider.models)) {
-      if (!model.id.includes("gpt-")) continue
-      if (model.id.includes("gpt-4")) continue
-      if (model.id.includes("oss")) continue
-      return { providerID: provider.id, modelID: model.id }
-    }
-  }
-  throw new Error("No apply_patch-capable GPT model found for review seed")
-}
-
 async function patchWithMock(
   llm: Parameters<typeof test>[0]["llm"],
   sdk: Parameters<typeof withSession>[0],
   sessionID: string,
   patchText: string,
 ) {
-  const model = await patchModel(sdk)
   const callsBefore = await llm.calls()
   await llm.toolMatch(
     (hit) => bodyText(hit).includes("Your only valid response is one apply_patch tool call."),
@@ -69,7 +55,6 @@ async function patchWithMock(
   await sdk.session.prompt({
     sessionID,
     agent: "build",
-    model,
     system: [
       "You are seeding deterministic e2e UI state.",
       "Your only valid response is one apply_patch tool call.",
