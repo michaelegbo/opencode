@@ -242,9 +242,7 @@ async function withMockPermission<T>(
         const list = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : undefined
         if (Array.isArray(list) && !list.some((item) => item?.id === opts.child?.id)) list.push(opts.child)
         await route.fulfill({
-          status: res.status(),
-          headers: res.headers(),
-          contentType: "application/json",
+          response: res,
           body: JSON.stringify(json),
         })
       }

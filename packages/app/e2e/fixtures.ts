@@ -56,6 +56,19 @@ type LLMWorker = LLMFixture & {
   reset: () => Promise<void>
 }
 
+type AssistantFixture = {
+  reply: LLMFixture["text"]
+  tool: LLMFixture["tool"]
+  toolHang: LLMFixture["toolHang"]
+  reason: LLMFixture["reason"]
+  fail: LLMFixture["fail"]
+  error: LLMFixture["error"]
+  hang: LLMFixture["hang"]
+  hold: LLMFixture["hold"]
+  calls: LLMFixture["calls"]
+  pending: LLMFixture["pending"]
+}
+
 export const settingsKey = "settings.v3"
 
 const seedModel = (() => {
@@ -127,6 +140,7 @@ type ProjectFixture = ProjectHandle & {
 
 type TestFixtures = {
   llm: LLMFixture
+  assistant: AssistantFixture
   project: ProjectFixture
   sdk: ReturnType<typeof createSdk>
   gotoSession: (sessionID?: string) => Promise<void>
@@ -217,6 +231,20 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     if (pending > 0) {
       throw new Error(`TestLLMServer still has ${pending} queued response(s) after the test finished`)
     }
+  },
+  assistant: async ({ llm }, use) => {
+    await use({
+      reply: llm.text,
+      tool: llm.tool,
+      toolHang: llm.toolHang,
+      reason: llm.reason,
+      fail: llm.fail,
+      error: llm.error,
+      hang: llm.hang,
+      hold: llm.hold,
+      calls: llm.calls,
+      pending: llm.pending,
+    })
   },
   page: async ({ page }, use) => {
     let boundary: string | undefined
@@ -567,10 +595,7 @@ async function seedStorage(
         prompt: { enabled: true },
         terminal: { enabled: true, terminals: {} },
       }
-      localStorage.setItem(
-        "opencode.global.dat:model",
-        JSON.stringify({ recent: [args.model], user: [], variant: {} }),
-      )
+      localStorage.setItem("opencode.global.dat:model", JSON.stringify({ recent: [args.model], user: [], variant: {} }))
     },
     { directory: input.directory, serverUrl: origin, extra: input.extra ?? [], model: input.model ?? seedModel },
   )
