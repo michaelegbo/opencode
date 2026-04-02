@@ -88,6 +88,21 @@ function clean(value: string | null) {
   return (value ?? "").replace(/\u200B/g, "").trim()
 }
 
+async function visit(page: Page, url: string) {
+  let err: unknown
+  for (const _ of [0, 1, 2]) {
+    try {
+      await page.goto(url)
+      return
+    } catch (cause) {
+      err = cause
+      if (!String(cause).includes("ERR_CONNECTION_REFUSED")) throw cause
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+  }
+  throw err
+}
+
 async function promptSend(page: Page) {
   return page
     .evaluate(() => {
@@ -279,7 +294,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await seedStorage(page, { directory })
 
     const gotoSession = async (sessionID?: string) => {
-      await page.goto(sessionPath(directory, sessionID))
+      await visit(page, sessionPath(directory, sessionID))
       await waitSession(page, { directory, sessionID })
     }
     await use(gotoSession)
@@ -349,7 +364,7 @@ function makeProject(
 
   const gotoSession = async (sessionID?: string) => {
     const cur = need()
-    await page.goto(sessionPath(cur.directory, sessionID))
+    await visit(page, sessionPath(cur.directory, sessionID))
     await waitSession(page, { directory: cur.directory, sessionID, serverUrl: backend.url })
     const current = sessionIDFromUrl(page.url())
     if (current) trackSession(current)
@@ -521,7 +536,7 @@ async function runProject<T>(
   })
 
   const gotoSession = async (sessionID?: string) => {
-    await page.goto(sessionPath(root, sessionID))
+    await visit(page, sessionPath(root, sessionID))
     await waitSession(page, { directory: root, sessionID, serverUrl: url })
     const current = sessionIDFromUrl(page.url())
     if (current) trackSession(current)

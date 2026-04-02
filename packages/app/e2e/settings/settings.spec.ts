@@ -92,6 +92,7 @@ test("changing theme persists in localStorage", async ({ page, gotoSession }) =>
   await select.locator('[data-slot="select-select-trigger"]').click()
 
   const items = page.locator('[data-slot="select-select-item"]')
+  await expect(items.first()).toBeVisible()
   const count = await items.count()
   expect(count).toBeGreaterThan(1)
 

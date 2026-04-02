@@ -34,6 +34,8 @@ test("dialog edit project updates name and startup script", async ({ page, proje
   await expect
     .poll(
       async () => {
+        await page.reload()
+        await openSidebar(page)
         const reopened = await open()
         const value = await reopened.getByLabel("Name").inputValue()
         const next = await reopened.getByLabel("Workspace startup script").inputValue()

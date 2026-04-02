@@ -12,6 +12,7 @@ import {
   clickMenuItem,
   confirmDialog,
   openSidebar,
+  openProjectMenu,
   openWorkspaceMenu,
   resolveSlug,
   setWorkspacesEnabled,
@@ -19,7 +20,7 @@ import {
   waitDir,
   waitSlug,
 } from "../actions"
-import { dropdownMenuContentSelector, inlineInputSelector, workspaceItemSelector } from "../selectors"
+import { inlineInputSelector, workspaceItemSelector } from "../selectors"
 import { dirSlug } from "../utils"
 
 async function setupWorkspaceTest(page: Page, project: { slug: string; trackDirectory: (directory: string) => void }) {

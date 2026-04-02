@@ -65,9 +65,8 @@ test("open sidebar project popover stays closed after clicking avatar", async ({
     await projectButton.hover()
     await expect(card.getByText(/recent sessions/i)).toBeVisible()
 
-    await page.mouse.down()
+    await projectButton.click()
     await expect(card).toHaveCount(0)
-    await page.mouse.up()
 
     await waitSession(page, { directory: other })
     await expect(card).toHaveCount(0)
