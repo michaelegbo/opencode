@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "expo:start": "REACT_NATIVE_PACKAGER_HOSTNAME=exos.husky-tilapia.ts.net expo start --dev-client --clear --host lan",
     "relay": "echo 'Use packages/apn-relay for APNs relay server'",
     "relay:legacy": "node ./relay/opencode-relay.mjs",
     "reset-project": "node ./scripts/reset-project.js",

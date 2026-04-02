@@ -175,3 +175,9 @@ Example shape:
 - If behavior could break startup, run `bunx expo export --platform ios --clear`.
 - Confirm no accidental config side effects were introduced.
 - Summarize what was verified on-device vs only in tooling.
+
+
+- Dev build (internal/dev client):
+  - bunx eas build --profile development --platform ios
+- Production build + auto-submit:
+  - bunx eas build --profile production --platform ios --auto-submit

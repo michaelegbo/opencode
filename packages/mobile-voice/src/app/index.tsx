@@ -48,6 +48,10 @@ const WAVEFORM_ROWS = 5
 const WAVEFORM_CELL_SIZE = 8
 const WAVEFORM_CELL_GAP = 2
 const DROPDOWN_VISIBLE_ROWS = 6
+const DROPDOWN_ROW_HEIGHT = 42
+const SERVER_MENU_SECTION_HEIGHT = 56
+const SERVER_MENU_ENTRY_HEIGHT = 36
+const SERVER_MENU_FOOTER_HEIGHT = 28
 // If the press duration is shorter than this, treat it as a tap (toggle)
 const TAP_THRESHOLD_MS = 300
 const SERVER_STATE_FILE = `${FileSystem.documentDirectory}mobile-voice-servers.json`
@@ -591,6 +595,10 @@ export default function DictationScreen() {
   const [readerModeRendered, setReaderModeRendered] = useState(false)
   const [dropdownMode, setDropdownMode] = useState<DropdownMode>("none")
   const [dropdownRenderMode, setDropdownRenderMode] = useState<Exclude<DropdownMode, "none">>("server")
+  const [serverMenuListHeight, setServerMenuListHeight] = useState(0)
+  const [sessionMenuListHeight, setSessionMenuListHeight] = useState(0)
+  const [serverMenuFooterHeight, setServerMenuFooterHeight] = useState(0)
+  const [sessionMenuFooterHeight, setSessionMenuFooterHeight] = useState(0)
   const [sessionCreateMode, setSessionCreateMode] = useState<"same" | "root" | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
   const [pairSelectionOpen, setPairSelectionOpen] = useState(false)
@@ -633,6 +641,8 @@ export default function DictationScreen() {
     setDropdownMode("none")
   }, [])
 
+  const discoveryEnabled = onboardingComplete && localNetworkPermissionState !== "denied" && dropdownMode === "server"
+
   const {
     servers,
     serversRef,
@@ -655,7 +665,7 @@ export default function DictationScreen() {
 
   const { discoveredServers, discoveryStatus, discoveryError, discoveryAvailable, refreshDiscovery } = useMdnsDiscovery(
     {
-      enabled: onboardingComplete && localNetworkPermissionState !== "denied",
+      enabled: discoveryEnabled,
     },
   )
 
@@ -2000,17 +2010,29 @@ export default function DictationScreen() {
     ],
   }))
 
-  const serverMenuRows = 2 + Math.max(servers.length, 1) + Math.max(discoveredServerOptions.length, 1)
-  const menuRows = effectiveDropdownMode === "server" ? serverMenuRows : Math.max(activeServer?.sessions.length ?? 0, 1)
-  const expandedRowsHeight = Math.min(menuRows, DROPDOWN_VISIBLE_ROWS) * 42
+  const maxDropdownListHeight = DROPDOWN_VISIBLE_ROWS * DROPDOWN_ROW_HEIGHT
+  const serverMenuEntries = Math.max(servers.length, 1) + Math.max(discoveredServerOptions.length, 1)
+  const estimatedServerMenuRowsHeight = Math.min(
+    SERVER_MENU_SECTION_HEIGHT + serverMenuEntries * SERVER_MENU_ENTRY_HEIGHT,
+    maxDropdownListHeight,
+  )
+  const sessionMenuRows = Math.max(activeServer?.sessions.length ?? 0, 1)
+  const estimatedSessionMenuRowsHeight = Math.min(sessionMenuRows, DROPDOWN_VISIBLE_ROWS) * DROPDOWN_ROW_HEIGHT
+  const serverMenuRowsHeight = Math.min(serverMenuListHeight || estimatedServerMenuRowsHeight, maxDropdownListHeight)
+  const sessionMenuRowsHeight = Math.min(sessionMenuListHeight || estimatedSessionMenuRowsHeight, maxDropdownListHeight)
+  const expandedRowsHeight = effectiveDropdownMode === "server" ? serverMenuRowsHeight : sessionMenuRowsHeight
+
+  const estimatedSessionFooterHeight = sessionCreationChoiceCount === 2 ? 72 : sessionCreationChoiceCount === 1 ? 38 : 8
+
+  const measuredServerFooterHeight = serverMenuFooterHeight || SERVER_MENU_FOOTER_HEIGHT
+  const measuredSessionFooterHeight = sessionMenuFooterHeight || estimatedSessionFooterHeight
+
   const dropdownFooterExtraHeight =
     effectiveDropdownMode === "server"
-      ? 38
-      : sessionCreationChoiceCount === 2
-        ? 72
-        : sessionCreationChoiceCount === 1
-          ? 38
-          : 8
+      ? measuredServerFooterHeight
+      : showSessionCreationChoices
+        ? measuredSessionFooterHeight
+        : 8
   const expandedHeaderHeight = 51 + 12 + expandedRowsHeight + dropdownFooterExtraHeight
 
   const animatedHeaderStyle = useAnimatedStyle(() => ({
@@ -2102,6 +2124,26 @@ export default function DictationScreen() {
     const next = Array.from({ length: columns }, () => 0)
     waveformLevelsRef.current = next
     setWaveformLevels(next)
+  }, [])
+
+  const handleServerMenuListLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setServerMenuListHeight((prev) => (prev === next ? prev : next))
+  }, [])
+
+  const handleSessionMenuListLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setSessionMenuListHeight((prev) => (prev === next ? prev : next))
+  }, [])
+
+  const handleServerMenuFooterLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setServerMenuFooterHeight((prev) => (prev === next ? prev : next))
+  }, [])
+
+  const handleSessionMenuFooterLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setSessionMenuFooterHeight((prev) => (prev === next ? prev : next))
   }, [])
 
   const toggleServerMenu = useCallback(() => {
@@ -2764,7 +2806,7 @@ export default function DictationScreen() {
               bounces={false}
             >
               {effectiveDropdownMode === "server" ? (
-                <>
+                <View onLayout={handleServerMenuListLayout}>
                   <Text style={styles.serverGroupLabel}>Saved:</Text>
 
                   {servers.length === 0 ? (
@@ -2833,9 +2875,9 @@ export default function DictationScreen() {
                       {discoveryError}
                     </Text>
                   ) : null}
-                </>
+                </View>
               ) : activeServer ? (
-                <>
+                <View onLayout={handleSessionMenuListLayout}>
                   {activeSession ? (
                     <>
                       <View style={styles.currentSessionSummary}>
@@ -2890,18 +2932,20 @@ export default function DictationScreen() {
                       </Pressable>
                     ))
                   )}
-                </>
+                </View>
               ) : (
                 <Text style={styles.serverEmptyText}>Select a server first</Text>
               )}
             </ScrollView>
 
             {effectiveDropdownMode === "server" ? (
-              <Pressable onPress={() => void handleStartScan()} style={styles.addServerButton}>
-                <Text style={styles.addServerButtonText}>Add server by scanning QR code</Text>
-              </Pressable>
+              <View onLayout={handleServerMenuFooterLayout}>
+                <Pressable onPress={() => void handleStartScan()} style={styles.addServerButton}>
+                  <Text style={styles.addServerButtonText}>Add server by scanning QR code</Text>
+                </Pressable>
+              </View>
             ) : effectiveDropdownMode === "session" && activeServer?.status === "online" ? (
-              <View style={styles.sessionMenuActions}>
+              <View style={styles.sessionMenuActions} onLayout={handleSessionMenuFooterLayout}>
                 {activeSession ? (
                   <Pressable
                     onPress={handleCreateSessionLikeCurrent}
@@ -3887,14 +3931,14 @@ const styles = StyleSheet.create({
   },
   serverMenuInline: {
     marginTop: 8,
-    paddingBottom: 8,
+    paddingBottom: 2,
     gap: 4,
   },
   dropdownListViewport: {
-    maxHeight: DROPDOWN_VISIBLE_ROWS * 42,
+    maxHeight: DROPDOWN_VISIBLE_ROWS * DROPDOWN_ROW_HEIGHT,
   },
   dropdownListContent: {
-    paddingBottom: 2,
+    paddingBottom: 0,
   },
   currentSessionSummary: {
     paddingHorizontal: 4,
@@ -4026,10 +4070,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   addServerButton: {
-    marginTop: 10,
+    marginTop: 4,
     alignSelf: "center",
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingTop: 2,
+    paddingBottom: 10,
   },
   addServerButtonText: {
     color: "#B8BDC9",

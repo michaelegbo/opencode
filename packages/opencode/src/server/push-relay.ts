@@ -105,9 +105,10 @@ function advertiseURL(input: string, port: number): string | undefined {
   if (!raw) return
 
   try {
-    const parsed = new URL(raw.includes("://") ? raw : `http://${raw}`)
+    const hasScheme = raw.includes("://")
+    const parsed = new URL(hasScheme ? raw : `http://${raw}`)
     if (!parsed.hostname) return
-    if (!parsed.port) {
+    if (!parsed.port && !hasScheme) {
       parsed.port = String(port)
     }
     return norm(`${parsed.protocol}//${parsed.host}`)
@@ -205,6 +206,22 @@ function fallback(input: Type) {
   return "OpenCode reported an error for your session."
 }
 
+function titlePrefix(input: Type) {
+  if (input === "permission") return "Action Needed"
+  if (input === "error") return "Error"
+  return
+}
+
+function titleForType(input: Type, title: string) {
+  const next = text(title)
+  if (!next) return next
+  const prefix = titlePrefix(input)
+  if (!prefix) return next
+  const tagged = `${prefix}:`
+  if (next.toLowerCase().startsWith(tagged.toLowerCase())) return next
+  return `${tagged} ${next}`
+}
+
 async function notify(input: { type: Type; sessionID: string }): Promise<Notify> {
   const out: Notify = {
     type: input.type,
@@ -252,6 +269,7 @@ async function notify(input: { type: Type; sessionID: string }): Promise<Notify>
   }
 
   if (!out.title) out.title = `Session ${input.type}`
+  out.title = titleForType(input.type, out.title)
   if (!out.body) out.body = fallback(input.type)
   return out
 }

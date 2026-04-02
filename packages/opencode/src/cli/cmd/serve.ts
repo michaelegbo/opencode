@@ -13,6 +13,14 @@ import * as QRCode from "qrcode"
 
 const log = Log.create({ service: "serve" })
 
+type PairPayload = {
+  v: 1
+  serverID?: string
+  relayURL: string
+  relaySecret: string
+  hosts: string[]
+}
+
 function ipTier(address: string): number {
   const parts = address.split(".")
   if (parts.length !== 4) return 4
@@ -36,9 +44,10 @@ function advertiseURL(input: string, port: number): string | undefined {
   if (!raw) return
 
   try {
-    const parsed = new URL(raw.includes("://") ? raw : `http://${raw}`)
+    const hasScheme = raw.includes("://")
+    const parsed = new URL(hasScheme ? raw : `http://${raw}`)
     if (!parsed.hostname) return
-    if (!parsed.port) {
+    if (!parsed.port && !hasScheme) {
       parsed.port = String(port)
     }
     return norm(`${parsed.protocol}//${parsed.host}`)
@@ -47,7 +56,7 @@ function advertiseURL(input: string, port: number): string | undefined {
   }
 }
 
-function hosts(hostname: string, port: number, advertised: string[] = []) {
+function hosts(hostname: string, port: number, advertised: string[] = [], includeLocal = true) {
   const seen = new Set<string>()
   const preferred: string[] = []
   const entries: Array<{ url: string; tier: number }> = []
@@ -72,12 +81,15 @@ function hosts(hostname: string, port: number, advertised: string[] = []) {
 
   advertised.forEach(addPreferred)
 
-  add(hostname)
-  Object.values(os.networkInterfaces())
-    .flatMap((item) => item ?? [])
-    .filter((item) => item.family === "IPv4" && !item.internal)
-    .map((item) => item.address)
-    .forEach(add)
+  if (includeLocal) {
+    add(hostname)
+    Object.values(os.networkInterfaces())
+      .flatMap((item) => item ?? [])
+      .filter((item) => item.family === "IPv4" && !item.internal)
+      .map((item) => item.address)
+      .forEach(add)
+  }
+
   entries.sort((a, b) => a.tier - b.tier)
   return [...preferred, ...entries.map((item) => item.url)]
 }
@@ -86,9 +98,37 @@ function pairLink(pair: unknown) {
   return `mobilevoice:///?pair=${encodeURIComponent(JSON.stringify(pair))}`
 }
 
+function pairServerID(input: { relayURL: string; relaySecret: string }) {
+  return createHash("sha256").update(`${input.relayURL}|${input.relaySecret}`).digest("hex").slice(0, 16)
+}
+
 function secretHash(input: string) {
   if (!input) return "none"
   return `${createHash("sha256").update(input).digest("hex").slice(0, 12)}...`
+}
+
+async function printPairQR(pair: PairPayload) {
+  const link = pairLink(pair)
+  const qrConfig = {
+    type: "terminal" as const,
+    small: true,
+    errorCorrectionLevel: "M" as const,
+  }
+  log.info("pair qr", {
+    relayURL: pair.relayURL,
+    relaySecretHash: secretHash(pair.relaySecret),
+    serverID: pair.serverID,
+    hosts: pair.hosts,
+    hostCount: pair.hosts.length,
+    hasLoopbackHost: pair.hosts.some((item) => item.includes("127.0.0.1") || item.includes("localhost")),
+    linkLength: link.length,
+    qr: qrConfig,
+  })
+  const code = await QRCode.toString(link, {
+    ...qrConfig,
+  })
+  console.log("scan qr code in mobile app or phone camera")
+  console.log(code)
 }
 
 export const ServeCommand = cmd({
@@ -107,16 +147,15 @@ export const ServeCommand = cmd({
         type: "string",
         array: true,
         describe: "preferred host/domain for mobile QR (repeatable, supports host[:port] or URL)",
+      })
+      .option("connect-qr", {
+        type: "boolean",
+        default: false,
+        describe: "print mobile connect QR and exit without starting the server",
       }),
   describe: "starts a headless opencode server",
   handler: async (args) => {
-    if (!Flag.OPENCODE_SERVER_PASSWORD) {
-      console.log("Warning: OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
-    }
     const opts = await resolveNetworkOptions(args)
-    const server = Server.listen(opts)
-    console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
-
     const relayURL = (
       args["relay-url"] ??
       process.env.OPENCODE_EXPERIMENTAL_PUSH_RELAY_URL ??
@@ -136,6 +175,40 @@ export const ServeCommand = cmd({
 
     const input = (args["relay-secret"] ?? process.env.OPENCODE_EXPERIMENTAL_PUSH_RELAY_SECRET ?? "").trim()
     const relaySecret = input || randomBytes(18).toString("base64url")
+    const connectQR = Boolean(args["connect-qr"])
+
+    if (connectQR) {
+      const pairHosts = hosts(opts.hostname, opts.port > 0 ? opts.port : 4096, advertiseHosts, false)
+      if (!pairHosts.length) {
+        console.log("connect qr mode requires at least one valid --advertise-host value")
+        return
+      }
+
+      if (!input) {
+        console.log("experimental push relay secret generated")
+        console.log(
+          "set --relay-secret or OPENCODE_EXPERIMENTAL_PUSH_RELAY_SECRET to keep push registrations stable across server restarts",
+        )
+      }
+
+      console.log("printing connect qr without starting the server")
+      await printPairQR({
+        v: 1,
+        serverID: pairServerID({ relayURL, relaySecret }),
+        relayURL,
+        relaySecret,
+        hosts: pairHosts,
+      })
+      return
+    }
+
+    if (!Flag.OPENCODE_SERVER_PASSWORD) {
+      console.log("Warning: OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
+    }
+
+    const server = Server.listen(opts)
+    console.log(`opencode server listening on http://${server.hostname}:${server.port}`)
+
     if (!input) {
       console.log("experimental push relay secret generated")
       console.log(
@@ -155,6 +228,7 @@ export const ServeCommand = cmd({
       const pair = started ??
         PushRelay.pair() ?? {
           v: 1 as const,
+          serverID: pairServerID({ relayURL, relaySecret }),
           relayURL,
           relaySecret,
           hosts: hosts(host, port, advertiseHosts),
@@ -164,27 +238,7 @@ export const ServeCommand = cmd({
       }
       if (pair) {
         console.log("experimental push relay enabled")
-        const link = pairLink(pair)
-        const qrConfig = {
-          type: "terminal" as const,
-          small: true,
-          errorCorrectionLevel: "M" as const,
-        }
-        log.info("pair qr", {
-          relayURL: pair.relayURL,
-          relaySecretHash: secretHash(pair.relaySecret),
-          serverID: pair.serverID,
-          hosts: pair.hosts,
-          hostCount: pair.hosts.length,
-          hasLoopbackHost: pair.hosts.some((item) => item.includes("127.0.0.1") || item.includes("localhost")),
-          linkLength: link.length,
-          qr: qrConfig,
-        })
-        const code = await QRCode.toString(link, {
-          ...qrConfig,
-        })
-        console.log("scan qr code in mobile app or phone camera")
-        console.log(code)
+        await printPairQR(pair)
       }
     }
 
