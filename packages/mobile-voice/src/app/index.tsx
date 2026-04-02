@@ -47,6 +47,11 @@ const SEND_SETTLE_MS = 240
 const WAVEFORM_ROWS = 5
 const WAVEFORM_CELL_SIZE = 8
 const WAVEFORM_CELL_GAP = 2
+const READER_ACTION_SIZE = 20
+const READER_ACTION_GAP = 14
+const READER_ACTION_TRAVEL = READER_ACTION_SIZE + READER_ACTION_GAP
+const READER_ACTION_RAIL_WIDTH = READER_ACTION_SIZE * 2 + READER_ACTION_GAP
+const AGENT_SUCCESS_GREEN = "#91C29D"
 const DROPDOWN_VISIBLE_ROWS = 6
 const DROPDOWN_ROW_HEIGHT = 42
 const SERVER_MENU_SECTION_HEIGHT = 56
@@ -118,6 +123,18 @@ const WHISPER_MODEL_LABELS: Record<WhisperModelID, string> = {
   "ggml-medium-q8_0.bin": "medium q8_0",
   "ggml-medium.bin": "medium",
 }
+
+const READER_OPEN_SYMBOL = {
+  ios: "arrow.up.left.and.arrow.down.right",
+  android: "open_in_full",
+  web: "open_in_full",
+} as const
+
+const READER_CLOSE_SYMBOL = {
+  ios: "arrow.down.right.and.arrow.up.left",
+  android: "close_fullscreen",
+  web: "close_fullscreen",
+} as const
 
 const WHISPER_MODEL_SIZES: Record<WhisperModelID, number> = {
   "ggml-tiny.en-q5_1.bin": 32166155,
@@ -272,9 +289,16 @@ type PairHostProbe = {
   note?: string
 }
 
+type ReaderHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
+
 type ReaderBlock =
   | {
       type: "text"
+      content: string
+    }
+  | {
+      type: "heading"
+      level: ReaderHeadingLevel
       content: string
     }
   | {
@@ -290,6 +314,18 @@ type ReaderInlineSegment =
     }
   | {
       type: "inline_code"
+      content: string
+    }
+  | {
+      type: "italic"
+      content: string
+    }
+  | {
+      type: "bold"
+      content: string
+    }
+  | {
+      type: "bold_italic"
       content: string
     }
 
@@ -486,7 +522,17 @@ function parseReaderBlocks(input: string): ReaderBlock[] {
         fence = match[1] as "```" | "~~~"
         language = match[2]?.trim().split(/\s+/)[0] ?? ""
       } else {
-        prose.push(line)
+        const headingMatch = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+        if (headingMatch) {
+          flushProse()
+          blocks.push({
+            type: "heading",
+            level: headingMatch[1].length as ReaderHeadingLevel,
+            content: headingMatch[2].trim(),
+          })
+        } else {
+          prose.push(line)
+        }
       }
       continue
     }
@@ -509,6 +555,50 @@ function parseReaderBlocks(input: string): ReaderBlock[] {
   return blocks
 }
 
+function parseReaderAsteriskSegments(input: string): ReaderInlineSegment[] {
+  const segments: ReaderInlineSegment[] = []
+  let cursor = 0
+  let textStart = 0
+
+  while (cursor < input.length) {
+    if (input[cursor] !== "*") {
+      cursor += 1
+      continue
+    }
+
+    const marker = input.startsWith("***", cursor) ? "***" : input.startsWith("**", cursor) ? "**" : "*"
+    const end = input.indexOf(marker, cursor + marker.length)
+    if (end === -1) {
+      cursor += 1
+      continue
+    }
+
+    const content = input.slice(cursor + marker.length, end)
+    if (content.trim().length === 0 || content !== content.trim() || content.includes("\n")) {
+      cursor += 1
+      continue
+    }
+
+    if (cursor > textStart) {
+      segments.push({ type: "text", content: input.slice(textStart, cursor) })
+    }
+
+    segments.push({
+      type: marker === "***" ? "bold_italic" : marker === "**" ? "bold" : "italic",
+      content,
+    })
+
+    cursor = end + marker.length
+    textStart = cursor
+  }
+
+  if (textStart < input.length) {
+    segments.push({ type: "text", content: input.slice(textStart) })
+  }
+
+  return segments.length > 0 ? segments : [{ type: "text", content: input }]
+}
+
 function parseReaderInlineSegments(input: string): ReaderInlineSegment[] {
   const segments: ReaderInlineSegment[] = []
   const pattern = /(`+|~+)([^`~\n]+?)\1/g
@@ -521,7 +611,7 @@ function parseReaderInlineSegments(input: string): ReaderInlineSegment[] {
     const end = start + full.length
 
     if (start > cursor) {
-      segments.push({ type: "text", content: input.slice(cursor, start) })
+      segments.push(...parseReaderAsteriskSegments(input.slice(cursor, start)))
     }
 
     if (code.length > 0) {
@@ -532,7 +622,7 @@ function parseReaderInlineSegments(input: string): ReaderInlineSegment[] {
   }
 
   if (cursor < input.length) {
-    segments.push({ type: "text", content: input.slice(cursor) })
+    segments.push(...parseReaderAsteriskSegments(input.slice(cursor)))
   }
 
   if (segments.length === 0) {
@@ -593,6 +683,8 @@ export default function DictationScreen() {
   const [agentStateDismissed, setAgentStateDismissed] = useState(false)
   const [readerModeOpen, setReaderModeOpen] = useState(false)
   const [readerModeRendered, setReaderModeRendered] = useState(false)
+  const [transcriptionAreaHeight, setTranscriptionAreaHeight] = useState(0)
+  const [agentStateCardHeight, setAgentStateCardHeight] = useState(0)
   const [dropdownMode, setDropdownMode] = useState<DropdownMode>("none")
   const [dropdownRenderMode, setDropdownRenderMode] = useState<Exclude<DropdownMode, "none">>("server")
   const [serverMenuListHeight, setServerMenuListHeight] = useState(0)
@@ -1777,6 +1869,9 @@ export default function DictationScreen() {
   const hasPendingPermission = activePermissionRequest !== null && activePermissionCard !== null
   const readerModeEnabled = readerModeOpen && hasAssistantResponse && !hasPendingPermission
   const readerModeVisible = readerModeEnabled || readerModeRendered
+  const fallbackAgentStateCardHeight = transcriptionAreaHeight > 0 ? Math.max(0, (transcriptionAreaHeight - 8) / 2) : 0
+  const collapsedReaderHeight = agentStateCardHeight > 0 ? agentStateCardHeight : fallbackAgentStateCardHeight
+  const expandedReaderHeight = Math.max(collapsedReaderHeight, transcriptionAreaHeight)
   const hasAgentActivity = hasAssistantResponse || monitorStatus.trim().length > 0 || monitorJob !== null
   const shouldShowAgentStateCard = !hasPendingPermission && hasAgentActivity && !agentStateDismissed
   const showsCompleteState = monitorStatus.toLowerCase().includes("complete")
@@ -1785,6 +1880,7 @@ export default function DictationScreen() {
     agentStateIcon = "done"
   }
   const agentStateText = hasAssistantResponse ? latestAssistantResponse : "Waiting for agent…"
+  const agentStateBlocks = useMemo(() => parseReaderBlocks(agentStateText), [agentStateText])
   const shouldShowSend = hasCompletedSession && hasTranscript && !hasPendingPermission
   const activeServer = servers.find((s) => s.id === activeServerId) ?? null
   const discoveredServerOptions = useMemo(() => {
@@ -1874,8 +1970,8 @@ export default function DictationScreen() {
   useEffect(() => {
     if (readerModeEnabled) {
       readerExpandProgress.value = withTiming(1, {
-        duration: 260,
-        easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+        duration: 320,
+        easing: Easing.bezier(0.22, 1, 0.36, 1),
       })
       return
     }
@@ -1888,8 +1984,8 @@ export default function DictationScreen() {
     readerExpandProgress.value = withTiming(
       0,
       {
-        duration: 180,
-        easing: Easing.bezier(0.22, 0.61, 0.36, 1),
+        duration: 240,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
       },
       (finished) => {
         if (finished) {
@@ -2055,15 +2151,35 @@ export default function DictationScreen() {
   }))
 
   const animatedReaderExpandStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(readerExpandProgress.value, [0, 1], [0, 1], Extrapolation.CLAMP),
+    height: interpolate(
+      readerExpandProgress.value,
+      [0, 1],
+      [collapsedReaderHeight, expandedReaderHeight],
+      Extrapolation.CLAMP,
+    ),
+    opacity: interpolate(readerExpandProgress.value, [0, 0.12, 1], [0, 1, 1], Extrapolation.CLAMP),
+  }))
+
+  const animatedAgentStateActionsStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(readerExpandProgress.value, [0, 0.16, 1], [1, 0, 0], Extrapolation.CLAMP),
+  }))
+
+  const animatedReaderToggleTravelStyle = useAnimatedStyle(() => ({
     transform: [
       {
-        translateY: interpolate(readerExpandProgress.value, [0, 1], [16, 0], Extrapolation.CLAMP),
-      },
-      {
-        scale: interpolate(readerExpandProgress.value, [0, 1], [0.985, 1], Extrapolation.CLAMP),
+        translateX: interpolate(readerExpandProgress.value, [0, 1], [-READER_ACTION_TRAVEL, 0], Extrapolation.CLAMP),
       },
     ],
+  }))
+
+  const animatedReaderToggleOpenIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(readerExpandProgress.value, [0, 0.45, 1], [1, 0.18, 0], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(readerExpandProgress.value, [0, 1], [1, 0.92], Extrapolation.CLAMP) }],
+  }))
+
+  const animatedReaderToggleCloseIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(readerExpandProgress.value, [0, 0.45, 1], [0, 0.35, 1], Extrapolation.CLAMP),
+    transform: [{ scale: interpolate(readerExpandProgress.value, [0, 1], [0.92, 1], Extrapolation.CLAMP) }],
   }))
 
   const waveformColumnMeta = useMemo(
@@ -2115,6 +2231,16 @@ export default function DictationScreen() {
     setControlsWidth(event.nativeEvent.layout.width)
   }, [])
 
+  const handleTranscriptionAreaLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setTranscriptionAreaHeight((prev) => (prev === next ? prev : next))
+  }, [])
+
+  const handleAgentStateCardLayout = useCallback((event: LayoutChangeEvent) => {
+    const next = Math.ceil(event.nativeEvent.layout.height)
+    setAgentStateCardHeight((prev) => (prev === next ? prev : next))
+  }, [])
+
   const handleWaveformLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width
     const columns = Math.max(14, Math.floor((width + WAVEFORM_CELL_GAP) / (WAVEFORM_CELL_SIZE + WAVEFORM_CELL_GAP)))
@@ -2145,6 +2271,76 @@ export default function DictationScreen() {
     const next = Math.ceil(event.nativeEvent.layout.height)
     setSessionMenuFooterHeight((prev) => (prev === next ? prev : next))
   }, [])
+
+  const renderMarkdownBlocks = (blocks: ReaderBlock[], variant: "reader" | "reply") => {
+    const keyPrefix = variant === "reader" ? "reader" : "reply"
+    const paragraphStyle = variant === "reader" ? styles.readerParagraph : styles.replyText
+
+    const renderMarkdownInline = (input: string, blockIndex: number) =>
+      parseReaderInlineSegments(input).map((segment, segmentIndex) => {
+        const segmentKey = `${keyPrefix}-inline-${blockIndex}-${segmentIndex}`
+
+        switch (segment.type) {
+          case "inline_code":
+            return (
+              <Text key={segmentKey} style={styles.readerInlineCode}>
+                {segment.content}
+              </Text>
+            )
+          case "italic":
+            return (
+              <Text key={segmentKey} style={styles.markdownItalic}>
+                {segment.content}
+              </Text>
+            )
+          case "bold":
+            return (
+              <Text key={segmentKey} style={styles.markdownBold}>
+                {segment.content}
+              </Text>
+            )
+          case "bold_italic":
+            return (
+              <Text key={segmentKey} style={styles.markdownBoldItalic}>
+                {segment.content}
+              </Text>
+            )
+          default:
+            return <Text key={segmentKey}>{segment.content}</Text>
+        }
+      })
+
+    const getHeadingStyle = (level: ReaderHeadingLevel) => {
+      if (variant === "reader") {
+        return [
+          styles.readerHeading,
+          level === 1 ? styles.readerHeading1 : level === 2 ? styles.readerHeading2 : styles.readerHeading3,
+        ]
+      }
+
+      return [
+        styles.replyHeading,
+        level === 1 ? styles.replyHeading1 : level === 2 ? styles.replyHeading2 : styles.replyHeading3,
+      ]
+    }
+
+    return blocks.map((block, index) =>
+      block.type === "code" ? (
+        <View key={`${keyPrefix}-code-${index}`} style={styles.readerCodeBlock}>
+          {block.language ? <Text style={styles.readerCodeLanguage}>{block.language}</Text> : null}
+          <Text style={styles.readerCodeText}>{block.content}</Text>
+        </View>
+      ) : block.type === "heading" ? (
+        <Text key={`${keyPrefix}-heading-${index}`} style={getHeadingStyle(block.level)}>
+          {renderMarkdownInline(block.content, index)}
+        </Text>
+      ) : (
+        <Text key={`${keyPrefix}-text-${index}`} style={paragraphStyle}>
+          {renderMarkdownInline(block.content, index)}
+        </Text>
+      ),
+    )
+  }
 
   const toggleServerMenu = useCallback(() => {
     void Haptics.selectionAsync().catch(() => {})
@@ -2757,7 +2953,9 @@ export default function DictationScreen() {
                 style={({ pressed }) => [styles.headerSplitLeft, pressed && styles.clearButtonPressed]}
               >
                 <View style={styles.headerServerLabel}>
-                  <View style={[styles.serverStatusDot, headerDotStyle]} />
+                  <View style={styles.headerStatusIconWrap}>
+                    <View style={[styles.serverStatusDot, headerDotStyle]} />
+                  </View>
                   <Text
                     style={[styles.workspaceHeaderText, styles.headerServerText]}
                     numberOfLines={1}
@@ -2789,7 +2987,9 @@ export default function DictationScreen() {
               style={({ pressed }) => [styles.statusBarTapArea, pressed && styles.clearButtonPressed]}
             >
               <View style={styles.headerServerLabel}>
-                <View style={[styles.serverStatusDot, headerDotStyle]} />
+                <View style={styles.headerStatusIconWrap}>
+                  <View style={[styles.serverStatusDot, headerDotStyle]} />
+                </View>
                 <Text style={styles.workspaceHeaderText}>{headerTitle}</Text>
               </View>
             </Pressable>
@@ -2999,7 +3199,7 @@ export default function DictationScreen() {
       </View>
 
       {/* Transcription area */}
-      <View style={styles.transcriptionArea}>
+      <View style={styles.transcriptionArea} onLayout={handleTranscriptionAreaLayout}>
         {hasPendingPermission && activePermissionCard ? (
           <View style={[styles.splitCard, styles.permissionCard]}>
             <View style={styles.permissionHeaderRow}>
@@ -3084,144 +3284,172 @@ export default function DictationScreen() {
               </View>
             </View>
           </View>
-        ) : readerModeVisible ? (
-          <Animated.View style={[styles.splitCard, styles.readerCard, animatedReaderExpandStyle]}>
-            <View style={styles.readerHeaderRow}>
-              <View style={styles.agentStateTitleWrap}>
-                <View style={styles.agentStateIconWrap}>
-                  {agentStateIcon === "loading" ? (
-                    <ActivityIndicator size="small" color="#91A0C0" />
-                  ) : (
-                    <SymbolView
-                      name={{ ios: "checkmark.circle.fill", android: "check_circle", web: "check_circle" }}
-                      size={16}
-                      tintColor="#91C29D"
-                    />
-                  )}
-                </View>
-                <Text style={styles.replyCardLabel}>Agent</Text>
-              </View>
-              <Pressable onPress={handleCloseReaderMode} hitSlop={8}>
-                <Text style={styles.agentStateClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView style={styles.readerScroll} contentContainerStyle={styles.readerContent}>
-              {readerBlocks.map((block, index) =>
-                block.type === "code" ? (
-                  <View key={`reader-code-${index}`} style={styles.readerCodeBlock}>
-                    {block.language ? <Text style={styles.readerCodeLanguage}>{block.language}</Text> : null}
-                    <Text style={styles.readerCodeText}>{block.content}</Text>
-                  </View>
-                ) : (
-                  <Text key={`reader-text-${index}`} style={styles.readerParagraph}>
-                    {parseReaderInlineSegments(block.content).map((segment, segmentIndex) =>
-                      segment.type === "inline_code" ? (
-                        <Text key={`reader-inline-${index}-${segmentIndex}`} style={styles.readerInlineCode}>
-                          {segment.content}
-                        </Text>
-                      ) : (
-                        <Text key={`reader-copy-${index}-${segmentIndex}`}>{segment.content}</Text>
-                      ),
-                    )}
-                  </Text>
-                ),
-              )}
-            </ScrollView>
-          </Animated.View>
         ) : shouldShowAgentStateCard ? (
-          <View style={styles.splitCardStack}>
-            <View style={[styles.splitCard, styles.replyCard]}>
-              <View style={styles.agentStateHeaderRow}>
-                <View style={styles.agentStateTitleWrap}>
-                  <View style={styles.agentStateIconWrap}>
-                    {agentStateIcon === "loading" ? (
-                      <ActivityIndicator size="small" color="#91A0C0" />
-                    ) : (
-                      <SymbolView
-                        name={{ ios: "checkmark.circle.fill", android: "check_circle", web: "check_circle" }}
-                        size={16}
-                        tintColor="#91C29D"
-                      />
-                    )}
+          <>
+            <View style={styles.splitCardStack} pointerEvents={readerModeRendered ? "none" : "auto"}>
+              <View style={[styles.splitCard, styles.replyCard]} onLayout={handleAgentStateCardLayout}>
+                <View style={styles.agentStateHeaderRow}>
+                  <View style={styles.agentStateTitleWrap}>
+                    <View style={styles.agentStateIconWrap}>
+                      {agentStateIcon === "loading" ? (
+                        <ActivityIndicator size="small" color="#91A0C0" />
+                      ) : (
+                        <SymbolView
+                          name={{ ios: "checkmark.circle.fill", android: "check_circle", web: "check_circle" }}
+                          size={16}
+                          tintColor={AGENT_SUCCESS_GREEN}
+                        />
+                      )}
+                    </View>
+                    <Text style={styles.replyCardLabel}>Agent</Text>
                   </View>
-                  <Text style={styles.replyCardLabel}>Agent</Text>
-                </View>
-                <View style={styles.agentStateActions}>
-                  {hasAssistantResponse ? (
-                    <Pressable onPress={handleOpenReaderMode} hitSlop={8}>
-                      <Text style={styles.agentStateReader}>Reader</Text>
+                  <Animated.View
+                    style={[
+                      styles.agentStateActions,
+                      !hasAssistantResponse && styles.agentStateActionsSingle,
+                      animatedAgentStateActionsStyle,
+                    ]}
+                  >
+                    {hasAssistantResponse ? (
+                      <Pressable
+                        onPress={handleOpenReaderMode}
+                        hitSlop={8}
+                        accessibilityLabel="Open Reader"
+                        style={styles.agentStateActionButton}
+                      >
+                        <SymbolView
+                          name={READER_OPEN_SYMBOL}
+                          size={16}
+                          tintColor="#8FA4CC"
+                          style={styles.readerToggleSymbol}
+                        />
+                      </Pressable>
+                    ) : null}
+                    <Pressable onPress={handleHideAgentState} hitSlop={8} style={styles.agentStateActionButton}>
+                      <Text style={styles.agentStateClose}>✕</Text>
                     </Pressable>
-                  ) : null}
-                  <Pressable onPress={handleHideAgentState} hitSlop={8}>
-                    <Text style={styles.agentStateClose}>✕</Text>
+                  </Animated.View>
+                </View>
+                <ScrollView style={styles.replyScroll} contentContainerStyle={styles.replyContent}>
+                  {renderMarkdownBlocks(agentStateBlocks, "reply")}
+                </ScrollView>
+              </View>
+
+              <View style={styles.transcriptionPanel}>
+                <View style={styles.transcriptionTopActions} pointerEvents="box-none">
+                  <Pressable
+                    onPress={handleOpenWhisperSettings}
+                    style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                    hitSlop={8}
+                  >
+                    <SymbolView
+                      name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
+                      size={18}
+                      weight="semibold"
+                      tintColor="#B8BDC9"
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={handleClearTranscript}
+                    style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
+                    hitSlop={8}
+                  >
+                    <Animated.Text style={[styles.clearIcon, animatedClearIconStyle]}>↻</Animated.Text>
                   </Pressable>
                 </View>
-              </View>
-              <ScrollView style={styles.replyScroll} contentContainerStyle={styles.replyContent}>
-                <Text style={styles.replyText}>{agentStateText}</Text>
-              </ScrollView>
-            </View>
 
-            <View style={styles.transcriptionPanel}>
-              <View style={styles.transcriptionTopActions} pointerEvents="box-none">
-                <Pressable
-                  onPress={handleOpenWhisperSettings}
-                  style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
-                  hitSlop={8}
-                >
-                  <SymbolView
-                    name={{ ios: "gearshape.fill", android: "settings", web: "settings" }}
-                    size={18}
-                    weight="semibold"
-                    tintColor="#B8BDC9"
-                  />
-                </Pressable>
-                <Pressable
-                  onPress={handleClearTranscript}
-                  style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}
-                  hitSlop={8}
-                >
-                  <Animated.Text style={[styles.clearIcon, animatedClearIconStyle]}>↻</Animated.Text>
-                </Pressable>
-              </View>
-
-              {whisperError ? (
-                <View style={styles.modelErrorBadge}>
-                  <Text style={styles.modelErrorText}>{whisperError}</Text>
-                </View>
-              ) : null}
-
-              <ScrollView
-                ref={scrollViewRef}
-                style={styles.transcriptionScroll}
-                contentContainerStyle={styles.transcriptionContent}
-                onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-              >
-                <Animated.View style={animatedTranscriptSendStyle}>
-                  {displayedTranscript ? (
-                    <Text style={styles.transcriptionText}>{displayedTranscript}</Text>
-                  ) : isSending ? null : (
-                    <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
-                  )}
-                </Animated.View>
-              </ScrollView>
-
-              <Animated.View
-                style={[styles.waveformBoxesRow, animatedWaveformRowStyle]}
-                pointerEvents="none"
-                onLayout={handleWaveformLayout}
-              >
-                {Array.from({ length: WAVEFORM_ROWS }).map((_, row) => (
-                  <View key={`row-${row}`} style={styles.waveformGridRow}>
-                    {waveformLevels.map((_, col) => (
-                      <View key={`cell-${row}-${col}`} style={[styles.waveformBox, getWaveformCellStyle(row, col)]} />
-                    ))}
+                {whisperError ? (
+                  <View style={styles.modelErrorBadge}>
+                    <Text style={styles.modelErrorText}>{whisperError}</Text>
                   </View>
-                ))}
-              </Animated.View>
+                ) : null}
+
+                <ScrollView
+                  ref={scrollViewRef}
+                  style={styles.transcriptionScroll}
+                  contentContainerStyle={styles.transcriptionContent}
+                  onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                >
+                  <Animated.View style={animatedTranscriptSendStyle}>
+                    {displayedTranscript ? (
+                      <Text style={styles.transcriptionText}>{displayedTranscript}</Text>
+                    ) : isSending ? null : (
+                      <Text style={styles.placeholderText}>Your transcription will appear here…</Text>
+                    )}
+                  </Animated.View>
+                </ScrollView>
+
+                <Animated.View
+                  style={[styles.waveformBoxesRow, animatedWaveformRowStyle]}
+                  pointerEvents="none"
+                  onLayout={handleWaveformLayout}
+                >
+                  {Array.from({ length: WAVEFORM_ROWS }).map((_, row) => (
+                    <View key={`row-${row}`} style={styles.waveformGridRow}>
+                      {waveformLevels.map((_, col) => (
+                        <View key={`cell-${row}-${col}`} style={[styles.waveformBox, getWaveformCellStyle(row, col)]} />
+                      ))}
+                    </View>
+                  ))}
+                </Animated.View>
+              </View>
             </View>
-          </View>
+
+            {readerModeVisible ? (
+              <Animated.View
+                pointerEvents={readerModeRendered ? "auto" : "none"}
+                style={[styles.splitCard, styles.readerCard, styles.readerOverlayCard, animatedReaderExpandStyle]}
+              >
+                <View style={styles.readerHeaderRow}>
+                  <View style={styles.agentStateTitleWrap}>
+                    <View style={styles.agentStateIconWrap}>
+                      {agentStateIcon === "loading" ? (
+                        <ActivityIndicator size="small" color="#91A0C0" />
+                      ) : (
+                        <SymbolView
+                          name={{ ios: "checkmark.circle.fill", android: "check_circle", web: "check_circle" }}
+                          size={16}
+                          tintColor={AGENT_SUCCESS_GREEN}
+                        />
+                      )}
+                    </View>
+                    <Text style={styles.replyCardLabel}>Agent</Text>
+                  </View>
+                  <View style={styles.readerActionRail}>
+                    <Animated.View style={[styles.readerToggleFloatingAction, animatedReaderToggleTravelStyle]}>
+                      <Pressable
+                        onPress={handleCloseReaderMode}
+                        hitSlop={8}
+                        accessibilityLabel="Close Reader"
+                        style={styles.agentStateActionButton}
+                      >
+                        <Animated.View style={[styles.readerToggleIconLayer, animatedReaderToggleOpenIconStyle]}>
+                          <SymbolView
+                            name={READER_OPEN_SYMBOL}
+                            size={16}
+                            tintColor="#8FA4CC"
+                            style={styles.readerToggleSymbol}
+                          />
+                        </Animated.View>
+                        <Animated.View style={[styles.readerToggleIconLayer, animatedReaderToggleCloseIconStyle]}>
+                          <SymbolView
+                            name={READER_CLOSE_SYMBOL}
+                            size={16}
+                            tintColor="#8FA4CC"
+                            style={styles.readerToggleSymbol}
+                          />
+                        </Animated.View>
+                      </Pressable>
+                    </Animated.View>
+                  </View>
+                </View>
+
+                <ScrollView style={styles.readerScroll} contentContainerStyle={styles.readerContent}>
+                  {renderMarkdownBlocks(readerBlocks, "reader")}
+                </ScrollView>
+              </Animated.View>
+            ) : null}
+          </>
         ) : (
           <View style={styles.transcriptionPanel}>
             <View style={styles.transcriptionTopActions} pointerEvents="box-none">
@@ -4023,7 +4251,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   serverStatusActive: {
-    backgroundColor: "#4CC26A",
+    backgroundColor: AGENT_SUCCESS_GREEN,
   },
   serverStatusChecking: {
     backgroundColor: "#D2A542",
@@ -4119,7 +4347,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#4CAF50",
+    backgroundColor: AGENT_SUCCESS_GREEN,
   },
   recordingDot: {
     width: 8,
@@ -4254,6 +4482,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: "#D4D7DE",
+    backgroundColor: "#17181B",
+    borderRadius: 8,
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
   permissionFooter: {
     gap: 10,
@@ -4332,7 +4565,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   readerCard: {
-    paddingTop: 14,
+    paddingTop: 16,
+  },
+  readerOverlayCard: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
   },
   readerHeaderRow: {
     flexDirection: "row",
@@ -4355,22 +4595,50 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     lineHeight: 32,
   },
-  readerInlineCode: {
-    color: "#F9E5C8",
-    backgroundColor: "#262321",
-    borderWidth: 1,
-    borderColor: "#3B332D",
-    borderRadius: 6,
-    paddingHorizontal: 5,
+  readerHeading: {
+    color: "#F7F9FF",
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  readerHeading1: {
+    fontSize: 29,
+    lineHeight: 38,
+  },
+  readerHeading2: {
+    fontSize: 25,
+    lineHeight: 34,
+  },
+  readerHeading3: {
     fontSize: 22,
-    lineHeight: 32,
+    lineHeight: 30,
+  },
+  markdownItalic: {
+    fontStyle: "italic",
+  },
+  markdownBold: {
+    fontWeight: "800",
+  },
+  markdownBoldItalic: {
+    fontStyle: "italic",
+    fontWeight: "800",
+  },
+  readerInlineCode: {
+    color: "#E7EBF5",
+    backgroundColor: "#17181B",
+    borderWidth: 1,
+    borderColor: "#292A2E",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontSize: 18,
+    lineHeight: 26,
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" }),
   },
   readerCodeBlock: {
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#2D2F35",
-    backgroundColor: "#161A1E",
+    borderColor: "#292A2E",
+    backgroundColor: "#17181B",
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 8,
@@ -4384,8 +4652,8 @@ const styles = StyleSheet.create({
   },
   readerCodeText: {
     color: "#DDE6F7",
-    fontSize: 22,
-    lineHeight: 32,
+    fontSize: 18,
+    lineHeight: 28,
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" }),
   },
   agentStateHeaderRow: {
@@ -4406,16 +4674,61 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerStatusIconWrap: {
+    width: 16,
+    height: 16,
+    justifyContent: "center",
+    paddingLeft: 5,
+  },
   agentStateActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    justifyContent: "flex-end",
+    width: READER_ACTION_RAIL_WIDTH,
+    gap: READER_ACTION_GAP,
+  },
+  agentStateActionsSingle: {
+    width: READER_ACTION_SIZE,
+    gap: 0,
+  },
+  agentStateActionButton: {
+    width: READER_ACTION_SIZE,
+    height: READER_ACTION_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
   },
   agentStateReader: {
     color: "#8FA4CC",
     fontSize: 13,
     fontWeight: "700",
     letterSpacing: 0.2,
+  },
+  readerActionRail: {
+    width: READER_ACTION_RAIL_WIDTH,
+    height: READER_ACTION_SIZE,
+    position: "relative",
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  readerToggleFloatingAction: {
+    position: "absolute",
+    right: 0,
+    width: READER_ACTION_SIZE,
+    height: READER_ACTION_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerToggleIconLayer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerToggleSymbol: {
+    transform: [{ rotate: "-90deg" }],
   },
   agentStateClose: {
     color: "#8D97AB",
@@ -4430,12 +4743,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 18,
     flexGrow: 1,
+    gap: 14,
   },
   replyText: {
     fontSize: 22,
     fontWeight: "500",
     lineHeight: 32,
     color: "#F4F7FF",
+  },
+  replyHeading: {
+    color: "#F7F9FF",
+    fontWeight: "800",
+    letterSpacing: -0.2,
+  },
+  replyHeading1: {
+    fontSize: 27,
+    lineHeight: 36,
+  },
+  replyHeading2: {
+    fontSize: 24,
+    lineHeight: 32,
+  },
+  replyHeading3: {
+    fontSize: 21,
+    lineHeight: 29,
   },
   transcriptionScroll: {
     flex: 1,
@@ -4842,7 +5173,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#6F778A",
   },
   pairSelectDotOnline: {
-    backgroundColor: "#5CB76D",
+    backgroundColor: AGENT_SUCCESS_GREEN,
   },
   pairSelectDotOffline: {
     backgroundColor: "#E35B5B",
