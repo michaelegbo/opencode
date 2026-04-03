@@ -14,6 +14,7 @@ import {
   onMount,
   untrack,
 } from "solid-js"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/context/local"
@@ -329,10 +330,9 @@ export default function Page() {
   const { params, sessionKey, tabs, view } = useSessionLayout()
 
   createEffect(() => {
-    if (!untrack(() => prompt.ready())) return
-    prompt.ready()
+    if (!prompt.ready()) return
     untrack(() => {
-      if (params.id || !prompt.ready()) return
+      if (params.id) return
       const text = searchParams.prompt
       if (!text) return
       prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
@@ -347,6 +347,7 @@ export default function Page() {
     scroll: {
       overflow: false,
       bottom: true,
+      jump: false,
     },
   })
 
@@ -1046,6 +1047,9 @@ export default function Page() {
         onLineCommentUpdate={updateCommentInContext}
         onLineCommentDelete={removeCommentFromContext}
         lineCommentActions={reviewCommentActions()}
+        commentMentions={{
+          items: file.searchFilesAndDirectories,
+        }}
         comments={comments.all()}
         focusedComment={comments.focus()}
         onFocusedCommentChange={comments.setFocus}
@@ -1244,13 +1248,17 @@ export default function Page() {
   let scrollStateTarget: HTMLDivElement | undefined
   let fillFrame: number | undefined
 
+  const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
+
   const updateScrollState = (el: HTMLDivElement) => {
     const max = el.scrollHeight - el.clientHeight
+    const distance = max - el.scrollTop
     const overflow = max > 1
-    const bottom = !overflow || el.scrollTop >= max - 2
+    const bottom = !overflow || distance <= 2
+    const jump = overflow && distance > jumpThreshold(el)
 
-    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom) return
-    setUi("scroll", { overflow, bottom })
+    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
+    setUi("scroll", { overflow, bottom, jump })
   }
 
   const scheduleScrollState = (el: HTMLDivElement) => {
@@ -1685,11 +1693,10 @@ export default function Page() {
   )
 
   onMount(() => {
-    document.addEventListener("keydown", handleKeyDown)
+    makeEventListener(document, "keydown", handleKeyDown)
   })
 
   onCleanup(() => {
-    document.removeEventListener("keydown", handleKeyDown)
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
     if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)
     if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
