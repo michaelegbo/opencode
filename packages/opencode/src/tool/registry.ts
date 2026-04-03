@@ -33,6 +33,7 @@ import { Effect, Layer, ServiceMap } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { Env } from "../env"
+import { Agent as AgentSvc } from "../agent/agent"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
 import { LSP } from "../lsp"
@@ -68,6 +69,7 @@ export namespace ToolRegistry {
     | Plugin.Service
     | Question.Service
     | Todo.Service
+    | AgentSvc.Service
     | LSP.Service
     | FileTime.Service
     | Instruction.Service
@@ -237,6 +239,7 @@ export namespace ToolRegistry {
       layer.pipe(
         Layer.provide(Config.defaultLayer),
         Layer.provide(Plugin.defaultLayer),
+        Layer.provide(AgentSvc.defaultLayer),
         Layer.provide(Question.defaultLayer),
         Layer.provide(Todo.defaultLayer),
         Layer.provide(LSP.defaultLayer),
