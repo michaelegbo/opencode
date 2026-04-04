@@ -8,6 +8,8 @@ import { Instance } from "../../project/instance"
 import { Project } from "../../project/project"
 import { MCP } from "../../mcp"
 import { Session } from "../../session"
+import { Config } from "../../config/config"
+import { ConsoleState } from "../../config/console-state"
 import { zodToJsonSchema } from "zod-to-json-schema"
 import { errors } from "../error"
 import { lazy } from "../../util/lazy"
@@ -15,6 +17,27 @@ import { WorkspaceRoutes } from "./workspace"
 
 export const ExperimentalRoutes = lazy(() =>
   new Hono()
+    .get(
+      "/console",
+      describeRoute({
+        summary: "Get active Console provider metadata",
+        description: "Get the active Console org name and the set of provider IDs managed by that Console org.",
+        operationId: "experimental.console.get",
+        responses: {
+          200: {
+            description: "Active Console provider metadata",
+            content: {
+              "application/json": {
+                schema: resolver(ConsoleState),
+              },
+            },
+          },
+        },
+      }),
+      async (c) => {
+        return c.json(await Config.getConsoleState())
+      },
+    )
     .get(
       "/tool/ids",
       describeRoute({
