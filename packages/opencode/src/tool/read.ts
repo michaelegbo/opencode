@@ -1,5 +1,5 @@
 import z from "zod"
-import { Effect } from "effect"
+import { Effect, Scope } from "effect"
 import { createReadStream } from "fs"
 import { open } from "fs/promises"
 import * as path from "path"
@@ -32,6 +32,7 @@ export const ReadTool = Tool.defineEffect(
     const instruction = yield* Instruction.Service
     const lsp = yield* LSP.Service
     const time = yield* FileTime.Service
+    const scope = yield* Scope.Scope
 
     const miss = Effect.fn("ReadTool.miss")(function* (filepath: string) {
       const dir = path.dirname(filepath)
@@ -77,9 +78,7 @@ export const ReadTool = Tool.defineEffect(
     })
 
     const warm = Effect.fn("ReadTool.warm")(function* (filepath: string, sessionID: Tool.Context["sessionID"]) {
-      yield* Effect.sync(() => {
-        void Effect.runFork(lsp.touchFile(filepath, false))
-      })
+      yield* lsp.touchFile(filepath, false).pipe(Effect.ignore, Effect.forkIn(scope))
       yield* time.read(sessionID, filepath)
     })
 
