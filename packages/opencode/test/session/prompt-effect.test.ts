@@ -1,5 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { expect, spyOn } from "bun:test"
+import { expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import z from "zod"
@@ -13,7 +13,6 @@ import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import { Provider as ProviderSvc } from "../../src/provider/provider"
-import type { Provider } from "../../src/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
@@ -626,7 +625,7 @@ it.live(
   "cancel finalizes subtask tool state",
   () =>
     provideTmpdirInstance(
-      (dir) =>
+      () =>
         Effect.gen(function* () {
           const ready = defer<void>()
           const aborted = defer<void>()
@@ -642,6 +641,13 @@ it.live(
               command: z.string().optional(),
             }),
             execute: async (_args, ctx) => {
+              ctx.metadata({
+                title: "inspect bug",
+                metadata: {
+                  sessionId: SessionID.make("task"),
+                  model: ref,
+                },
+              })
               ready.resolve()
               ctx.abort.addEventListener("abort", () => aborted.resolve(), { once: true })
               await new Promise<void>(() => {})
@@ -674,11 +680,19 @@ it.live(
           expect(taskMsg?.info.role).toBe("assistant")
           if (!taskMsg || taskMsg.info.role !== "assistant") return
 
-          const tool = toolPart(taskMsg.parts)
-          expect(tool?.type).toBe("tool")
+          const tool = errorTool(taskMsg.parts)
           if (!tool) return
 
-          expect(tool.state.status).not.toBe("running")
+          expect(tool.state.error).toBe("Cancelled")
+          expect(tool.state.input).toEqual({
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+          })
+          expect(tool.state.metadata).toEqual({
+            sessionId: SessionID.make("task"),
+            model: ref,
+          })
           expect(taskMsg.info.time.completed).toBeDefined()
           expect(taskMsg.info.finish).toBeDefined()
         }),
