@@ -10,7 +10,7 @@ import { LSP } from "../lsp"
 import { FileTime } from "../file/time"
 import DESCRIPTION from "./read.txt"
 import { Instance } from "../project/instance"
-import { assertExternalDirectory } from "./external-directory"
+import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 
 const DEFAULT_READ_LIMIT = 2000
@@ -96,14 +96,17 @@ export const ReadTool = Tool.defineEffect(
       }
       const title = path.relative(Instance.worktree, filepath)
 
-      const stat = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
-
-      yield* Effect.promise(() =>
-        assertExternalDirectory(ctx, filepath, {
-          bypass: Boolean(ctx.extra?.["bypassCwdCheck"]),
-          kind: stat?.type === "Directory" ? "directory" : "file",
-        }),
+      const stat = yield* fs.stat(filepath).pipe(
+        Effect.catchIf(
+          (err) => "reason" in err && err.reason._tag === "NotFound",
+          () => Effect.succeed(undefined),
+        ),
       )
+
+      yield* assertExternalDirectoryEffect(ctx, filepath, {
+        bypass: Boolean(ctx.extra?.["bypassCwdCheck"]),
+        kind: stat?.type === "Directory" ? "directory" : "file",
+      })
 
       yield* Effect.promise(() =>
         ctx.ask({
@@ -218,15 +221,7 @@ export const ReadTool = Tool.defineEffect(
       description: DESCRIPTION,
       parameters,
       async execute(params: z.infer<typeof parameters>, ctx) {
-        return Effect.runPromise(
-          run(params, ctx).pipe(
-            Effect.catch((err) =>
-              Effect.sync(() => {
-                throw err
-              }),
-            ),
-          ),
-        )
+        return Effect.runPromise(run(params, ctx).pipe(Effect.orDie))
       },
     }
   }),
