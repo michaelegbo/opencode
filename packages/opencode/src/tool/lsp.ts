@@ -36,7 +36,12 @@ export const LspTool = Tool.define("lsp", {
       permission: "lsp",
       patterns: ["*"],
       always: ["*"],
-      metadata: {},
+      metadata: {
+        operation: args.operation,
+        filePath: file,
+        line: args.line,
+        character: args.character,
+      },
     })
     const uri = pathToFileURL(file).href
     const position = {
