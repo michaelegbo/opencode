@@ -230,11 +230,13 @@ export namespace Skill {
     }),
   )
 
-  export const defaultLayer = layer.pipe(
-    Layer.provide(Discovery.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(Bus.layer),
-    Layer.provide(AppFileSystem.defaultLayer),
+  export const defaultLayer = Layer.suspend(() =>
+    layer.pipe(
+      Layer.provide(Discovery.defaultLayer),
+      Layer.provide(Config.defaultLayer),
+      Layer.provide(Bus.layer),
+      Layer.provide(AppFileSystem.defaultLayer),
+    ),
   )
 
   export function fmt(list: Info[], opts: { verbose: boolean }) {

@@ -681,7 +681,9 @@ export namespace Session {
     }),
   )
 
-  export const defaultLayer = layer.pipe(Layer.provide(Bus.layer), Layer.provide(Config.defaultLayer))
+  export const defaultLayer = Layer.suspend(() =>
+    layer.pipe(Layer.provide(Bus.layer), Layer.provide(Config.defaultLayer)),
+  )
 
   const { runPromise } = makeRuntime(Service, defaultLayer)
 

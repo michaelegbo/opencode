@@ -336,13 +336,15 @@ export namespace ShareNext {
     }),
   )
 
-  export const defaultLayer = layer.pipe(
-    Layer.provide(Bus.layer),
-    Layer.provide(Account.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(FetchHttpClient.layer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Session.defaultLayer),
+  export const defaultLayer = Layer.suspend(() =>
+    layer.pipe(
+      Layer.provide(Bus.layer),
+      Layer.provide(Account.defaultLayer),
+      Layer.provide(Config.defaultLayer),
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Provider.defaultLayer),
+      Layer.provide(Session.defaultLayer),
+    ),
   )
 
   const { runPromise } = makeRuntime(Service, defaultLayer)

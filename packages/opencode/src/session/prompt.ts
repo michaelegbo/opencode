@@ -1709,28 +1709,26 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     }),
   )
 
-  const defaultLayer = Layer.unwrap(
-    Effect.sync(() =>
-      layer.pipe(
-        Layer.provide(SessionStatus.layer),
-        Layer.provide(SessionCompaction.defaultLayer),
-        Layer.provide(SessionProcessor.defaultLayer),
-        Layer.provide(Command.defaultLayer),
-        Layer.provide(Permission.defaultLayer),
-        Layer.provide(MCP.defaultLayer),
-        Layer.provide(LSP.defaultLayer),
-        Layer.provide(FileTime.defaultLayer),
-        Layer.provide(ToolRegistry.defaultLayer),
-        Layer.provide(Truncate.layer),
-        Layer.provide(Provider.defaultLayer),
-        Layer.provide(Instruction.defaultLayer),
-        Layer.provide(AppFileSystem.defaultLayer),
-        Layer.provide(Plugin.defaultLayer),
-        Layer.provide(Session.defaultLayer),
-        Layer.provide(Agent.defaultLayer),
-        Layer.provide(Bus.layer),
-        Layer.provide(CrossSpawnSpawner.defaultLayer),
-      ),
+  const defaultLayer = Layer.suspend(() =>
+    layer.pipe(
+      Layer.provide(SessionStatus.layer),
+      Layer.provide(SessionCompaction.defaultLayer),
+      Layer.provide(SessionProcessor.defaultLayer),
+      Layer.provide(Command.defaultLayer),
+      Layer.provide(Permission.defaultLayer),
+      Layer.provide(MCP.defaultLayer),
+      Layer.provide(LSP.defaultLayer),
+      Layer.provide(FileTime.defaultLayer),
+      Layer.provide(ToolRegistry.defaultLayer),
+      Layer.provide(Truncate.layer),
+      Layer.provide(Provider.defaultLayer),
+      Layer.provide(Instruction.defaultLayer),
+      Layer.provide(AppFileSystem.defaultLayer),
+      Layer.provide(Plugin.defaultLayer),
+      Layer.provide(Session.defaultLayer),
+      Layer.provide(Agent.defaultLayer),
+      Layer.provide(Bus.layer),
+      Layer.provide(CrossSpawnSpawner.defaultLayer),
     ),
   )
   const { runPromise } = makeRuntime(Service, defaultLayer)

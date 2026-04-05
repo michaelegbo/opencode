@@ -181,10 +181,8 @@ export namespace Command {
     }),
   )
 
-  export const defaultLayer = layer.pipe(
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(Skill.defaultLayer),
+  export const defaultLayer = Layer.suspend(() =>
+    layer.pipe(Layer.provide(Config.defaultLayer), Layer.provide(MCP.defaultLayer), Layer.provide(Skill.defaultLayer)),
   )
 
   const { runPromise } = makeRuntime(Service, defaultLayer)
