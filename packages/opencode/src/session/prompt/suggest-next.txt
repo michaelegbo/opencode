@@ -4,7 +4,7 @@ Goal:
 - Suggest a useful next step that keeps momentum.
 
 Rules:
-- Output exactly one line.
+- Output exactly one line, 110 characters max. Be concise.
 - Write as the user speaking to the assistant (for example: "Can you...", "Help me...", "Let's...").
 - Match the user's tone and language; keep it natural and human.
 - Prefer a concrete action over a broad question.

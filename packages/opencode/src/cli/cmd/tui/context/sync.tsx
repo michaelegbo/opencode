@@ -54,9 +54,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       session_status: {
         [sessionID: string]: SessionStatus
       }
-      suggest_debug: {
-        [sessionID: string]: { state: string; detail?: string; time: number }
-      }
       session_diff: {
         [sessionID: string]: Snapshot.FileDiff[]
       }
@@ -98,7 +95,6 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       provider_default: {},
       session: [],
       session_status: {},
-      suggest_debug: {},
       session_diff: {},
       todo: {},
       message: {},
@@ -237,16 +233,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
 
         case "session.status": {
-          setStore("session_status", event.properties.sessionID, event.properties.status)
-          break
-        }
-
-        case "session.suggest_debug": {
-          setStore("suggest_debug", event.properties.sessionID, {
-            state: event.properties.state,
-            detail: event.properties.detail,
-            time: Date.now(),
-          })
+          setStore("session_status", event.properties.sessionID, reconcile(event.properties.status))
           break
         }
 

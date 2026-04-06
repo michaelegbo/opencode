@@ -28,23 +28,12 @@ export namespace SessionStatus {
     })
   export type Info = z.infer<typeof Info>
 
-  export const SuggestState = z.enum(["generating", "done", "refused", "error"])
-  export type SuggestState = z.infer<typeof SuggestState>
-
   export const Event = {
     Status: BusEvent.define(
       "session.status",
       z.object({
         sessionID: SessionID.zod,
         status: Info,
-      }),
-    ),
-    SuggestDebug: BusEvent.define(
-      "session.suggest_debug",
-      z.object({
-        sessionID: SessionID.zod,
-        state: SuggestState,
-        detail: z.string().optional(),
       }),
     ),
     // deprecated

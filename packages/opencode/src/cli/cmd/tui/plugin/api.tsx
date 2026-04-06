@@ -173,9 +173,6 @@ function stateApi(sync: ReturnType<typeof useSync>): TuiPluginApi["state"] {
       status(sessionID) {
         return sync.data.session_status[sessionID]
       },
-      suggestDebug(sessionID) {
-        return sync.data.suggest_debug[sessionID]
-      },
       permission(sessionID) {
         return sync.data.permission[sessionID] ?? []
       },
