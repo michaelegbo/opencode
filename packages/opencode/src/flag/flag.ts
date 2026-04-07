@@ -45,7 +45,6 @@ export namespace Flag {
   export const OPENCODE_SERVER_USERNAME = process.env["OPENCODE_SERVER_USERNAME"]
   export const OPENCODE_ENABLE_QUESTION_TOOL = truthy("OPENCODE_ENABLE_QUESTION_TOOL")
   export const OPENCODE_OTLP_BASE_URL = process.env["OPENCODE_OTLP_BASE_URL"]
-  export const OPENCODE_DISABLE_OTLP = truthy("OPENCODE_DISABLE_OTLP")
 
   // Experimental
   export const OPENCODE_EXPERIMENTAL = truthy("OPENCODE_EXPERIMENTAL")

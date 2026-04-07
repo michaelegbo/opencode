@@ -5,9 +5,7 @@ import { Flag } from "@/flag/flag"
 import { CHANNEL, VERSION } from "@/installation/meta"
 
 export namespace Observability {
-  const base = Flag.OPENCODE_DISABLE_OTLP
-    ? undefined
-    : (Flag.OPENCODE_OTLP_BASE_URL ?? (CHANNEL === "local" ? "http://127.0.0.1:27686" : undefined))
+  const base = Flag.OPENCODE_OTLP_BASE_URL?.trim() || undefined
 
   export const enabled = !!base
 
