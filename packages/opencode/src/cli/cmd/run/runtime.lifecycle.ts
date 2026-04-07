@@ -60,7 +60,7 @@ export type LifecycleInput = {
 
 export type Lifecycle = {
   footer: FooterApi
-  close(input: { showExit: boolean }): Promise<void>
+  close(input: { showExit: boolean; sessionTitle?: string }): Promise<void>
 }
 
 // Gracefully tears down the renderer. Order matters: switch external output
@@ -91,6 +91,14 @@ function splashTitle(title: string | undefined, history: string[]): string | und
 
   const next = history.find((item) => item.trim().length > 0)
   return next ?? title
+}
+
+function splashSession(title: string | undefined, history: string[]): boolean {
+  if (title && !DEFAULT_TITLE.test(title)) {
+    return true
+  }
+
+  return !!history.find((item) => item.trim().length > 0)
 }
 
 function footerLabels(input: Pick<RunInput, "agent" | "model" | "variant">): FooterLabels {
@@ -155,6 +163,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
     entry: false,
     exit: false,
   }
+  const showSession = splashSession(input.sessionTitle, input.history)
   const meta = splashMeta({
     title: splashTitle(input.sessionTitle, input.history),
     session_id: input.sessionID,
@@ -167,6 +176,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
       ...meta,
       theme: theme.entry,
       background: theme.background,
+      showSession,
     }),
   )
   await renderer.idle().catch(() => {})
@@ -198,7 +208,7 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
   process.on("SIGINT", sigint)
 
   let closed = false
-  const close = async (next: { showExit: boolean }) => {
+  const close = async (next: { showExit: boolean; sessionTitle?: string }) => {
     if (closed) {
       return
     }
@@ -214,7 +224,10 @@ export async function createRuntimeLifecycle(input: LifecycleInput): Promise<Lif
           state,
           "exit",
           exitSplash({
-            ...meta,
+            ...splashMeta({
+              title: splashTitle(next.sessionTitle ?? input.sessionTitle, input.history),
+              session_id: input.sessionID,
+            }),
             theme: theme.entry,
             background: theme.background,
           }),

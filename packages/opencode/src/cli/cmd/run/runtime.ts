@@ -232,8 +232,18 @@ async function runInteractiveRuntime(input: RunRuntimeInput): Promise<void> {
       await stream.close()
     }
   } finally {
+    const title = shown
+      ? await ctx.sdk.session
+          .get({
+            sessionID: ctx.sessionID,
+          })
+          .then((x) => x.data?.title)
+          .catch(() => undefined)
+      : undefined
+
     await shell.close({
       showExit: shown,
+      sessionTitle: title,
     })
   }
 }
