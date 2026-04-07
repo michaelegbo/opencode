@@ -35,6 +35,8 @@ type Input = {
   prompt: string
   agent: Agent.Info
   model: Ref
+  abort?: AbortSignal
+  cancel?: (sessionID: SessionID) => Promise<void> | void
   start?: (sessionID: SessionID, model: Ref) => Promise<void> | void
 }
 
@@ -61,15 +63,28 @@ export function output(sessionID: SessionID, text: string) {
 export const run = Effect.fn("Subtask.run")(function* (deps: Deps, input: Input) {
   const cfg = yield* deps.cfg
   const model = input.agent.model ?? input.model
-  const found = input.taskID ? yield* deps.get(input.taskID) : undefined
-  const session = found
-    ? found
-    : yield* deps.create({
-        parentID: input.parentID,
-        title: input.description + ` (@${input.agent.name} subagent)`,
-      })
+  const session = yield* Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      const found = input.taskID ? yield* restore(deps.get(input.taskID)) : undefined
+      const session = found
+        ? found
+        : yield* restore(
+            deps.create({
+              parentID: input.parentID,
+              title: input.description + ` (@${input.agent.name} subagent)`,
+            }),
+          )
 
-  yield* Effect.promise(() => Promise.resolve(input.start?.(session.id, model)))
+      const start = input.start?.(session.id, model)
+      if (start) yield* Effect.promise(() => Promise.resolve(start))
+      return session
+    }),
+  )
+
+  if (input.abort?.aborted) {
+    const cancel = input.cancel?.(session.id)
+    if (cancel) yield* Effect.promise(() => Promise.resolve(cancel))
+  }
 
   const result = yield* deps.prompt({
     sessionID: session.id,

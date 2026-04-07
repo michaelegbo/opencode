@@ -88,6 +88,8 @@ export const TaskTool = Tool.define("task", async (ctx) => {
             description: params.description,
             prompt: params.prompt,
             agent,
+            abort: ctx.abort,
+            cancel: SessionPrompt.cancel,
             model: {
               modelID: msg.info.modelID,
               providerID: msg.info.providerID,
