@@ -33,8 +33,8 @@
     }
   },
   "devDependencies": {
-    "@opentui/core": "0.1.96",
-    "@opentui/solid": "0.1.96",
+    "@opentui/core": "https://pkg.pr.new/anomalyco/opentui/@opentui/core@22d015f",
+    "@opentui/solid": "https://pkg.pr.new/@opentui/solid@22d015f",
     "@tsconfig/node22": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:",
