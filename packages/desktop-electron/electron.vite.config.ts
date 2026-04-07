@@ -43,8 +43,8 @@ export default defineConfig({
         enforce: "post",
         async closeBundle() {
           for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
-            if (l.endsWith(".js")) continue
-            await fs.writeFile(`./out/main/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
+            if (!l.endsWith(".wasm")) continue
+            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
           }
         },
       },

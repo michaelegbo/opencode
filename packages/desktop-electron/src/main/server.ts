@@ -1,5 +1,6 @@
-import { Server, Log } from "virtual:opencode-server"
+import { app } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
+import { getUserShell, loadShellEnv } from "./shell-env"
 import { store } from "./store"
 
 export type WslConfig = { enabled: boolean }
@@ -30,6 +31,8 @@ export function setWslConfig(config: WslConfig) {
 }
 
 export async function spawnLocalServer(hostname: string, port: number, password: string) {
+  prepareServerEnv(password)
+  const { Log, Server } = await import("virtual:opencode-server")
   await Log.init({ level: "WARN" })
   const listener = await Server.listen({
     port,
@@ -52,6 +55,22 @@ export async function spawnLocalServer(hostname: string, port: number, password:
   })()
 
   return { listener, health: { wait } }
+}
+
+function prepareServerEnv(password: string) {
+  const shell = process.platform === "win32" ? null : getUserShell()
+  const shellEnv = shell ? (loadShellEnv(shell) ?? {}) : {}
+  const env = {
+    ...process.env,
+    ...shellEnv,
+    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
+    OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+    OPENCODE_CLIENT: "desktop",
+    OPENCODE_SERVER_USERNAME: "opencode",
+    OPENCODE_SERVER_PASSWORD: password,
+    XDG_STATE_HOME: app.getPath("userData"),
+  }
+  Object.assign(process.env, env)
 }
 
 export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
