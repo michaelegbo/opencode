@@ -1,0 +1,36 @@
+[data-component="button"][data-button-shortcut] {
+  [data-slot="button-shortcut-label"] {
+    min-width: 0;
+  }
+
+  [data-slot="button-shortcut-key"] {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  [data-slot="button-shortcut-key"] [data-component="keybind"] {
+    box-shadow: none;
+    background: var(--surface-raised-base);
+    color: var(--text-weak);
+    font-family: var(--font-family-sans);
+    font-weight: var(--font-weight-regular);
+  }
+
+  &[data-size="small"] [data-slot="button-shortcut-key"] [data-component="keybind"],
+  &[data-size="normal"] [data-slot="button-shortcut-key"] [data-component="keybind"] {
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: var(--font-size-small);
+    line-height: 18px;
+  }
+
+  &[data-size="large"] [data-slot="button-shortcut-key"] [data-component="keybind"] {
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: var(--font-size-small);
+    line-height: 20px;
+  }
+}
