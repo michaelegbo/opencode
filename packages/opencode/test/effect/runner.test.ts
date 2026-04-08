@@ -423,7 +423,7 @@ describe("Runner", () => {
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) expect(exit.value).toBe("run-result")
       const state = runner.state
-      expect(state._tag).toBe("Idle")
+      if (state._tag !== "Idle") throw new Error("expected idle")
     }),
   )
 
