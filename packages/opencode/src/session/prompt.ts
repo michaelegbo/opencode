@@ -150,6 +150,21 @@ export namespace SessionPrompt {
         yield* runner.cancel
       })
 
+      const bound = (msgs: MessageV2.WithParts[], until?: MessageID) => {
+        if (!until) return msgs
+        const ids = new Set<string>()
+        return msgs.filter((msg) => {
+          if (msg.info.role === "user") {
+            if (msg.info.id > until) return false
+            ids.add(msg.info.id)
+            return true
+          }
+          if (!msg.info.parentID || !ids.has(msg.info.parentID)) return false
+          ids.add(msg.info.id)
+          return true
+        })
+      }
+
       const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
         const ctx = yield* InstanceState.context
         const parts: PromptInput["parts"] = [{ type: "text", text: template }]
@@ -1321,33 +1336,35 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           }
 
           if (input.noReply === true) return message
-          return yield* loop({ sessionID: input.sessionID })
+          const s = yield* InstanceState.get(state)
+          const runner = getRunner(s.runners, input.sessionID)
+          return yield* runner.enqueueRunning(runLoop({ sessionID: input.sessionID, until: message.info.id }))
         },
       )
 
-      const lastAssistant = (sessionID: SessionID) =>
-        Effect.promise(async () => {
-          let latest: MessageV2.WithParts | undefined
-          for await (const item of MessageV2.stream(sessionID)) {
-            latest ??= item
-            if (item.info.role !== "user") return item
-          }
-          if (latest) return latest
-          throw new Error("Impossible")
-        })
+      const lastAssistant = Effect.fn("SessionPrompt.lastAssistant")(function* (sessionID: SessionID, until?: MessageID) {
+        const msgs = bound(yield* MessageV2.filterCompactedEffect(sessionID), until)
+        const item = msgs.findLast((msg) => msg.info.role === "assistant")
+        if (item) return item
+        const latest = msgs.at(-1)
+        if (latest) return latest
+        throw new Error("Impossible")
+      })
 
-      const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
-        function* (sessionID: SessionID) {
+      const runLoop = Effect.fn("SessionPrompt.run")(function* (input: {
+        sessionID: SessionID
+        until?: MessageID
+      }) {
           const ctx = yield* InstanceState.context
           let structured: unknown | undefined
           let step = 0
-          const session = yield* sessions.get(sessionID)
+          const session = yield* sessions.get(input.sessionID)
 
           while (true) {
-            yield* status.set(sessionID, { type: "busy" })
-            log.info("loop", { step, sessionID })
+            yield* status.set(input.sessionID, { type: "busy" })
+            log.info("loop", { step, sessionID: input.sessionID, until: input.until })
 
-            let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+            const msgs = bound(yield* MessageV2.filterCompactedEffect(input.sessionID), input.until)
 
             let lastUser: MessageV2.User | undefined
             let lastAssistant: MessageV2.Assistant | undefined
@@ -1378,7 +1395,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               !hasToolCalls &&
               lastUser.id < lastAssistant.id
             ) {
-              log.info("exiting loop", { sessionID })
+              log.info("exiting loop", { sessionID: input.sessionID, until: input.until })
               break
             }
 
@@ -1391,11 +1408,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 history: msgs,
               }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+            const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, input.sessionID)
             const task = tasks.pop()
 
             if (task?.type === "subtask") {
-              yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+              yield* handleSubtask({ task, model, lastUser, sessionID: input.sessionID, session, msgs })
               continue
             }
 
@@ -1403,7 +1420,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               const result = yield* compaction.process({
                 messages: msgs,
                 parentID: lastUser.id,
-                sessionID,
+                sessionID: input.sessionID,
                 auto: task.auto,
                 overflow: task.overflow,
               })
@@ -1416,7 +1433,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               lastFinished.summary !== true &&
               (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
             ) {
-              yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+              yield* compaction.create({ sessionID: input.sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
               continue
             }
 
@@ -1425,12 +1442,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
               const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
               const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
-              yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+              yield* bus.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
               throw error
             }
             const maxSteps = agent.steps ?? Infinity
             const isLastStep = step >= maxSteps
-            msgs = yield* insertReminders({ messages: msgs, agent, session })
+            const nextMsgs = yield* insertReminders({ messages: msgs, agent, session })
 
             const msg: MessageV2.Assistant = {
               id: MessageID.ascending(),
@@ -1445,18 +1462,18 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               modelID: model.id,
               providerID: model.providerID,
               time: { created: Date.now() },
-              sessionID,
+              sessionID: input.sessionID,
             }
             yield* sessions.updateMessage(msg)
             const handle = yield* processor.create({
               assistantMessage: msg,
-              sessionID,
+              sessionID: input.sessionID,
               model,
             })
 
             const outcome: "break" | "continue" = yield* Effect.onExit(
               Effect.gen(function* () {
-                const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
+                const lastUserMsg = nextMsgs.findLast((m) => m.info.role === "user")
                 const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
 
                 const tools = yield* resolveTools({
@@ -1466,7 +1483,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   tools: lastUser.tools,
                   processor: handle,
                   bypassAgentCheck,
-                  messages: msgs,
+                  messages: nextMsgs,
                 })
 
                 if (lastUser.format?.type === "json_schema") {
@@ -1478,10 +1495,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   })
                 }
 
-                if (step === 1) SessionSummary.summarize({ sessionID, messageID: lastUser.id })
+                if (step === 1) SessionSummary.summarize({ sessionID: input.sessionID, messageID: lastUser.id })
 
                 if (step > 1 && lastFinished) {
-                  for (const m of msgs) {
+                  for (const m of nextMsgs) {
                     if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
                     for (const p of m.parts) {
                       if (p.type !== "text" || p.ignored || p.synthetic) continue
@@ -1498,13 +1515,13 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   }
                 }
 
-                yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+                yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: nextMsgs })
 
                 const [skills, env, instructions, modelMsgs] = yield* Effect.all([
                   Effect.promise(() => SystemPrompt.skills(agent)),
                   Effect.promise(() => SystemPrompt.environment(model)),
                   instruction.system().pipe(Effect.orDie),
-                  Effect.promise(() => MessageV2.toModelMessages(msgs, model)),
+                  Effect.promise(() => MessageV2.toModelMessages(nextMsgs, model)),
                 ])
                 const system = [...env, ...(skills ? [skills] : []), ...instructions]
                 const format = lastUser.format ?? { type: "text" as const }
@@ -1513,7 +1530,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   user: lastUser,
                   agent,
                   permission: session.permission,
-                  sessionID,
+                  sessionID: input.sessionID,
                   parentSessionID: session.parentID,
                   system,
                   messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
@@ -1544,7 +1561,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 if (result === "stop") return "break" as const
                 if (result === "compact") {
                   yield* compaction.create({
-                    sessionID,
+                    sessionID: input.sessionID,
                     agent: lastUser.agent,
                     model: lastUser.model,
                     auto: true,
@@ -1562,8 +1579,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             continue
           }
 
-          yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-          return yield* lastAssistant(sessionID)
+          yield* compaction.prune({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+          return yield* lastAssistant(input.sessionID, input.until)
         },
       )
 
@@ -1572,14 +1589,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       )(function* (input: z.infer<typeof LoopInput>) {
         const s = yield* InstanceState.get(state)
         const runner = getRunner(s.runners, input.sessionID)
-        return yield* runner.ensureRunning(runLoop(input.sessionID))
+        return yield* runner.ensureRunning(runLoop({ sessionID: input.sessionID }))
       })
 
       const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.shell")(
         function* (input: ShellInput) {
           const s = yield* InstanceState.get(state)
           const runner = getRunner(s.runners, input.sessionID)
-          return yield* runner.startShell((signal) => shellImpl(input, signal))
+          return yield* runner.enqueueShell((signal) => shellImpl(input, signal))
         },
       )
 

@@ -19,6 +19,7 @@ const optimisticSeeded: boolean[] = []
 const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
+const sentPrompts: string[] = []
 const syncedDirectories: string[] = []
 
 let params: { id?: string } = {}
@@ -45,7 +46,10 @@ const clientFor = (directory: string) => {
         return { data: undefined }
       },
       prompt: async () => ({ data: undefined }),
-      promptAsync: async () => ({ data: undefined }),
+      promptAsync: async () => {
+        sentPrompts.push(directory)
+        return { data: undefined }
+      },
       command: async () => ({ data: undefined }),
       abort: async () => ({ data: undefined }),
     },
@@ -210,6 +214,7 @@ beforeEach(() => {
   promoted.length = 0
   params = {}
   sentShell.length = 0
+  sentPrompts.length = 0
   syncedDirectories.length = 0
   selected = "/repo/worktree-a"
   variant = undefined
@@ -341,5 +346,63 @@ describe("prompt submit worktree selection", () => {
 
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
     expect(optimisticSeeded).toEqual([true])
+  })
+
+  test("queues followups locally instead of sending them immediately", async () => {
+    params = { id: "session-1" }
+
+    const drafts: Array<{
+      sessionID: string
+      sessionDirectory: string
+      agent: string
+      model: { providerID: string; modelID: string }
+      prompt: Prompt
+    }> = []
+    let submitted = 0
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      shouldQueue: () => true,
+      onQueue: (draft) =>
+        drafts.push({
+          sessionID: draft.sessionID,
+          sessionDirectory: draft.sessionDirectory,
+          agent: draft.agent,
+          model: draft.model,
+          prompt: draft.prompt,
+        }),
+      onSubmit: () => {
+        submitted += 1
+      },
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+
+    expect(drafts).toEqual([
+      {
+        sessionID: "session-1",
+        sessionDirectory: "/repo/main",
+        agent: "agent",
+        model: { providerID: "provider", modelID: "model" },
+        prompt: promptValue,
+      },
+    ])
+    expect(optimistic).toEqual([])
+    expect(sentPrompts).toEqual([])
+    expect(submitted).toBe(0)
   })
 })
