@@ -82,7 +82,7 @@ brew install --cask opencode-desktop
 scoop bucket add extras; scoop install extras/opencode-desktop
 ```
 
-When a session is already running in the web or desktop app, follow-up prompts can stay above the composer instead of being sent immediately. Set `Follow-up behavior` to `Queue` or `Steer` in `Settings > General`. Queued follow-ups can be sent immediately, edited, or deleted. Drag-and-drop reordering is not supported yet.
+When a session is already running in the web or desktop app, follow-up prompts can stay above the composer instead of being sent immediately. Set `Follow-up behavior` to `Queue` or `Steer` in `Settings > General`. Queued follow-ups can be reordered with drag-and-drop, sent immediately, edited, or deleted.
 
 #### Installation Directory
 

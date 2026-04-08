@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { removeFollowup, type FollowupItem } from "./followup-state"
+import { moveFollowup, removeFollowup, type FollowupItem } from "./followup-state"
 
 const item = (id: string): FollowupItem =>
   ({
@@ -19,5 +19,19 @@ describe("removeFollowup", () => {
 
   test("returns an empty list when items are missing", () => {
     expect(removeFollowup(undefined, "a")).toEqual([])
+  })
+})
+
+describe("moveFollowup", () => {
+  test("moves a queued item before another item", () => {
+    expect(moveFollowup([item("a"), item("b"), item("c")], "c", "a").map((entry) => entry.id)).toEqual([
+      "c",
+      "a",
+      "b",
+    ])
+  })
+
+  test("returns the same order when either item is missing", () => {
+    expect(moveFollowup([item("a"), item("b")], "c", "a").map((entry) => entry.id)).toEqual(["a", "b"])
   })
 })

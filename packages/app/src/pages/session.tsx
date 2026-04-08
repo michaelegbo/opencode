@@ -42,7 +42,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
-import { removeFollowup, type FollowupItem } from "@/pages/session/followup-state"
+import { moveFollowup, removeFollowup, type FollowupItem } from "@/pages/session/followup-state"
 import {
   createOpenReviewFile,
   createSessionTabs,
@@ -1714,6 +1714,14 @@ export default function Page() {
     setFollowup("failed", sessionID, (value) => (value === id ? undefined : value))
   }
 
+  const reorderFollowup = (from: string, to: string) => {
+    const sessionID = params.id
+    if (!sessionID) return
+    if (followupBusy(sessionID)) return
+
+    setFollowup("items", sessionID, (items) => moveFollowup(items, from, to))
+  }
+
   const clearFollowupEdit = () => {
     const id = params.id
     if (!id) return
@@ -2019,6 +2027,7 @@ export default function Page() {
                     },
                     onEdit: editFollowup,
                     onDelete: deleteFollowup,
+                    onReorder: reorderFollowup,
                     onEditLoaded: clearFollowupEdit,
                   }
                 : undefined
