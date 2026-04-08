@@ -43,6 +43,13 @@ type Pkg = {
   scripts?: Record<string, string>
 }
 
+type Mgr = "bun" | "npm" | "pnpm" | "yarn"
+
+type Lock = {
+  mgr: Mgr
+  time: number
+}
+
 const join = (dir: string, name: string) => {
   const root = dir.replace(/[\\/]+$/, "")
   if (!root) return name
@@ -103,16 +110,30 @@ const choose = (scripts: Record<string, string>) =>
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)[0]?.key
 
-const manager = (pkg: Pkg, files: { bun: boolean; bunb: boolean; pnpm: boolean; yarn: boolean }) => {
+const score = (mgr: Mgr) => {
+  if (mgr === "npm") return 4
+  if (mgr === "pnpm") return 3
+  if (mgr === "yarn") return 2
+  return 1
+}
+
+const manager = (pkg: Pkg, locks: Lock[]) => {
   const name = pkg.packageManager?.split("@")[0]
   if (name === "bun" || name === "pnpm" || name === "yarn" || name === "npm") return name
-  if (files.bun || files.bunb) return "bun"
-  if (files.pnpm) return "pnpm"
-  if (files.yarn) return "yarn"
+
+  const next = Array.from(
+    locks.reduce((map, item) => {
+      map.set(item.mgr, Math.max(map.get(item.mgr) ?? 0, item.time))
+      return map
+    }, new Map<Mgr, number>()),
+    ([mgr, time]) => ({ mgr, time }),
+  ).sort((a, b) => b.time - a.time || score(b.mgr) - score(a.mgr))[0]?.mgr
+
+  if (next) return next
   return "npm"
 }
 
-const preview = (mgr: "bun" | "npm" | "pnpm" | "yarn", script: string): Cmd => {
+const preview = (mgr: Mgr, script: string): Cmd => {
   if (mgr === "bun") return { label: `bun run ${script}`, cmd: "preview-bun", args: ["run", script] }
   if (mgr === "pnpm") return { label: `pnpm ${script}`, cmd: "preview-pnpm", args: [script] }
   if (mgr === "yarn") return { label: `yarn ${script}`, cmd: "preview-yarn", args: [script] }
@@ -320,11 +341,25 @@ export default function Workbench() {
       return
     }
 
-    const bun = !!(await api()!.stat(join(root(), "bun.lock")).catch(() => null))
-    const bunb = !!(await api()!.stat(join(root(), "bun.lockb")).catch(() => null))
-    const pnpm = !!(await api()!.stat(join(root(), "pnpm-lock.yaml")).catch(() => null))
-    const yarn = !!(await api()!.stat(join(root(), "yarn.lock")).catch(() => null))
-    const mgr = manager(pkg ?? {}, { bun, bunb, pnpm, yarn })
+    const locks = await Promise.all(
+      [
+        { mgr: "bun" as const, path: "bun.lock" },
+        { mgr: "bun" as const, path: "bun.lockb" },
+        { mgr: "pnpm" as const, path: "pnpm-lock.yaml" },
+        { mgr: "yarn" as const, path: "yarn.lock" },
+        { mgr: "npm" as const, path: "package-lock.json" },
+        { mgr: "npm" as const, path: "npm-shrinkwrap.json" },
+      ].map(async (item) => {
+        const next = await api()!.stat(join(root(), item.path)).catch(() => null)
+        if (!next) return
+        return {
+          mgr: item.mgr,
+          time: next.mtime ?? 0,
+        }
+      }),
+    ).then((list) => list.filter((item): item is Lock => !!item))
+
+    const mgr = manager(pkg ?? {}, locks)
     setState("cmd", preview(mgr, script))
   }
 
