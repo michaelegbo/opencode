@@ -19,30 +19,12 @@ type WorkbenchEntry = {
 type WorkbenchEvent = {
   paths: string[]
 }
-type WorkbenchClose = {
-  code: number | null
-  signal: number | null
-}
-type WorkbenchSpawn = {
-  cmd: string
-  args?: string[]
-  cwd: string
-  stdout?: (data: string) => void
-  stderr?: (data: string) => void
-  error?: (data: string) => void
-  close?: (data: WorkbenchClose) => void
-}
-type WorkbenchChild = {
-  pid: number
-  kill(): Promise<void>
-}
 type Workbench = {
   list(path: string): Promise<WorkbenchEntry[]>
   stat(path: string): Promise<WorkbenchEntry | null>
   read(path: string): Promise<string>
   write(path: string, data: string): Promise<void>
   watch(path: string, cb: (event: WorkbenchEvent) => void): Promise<VoidFunction>
-  spawn(input: WorkbenchSpawn): Promise<WorkbenchChild>
 }
 
 export type Platform = {

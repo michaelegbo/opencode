@@ -24,7 +24,7 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http"
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification"
 import { type as ostype } from "@tauri-apps/plugin-os"
 import { relaunch } from "@tauri-apps/plugin-process"
-import { Command, open as shellOpen } from "@tauri-apps/plugin-shell"
+import { open as shellOpen } from "@tauri-apps/plugin-shell"
 import { Store } from "@tauri-apps/plugin-store"
 import { check, type Update } from "@tauri-apps/plugin-updater"
 import { createResource, onCleanup, onMount, Show } from "solid-js"
@@ -477,20 +477,6 @@ const createPlatform = (): Platform => {
           void guest(event.paths).then((paths) => cb({ paths }))
         }, { recursive: true, delayMs: 150 })
         return () => stop()
-      },
-      spawn: async (input) => {
-        const cmd = Command.create(input.cmd, input.args ?? [], {
-          cwd: await host(input.cwd),
-        })
-        if (input.stdout) cmd.stdout.on("data", input.stdout)
-        if (input.stderr) cmd.stderr.on("data", input.stderr)
-        if (input.error) cmd.on("error", input.error)
-        if (input.close) cmd.on("close", input.close)
-        const child = await cmd.spawn()
-        return {
-          pid: child.pid,
-          kill: () => child.kill(),
-        }
       },
     },
   }

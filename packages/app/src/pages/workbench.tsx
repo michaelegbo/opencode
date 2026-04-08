@@ -6,9 +6,12 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
+import { Terminal } from "@/components/terminal"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import type { LocalPTY } from "@/context/terminal"
 import { WorkbenchEditor } from "@/components/workbench-editor"
 
 type Node = {
@@ -24,12 +27,6 @@ type Tab = {
   value: string
   saved: string
   dirty: boolean
-}
-
-type Log = {
-  id: number
-  kind: "info" | "out" | "err"
-  text: string
 }
 
 type Cmd = {
@@ -67,15 +64,6 @@ const find = (text: string) => {
   const hit = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[a-z0-9.-]+):\d+(?:\/\S*)?/i)?.[0]
   if (!hit) return
   return hit.replace("0.0.0.0", "localhost").replace("[::1]", "localhost")
-}
-
-const lines = (kind: Log["kind"], text: string) => {
-  const out = text
-    .replace(/\r/g, "")
-    .split("\n")
-    .flatMap((item) => (item ? [{ id: Date.now() + Math.random(), kind, text: item }] : []))
-  if (out.length > 0) return out
-  return [{ id: Date.now() + Math.random(), kind, text }]
 }
 
 const rank = (key: string, value: string) => {
@@ -134,10 +122,10 @@ const manager = (pkg: Pkg, locks: Lock[]) => {
 }
 
 const preview = (mgr: Mgr, script: string): Cmd => {
-  if (mgr === "bun") return { label: `bun run ${script}`, cmd: "preview-bun", args: ["run", script] }
-  if (mgr === "pnpm") return { label: `pnpm ${script}`, cmd: "preview-pnpm", args: [script] }
-  if (mgr === "yarn") return { label: `yarn ${script}`, cmd: "preview-yarn", args: [script] }
-  return { label: `npm run ${script}`, cmd: "preview-npm", args: ["run", script] }
+  if (mgr === "bun") return { label: `bun run ${script}`, cmd: "bun", args: ["run", script] }
+  if (mgr === "pnpm") return { label: `pnpm ${script}`, cmd: "pnpm", args: [script] }
+  if (mgr === "yarn") return { label: `yarn ${script}`, cmd: "yarn", args: [script] }
+  return { label: `npm run ${script}`, cmd: "npm", args: ["run", script] }
 }
 
 function Tree(props: {
@@ -218,6 +206,7 @@ function Tree(props: {
 export default function Workbench() {
   const language = useLanguage()
   const platform = usePlatform()
+  const sdk = useSDK()
   const sync = useSync()
   const api = () => platform.workbench
   const root = createMemo(() => sync.data.path.directory)
@@ -230,27 +219,25 @@ export default function Workbench() {
     open: {} as Record<string, boolean>,
     tabs: [] as Tab[],
     active: "",
-    logs: [] as Log[],
     cmd: undefined as Cmd | undefined,
     run: false,
     pid: 0,
     url: "",
+    pty: undefined as LocalPTY | undefined,
+    err: "",
   })
 
-  let log: HTMLDivElement | undefined
   let frameRef: HTMLIFrameElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
-  let proc: { kill: () => Promise<void> } | undefined
 
   const tab = createMemo(() => state.tabs.find((item) => item.path === state.active))
   const tree = () => state.tree
   const open = (path: string) => !!state.open[path]
   const wait = (path: string) => !!state.wait[path]
-  const push = (kind: Log["kind"], text: string) => {
-    setState("logs", (list) => [...list, ...lines(kind, text)].slice(-400))
+  const note = (text: string) => {
     const next = find(text)
-    if (next && !state.url) setState("url", next)
+    if (next) setState("url", next)
   }
 
   const load = async (path: string, force = false) => {
@@ -364,43 +351,41 @@ export default function Workbench() {
   }
 
   const stopPreview = async () => {
-    const cur = proc
-    proc = undefined
+    const id = state.pty?.id
     setState("run", false)
     setState("pid", 0)
-    await cur?.kill().catch(() => undefined)
+    setState("pty", undefined)
+    if (!id) return
+    await sdk.client.pty.remove({ ptyID: id }).catch(() => undefined)
   }
 
   const run = async () => {
     const cmd = state.cmd
-    if (!cmd || !api() || state.run) return
-    setState("run", true)
-    setState("pid", 0)
-    push("info", `$ ${cmd.label}`)
-    const child = await api()!
-      .spawn({
-        cmd: cmd.cmd,
+    if (!cmd || state.run) return
+    await stopPreview()
+    setState("err", "")
+    setState("url", "")
+    const next = await sdk.client.pty
+      .create({
+        command: cmd.cmd,
         args: cmd.args,
         cwd: root(),
-        stdout: (text) => push("out", text),
-        stderr: (text) => push("err", text),
-        error: (text) => push("err", text),
-        close: (data) => {
-          proc = undefined
-          setState("run", false)
-          setState("pid", 0)
-          push("info", data.code === null ? "Preview stopped" : `Preview exited with code ${data.code}`)
-        },
+        title: "Preview",
       })
       .catch((err) => {
-        setState("run", false)
-        push("err", String(err))
+        setState("err", String(err))
         return null
       })
 
-    if (!child) return
-    proc = child
-    setState("pid", child.pid)
+    const id = next?.data?.id
+    if (!id) return
+    setState("pty", {
+      id,
+      title: next.data?.title ?? "Preview",
+      titleNumber: 0,
+    })
+    setState("run", true)
+    setState("pid", next.data?.pid ?? 0)
   }
 
   const refresh = (paths?: string[]) => {
@@ -423,15 +408,6 @@ export default function Workbench() {
   }
 
   createEffect(() => {
-    const next = state.logs.length
-    if (!next) return
-    requestAnimationFrame(() => {
-      if (!log) return
-      log.scrollTop = log.scrollHeight
-    })
-  })
-
-  createEffect(() => {
     const dir = root()
     const fs = api()
     if (!dir || !fs) return
@@ -442,6 +418,17 @@ export default function Workbench() {
     void fs.watch(dir, (event) => refresh(event.paths)).then((fn) => {
       stop = fn
     })
+  })
+
+  createEffect(() => {
+    const id = state.pty?.id
+    if (!id) return
+    const unsub = sdk.event.on("pty.exited", (event) => {
+      if (event.properties.id !== id) return
+      setState("run", false)
+      setState("pid", 0)
+    })
+    onCleanup(unsub)
   })
 
   onCleanup(() => {
@@ -610,7 +597,15 @@ export default function Workbench() {
           />
 
           <div class="flex items-center justify-between gap-2 text-11-medium text-text-weak">
-            <span>{state.pid ? `PID ${state.pid}` : "Waiting for a localhost URL from the preview process."}</span>
+            <span>
+              {state.run
+                ? state.pid
+                  ? `PID ${state.pid}`
+                  : "Starting preview terminal..."
+                : state.pty
+                  ? "Preview stopped."
+                  : "Waiting for a localhost URL from the preview terminal."}
+            </span>
             <Button
               variant="ghost"
               class="h-7 px-2 text-11-medium"
@@ -645,21 +640,36 @@ export default function Workbench() {
           </Show>
         </div>
 
-        <div ref={log} class="h-48 overflow-auto p-3 flex flex-col gap-1 bg-surface-base">
-          <For each={state.logs}>
-            {(item) => (
-              <div
-                classList={{
-                  "font-mono text-11 whitespace-pre-wrap break-words": true,
-                  "text-text-weak": item.kind === "info",
-                  "text-text-base": item.kind === "out",
-                  "text-status-error-base": item.kind === "err",
-                }}
-              >
-                {item.text}
+        <div class="h-48 min-h-0 border-t border-border-weaker-base bg-background-stronger">
+          <Show
+            when={state.pty}
+            fallback={
+              <div class="size-full flex items-center justify-center px-6 text-center">
+                <Show
+                  when={state.err}
+                  fallback={<div class="text-13-medium text-text-weak">Run the preview to open a terminal here.</div>}
+                >
+                  {(err) => <div class="font-mono text-11 whitespace-pre-wrap break-words text-status-error-base">{err()}</div>}
+                </Show>
+              </div>
+            }
+          >
+            {(pty) => (
+              <div class="size-full">
+                <Terminal
+                  pty={pty()}
+                  autoFocus={false}
+                  onCleanup={(next) =>
+                    setState("pty", (item) => {
+                      if (!item || item.id !== next.id) return item
+                      return { ...item, ...next }
+                    })
+                  }
+                  onOutput={note}
+                />
               </div>
             )}
-          </For>
+          </Show>
         </div>
       </aside>
     </div>
