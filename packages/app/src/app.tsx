@@ -49,6 +49,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 const HomeRoute = lazy(() => import("@/pages/home"))
 const loadSession = () => import("@/pages/session")
 const Session = lazy(loadSession)
+const Workbench = lazy(() => import("@/pages/workbench"))
 const Loading = () => <div class="size-full" />
 
 if (typeof location === "object" && /\/session(?:\/|$)/.test(location.pathname)) {
@@ -299,6 +300,7 @@ export function AppInterface(props: {
                 <Route path="/" component={HomeRoute} />
                 <Route path="/:dir" component={DirectoryLayout}>
                   <Route path="/" component={SessionIndexRoute} />
+                  <Route path="/workbench" component={Workbench} />
                   <Route path="/session/:id?" component={SessionRoute} />
                 </Route>
               </Dynamic>

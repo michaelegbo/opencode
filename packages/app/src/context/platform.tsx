@@ -8,6 +8,42 @@ type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
 type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: string[]; extensions?: string[] }
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
 type UpdateInfo = { updateAvailable: boolean; version?: string }
+type WorkbenchEntry = {
+  name: string
+  path: string
+  dir: boolean
+  file: boolean
+  size: number
+  mtime: number | null
+}
+type WorkbenchEvent = {
+  paths: string[]
+}
+type WorkbenchClose = {
+  code: number | null
+  signal: number | null
+}
+type WorkbenchSpawn = {
+  cmd: string
+  args?: string[]
+  cwd: string
+  stdout?: (data: string) => void
+  stderr?: (data: string) => void
+  error?: (data: string) => void
+  close?: (data: WorkbenchClose) => void
+}
+type WorkbenchChild = {
+  pid: number
+  kill(): Promise<void>
+}
+type Workbench = {
+  list(path: string): Promise<WorkbenchEntry[]>
+  stat(path: string): Promise<WorkbenchEntry | null>
+  read(path: string): Promise<string>
+  write(path: string, data: string): Promise<void>
+  watch(path: string, cb: (event: WorkbenchEvent) => void): Promise<VoidFunction>
+  spawn(input: WorkbenchSpawn): Promise<WorkbenchChild>
+}
 
 export type Platform = {
   /** Platform discriminator */
@@ -87,6 +123,9 @@ export type Platform = {
 
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
+
+  /** Local file/workbench APIs (desktop only) */
+  workbench?: Workbench
 }
 
 export type DisplayBackend = "auto" | "wayland"

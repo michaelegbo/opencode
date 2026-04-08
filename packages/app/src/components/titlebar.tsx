@@ -64,6 +64,11 @@ export function Titlebar() {
     const parts = location.pathname.replace(/\/+$/, "").split("/")
     return parts.at(-1) === "session"
   })
+  const workbench = createMemo(() => {
+    if (!params.dir) return false
+    const parts = location.pathname.replace(/\/+$/, "").split("/")
+    return parts.at(-1) === "workbench"
+  })
 
   createEffect(() => {
     const current = path()
@@ -218,10 +223,7 @@ export function Titlebar() {
           </TooltipKeybind>
           <div class="hidden xl:flex items-center shrink-0">
             <Show when={params.dir}>
-              <div
-                class="flex items-center shrink-0 w-8 mr-1"
-                aria-hidden={layout.sidebar.opened() ? "true" : undefined}
-              >
+              <div class="flex items-center shrink-0 gap-1 mr-1" aria-hidden={layout.sidebar.opened() ? "true" : undefined}>
                 <div
                   class="transition-opacity"
                   classList={{
@@ -249,6 +251,30 @@ export function Titlebar() {
                       aria-current={creating() ? "page" : undefined}
                     />
                   </TooltipKeybind>
+                </div>
+                <div
+                  class="transition-opacity"
+                  classList={{
+                    "opacity-100 duration-120 ease-out": !layout.sidebar.opened(),
+                    "opacity-0 duration-120 ease-in delay-0 pointer-events-none": layout.sidebar.opened(),
+                  }}
+                >
+                  <Tooltip placement="bottom" value="Workbench" openDelay={2000}>
+                    <Button
+                      variant="ghost"
+                      class="titlebar-icon w-8 h-6 p-0 box-border"
+                      disabled={layout.sidebar.opened()}
+                      tabIndex={layout.sidebar.opened() ? -1 : undefined}
+                      onClick={() => {
+                        if (!params.dir) return
+                        navigate(`/${params.dir}/workbench`)
+                      }}
+                      aria-label="Workbench"
+                      aria-current={workbench() ? "page" : undefined}
+                    >
+                      <Icon size="small" name="code" />
+                    </Button>
+                  </Tooltip>
                 </div>
               </div>
             </Show>
