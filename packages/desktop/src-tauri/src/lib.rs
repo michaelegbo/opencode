@@ -582,7 +582,7 @@ fn opencode_db_path() -> Result<PathBuf, &'static str> {
         }
     };
 
-    Ok(data_home.join("paddie-studio").join("paddie-studio.db"))
+    Ok(data_home.join("opencode").join("opencode.db"))
 }
 
 // Creates a `once` listener for the specified event and returns a future that resolves
