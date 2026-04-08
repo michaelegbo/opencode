@@ -422,8 +422,8 @@ describe("Runner", () => {
       const exit = yield* Fiber.await(run)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) expect(exit.value).toBe("run-result")
-      const state = runner.state
-      if (state._tag !== "Idle") throw new Error("expected idle")
+      const tag = String(runner.state._tag)
+      if (tag !== "Idle") throw new Error("expected idle")
     }),
   )
 
