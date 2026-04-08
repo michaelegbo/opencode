@@ -1372,12 +1372,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             // Keep the loop running so tool results can be sent back to the model.
             const hasToolCalls = lastAssistantMsg?.parts.some((part) => part.type === "tool") ?? false
 
-            if (
-              lastAssistant?.finish &&
-              !["tool-calls"].includes(lastAssistant.finish) &&
-              !hasToolCalls &&
-              lastUser.id < lastAssistant.id
-            ) {
+            if (!hasToolCalls && shouldExitLoop(lastUser, lastAssistant)) {
               log.info("exiting loop", { sessionID })
               break
             }
@@ -1907,4 +1902,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
   const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
   const placeholderRegex = /\$(\d+)/g
   const quoteTrimRegex = /^["']|["']$/g
+
+  /** @internal Exported for testing */
+  export function shouldExitLoop(lastUser: MessageV2.User | undefined, lastAssistant: MessageV2.Assistant | undefined) {
+    if (!lastUser) return false
+    if (!lastAssistant?.finish) return false
+    if (["tool-calls", "unknown"].includes(lastAssistant.finish)) return false
+    return lastAssistant.parentID === lastUser.id
+  }
 }
