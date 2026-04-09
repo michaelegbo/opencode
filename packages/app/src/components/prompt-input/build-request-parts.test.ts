@@ -168,6 +168,10 @@ describe("buildRequestParts", () => {
           partID: "hero",
           partName: "Hero section",
           hint: "Adapt this to the current hero.",
+          selector: "main > section.hero > h1",
+          label: "h1",
+          text: "Launch a sharper landing page without rebuilding your stack.",
+          html: "<h1>Launch a sharper landing page without rebuilding your stack.</h1>",
           files: [
             {
               path: "src/App.tsx",
@@ -192,6 +196,9 @@ describe("buildRequestParts", () => {
     if (part?.type === "text") {
       expect(part.text).toContain("Landing Page Starter")
       expect(part.text).toContain("Hero section")
+      expect(part.text).toContain("Selected element: h1")
+      expect(part.text).toContain("main > section.hero > h1")
+      expect(part.text).toContain("<h1>Launch a sharper landing page without rebuilding your stack.</h1>")
       expect(part.text).toContain("React + Tailwind")
       expect(part.text).toContain("--- src/App.tsx ---")
       expect(part.text).toContain("Adapt this to the current hero.")

@@ -29,7 +29,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 ? getFilenameTruncated(item.path, 14)
                 : item.type === "element"
                   ? item.label
-                  : item.partName || item.templateName
+                  : item.label || item.partName || item.templateName
             const tip =
               item.type === "file" ? (
                 <span class="flex max-w-[300px]">
@@ -47,6 +47,9 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 <div class="flex max-w-[320px] flex-col gap-1">
                   <span class="truncate text-text-invert-base">{item.templateName}</span>
                   <span class="text-text-invert-base/80">{item.stack}</span>
+                  <Show when={item.partName}>
+                    {(value) => <span class="text-text-invert-base/70">{value()}</span>}
+                  </Show>
                   <span class="text-text-invert-base/70">{item.files.length} reference files</span>
                 </div>
               )
@@ -55,7 +58,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 ? item.comment
                 : item.type === "element"
                   ? item.text?.trim() || item.selector
-                  : item.description
+                  : item.selector || item.description
 
             return (
               <Tooltip value={tip} placement="top" openDelay={2000}>

@@ -67,6 +67,10 @@ export type TemplateContextItem = {
   partID?: string
   partName?: string
   hint?: string
+  selector?: string
+  label?: string
+  html?: string
+  text?: string
   files: TemplateFile[]
 }
 
@@ -124,7 +128,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 
 function contextItemKey(item: ContextItem) {
   if (item.type === "element") return `${item.type}:${item.url}:${item.selector}`
-  if (item.type === "template") return `${item.type}:${item.templateID}:${item.partID ?? "full"}`
+  if (item.type === "template") return `${item.type}:${item.templateID}:${item.partID ?? "full"}:${item.selector ?? "part"}`
   const start = item.selection?.startLine
   const end = item.selection?.endLine
   const key = `${item.type}:${item.path}:${start}:${end}`

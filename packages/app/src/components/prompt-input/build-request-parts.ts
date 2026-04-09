@@ -74,6 +74,10 @@ const formatTemplateNote = (item: TemplateContextItem) => {
     `Stack: ${item.stack}`,
   ]
   if (item.partName) lines.push(`Selected part: ${item.partName}`)
+  if (item.label) lines.push(`Selected element: ${item.label}`)
+  if (item.selector) lines.push(`Selector: ${item.selector}`)
+  if (item.text?.trim()) lines.push(`Text: ${item.text.trim()}`)
+  if (item.html?.trim()) lines.push(`Outer HTML:\n${item.html.trim()}`)
   if (item.hint?.trim()) lines.push(`Guidance: ${item.hint.trim()}`)
   lines.push("Adapt this reference to the current codebase instead of copying it blindly.")
   lines.push("Reference files:")

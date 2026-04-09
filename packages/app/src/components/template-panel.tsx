@@ -3,7 +3,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/util/encode"
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
@@ -29,10 +29,25 @@ export function TemplatePanel(props: {
   const list = templates()
   const [id, setID] = createSignal(list[0]?.id ?? "")
   const [pid, setPID] = createSignal("full")
+  const [pick, setPick] = createSignal(false)
   let frame: HTMLIFrameElement | undefined
 
   const tpl = createMemo(() => template(id()) ?? list[0])
-  const pick = createMemo(() => part(tpl(), pid()) ?? tpl()?.parts[0])
+  const hit = createMemo(() => part(tpl(), pid()) ?? tpl()?.parts[0])
+  const reset = () => {
+    const cur = tpl()
+    if (!cur || !frame) return
+    frame.srcdoc = cur.preview
+  }
+  const sync = () =>
+    frame?.contentWindow?.postMessage(
+      {
+        source: "paddie-studio-template-host",
+        type: "pick",
+        active: pick(),
+      },
+      "*",
+    )
 
   const focus = () => {
     if (props.chatHidden) props.onChatToggle?.()
@@ -42,28 +57,45 @@ export function TemplatePanel(props: {
     })
   }
 
-  const attach = (next?: string) => {
+  const attach = (
+    next?: string,
+    opts?: {
+      selector?: string
+      label?: string
+      html?: string
+      text?: string
+      focus?: boolean
+      toast?: boolean
+    },
+  ) => {
     const cur = tpl()
     if (!cur) return
-    const hit = part(cur, next ?? pid()) ?? cur.parts[0]
-    if (!hit) return
-    setPID(hit.id)
+    const item = part(cur, next ?? pid()) ?? cur.parts[0]
+    if (!item) return
+    setPID(item.id)
     prompt.context.add({
       type: "template",
       templateID: cur.id,
       templateName: cur.name,
-      description: hit.id === "full" ? cur.description : hit.description,
+      description: item.id === "full" ? cur.description : item.description,
       stack: cur.stack,
-      partID: hit.id,
-      partName: hit.name,
-      hint: hit.hint,
-      files: filesFor(cur, hit),
+      partID: item.id,
+      partName: item.name,
+      hint: item.hint,
+      selector: opts?.selector,
+      label: opts?.label,
+      html: opts?.html,
+      text: opts?.text,
+      files: filesFor(cur, item),
     })
-    focus()
-    showToast({
-      title: "Template added to chat",
-      description: `${cur.name} · ${hit.name}`,
-    })
+    if (opts?.focus ?? true) focus()
+    if (opts?.focus === false && props.chatHidden) props.onChatToggle?.()
+    if (opts?.toast ?? true) {
+      showToast({
+        title: "Template added to chat",
+        description: opts?.label ? `${cur.name} - ${opts.label}` : `${cur.name} - ${item.name}`,
+      })
+    }
   }
 
   const create = async () => {
@@ -115,14 +147,50 @@ export function TemplatePanel(props: {
       if (event.source !== frame?.contentWindow) return
       if (typeof event.data !== "object" || !event.data) return
       if ((event.data as { source?: string }).source !== "paddie-studio-template") return
+      if ((event.data as { type?: string }).type === "ready") {
+        sync()
+        return
+      }
+      if ((event.data as { type?: string }).type === "cancel") {
+        setPick(false)
+        return
+      }
       if ((event.data as { type?: string }).type !== "pick") return
-      const item = (event.data as { payload?: { id?: string } }).payload?.id
-      if (!item) return
-      attach(item)
+      const data = (event.data as {
+        payload?: {
+          id?: string
+          selector?: string
+          label?: string
+          html?: string
+          text?: string
+        }
+      }).payload
+      if (!data) return
+      const cur = tpl()
+      const item = cur && data.id ? part(cur, data.id) : undefined
+      if (item) setPID(item.id)
+      attach(item?.id ?? "full", {
+        selector: data.selector,
+        label: data.label,
+        html: data.html,
+        text: data.text,
+        focus: false,
+        toast: false,
+      })
+      showToast({
+        title: "Template element added",
+        description: item ? `${cur?.name} - ${item.name} - picker still active` : "Picker still active",
+      })
     }
 
     window.addEventListener("message", onMessage)
     onCleanup(() => window.removeEventListener("message", onMessage))
+  })
+
+  createEffect(() => {
+    tpl()?.id
+    pick()
+    queueMicrotask(sync)
   })
 
   return (
@@ -157,6 +225,7 @@ export function TemplatePanel(props: {
                   onClick={() => {
                     setID(item.id)
                     setPID("full")
+                    setPick(false)
                   }}
                 >
                   <div class="flex items-center justify-between gap-3">
@@ -206,33 +275,53 @@ export function TemplatePanel(props: {
                       {cur().name} preview
                     </div>
                     <Button
-                      variant="ghost"
+                      variant={pick() ? "secondary" : "ghost"}
                       class="h-7 px-2 text-11-medium"
-                      onClick={() => attach(pick()?.id)}
+                      onClick={() => setPick((value) => !value)}
                     >
-                      Attach selection
+                      {pick() ? "Stop selecting" : "Select from preview"}
                     </Button>
+                  </div>
+                  <div class="h-10 border-b border-border-weaker-base px-4 flex items-center justify-between gap-3 bg-background-stronger">
+                    <div class="min-w-0 text-11-medium text-text-weak">
+                      {pick()
+                        ? "Selection mode is on. Click any highlighted element to add it to chat."
+                        : "Browse the template normally. Turn on selection when you want to pick a part."}
+                    </div>
+                    <div class="shrink-0 text-11-medium text-text-base">
+                      Selected: {hit()?.name ?? "Full template"}
+                    </div>
                   </div>
                   <iframe
                     ref={frame}
                     srcdoc={cur().preview}
-                    class="block h-[calc(100%-44px)] w-full bg-white"
+                    sandbox="allow-scripts allow-same-origin"
+                    class="block h-[calc(100%-84px)] w-full bg-white"
                     title={`${cur().name} preview`}
+                    onLoad={() => {
+                      const doc = frame?.contentDocument
+                      if (!doc?.body?.hasAttribute("data-paddie-template")) {
+                        reset()
+                        return
+                      }
+                      sync()
+                    }}
                   />
                 </div>
 
                 <div class="min-h-0 overflow-auto rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] p-3">
                   <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Curated parts</div>
-                  <div class="mt-2 text-13-medium text-text-base">Choose a part to attach</div>
+                  <div class="mt-2 text-13-medium text-text-base">Browse first, then add the part you want</div>
                   <div class="mt-3 space-y-2">
                     <For each={cur().parts}>
                       {(item) => (
                         <div
                           classList={{
-                            "rounded-[18px] border px-3 py-3 transition-colors": true,
+                            "rounded-[18px] border px-3 py-3 transition-colors cursor-pointer": true,
                             "border-border-weak-base bg-background-stronger shadow-xs-border": pid() === item.id,
                             "border-border-weaker-base bg-surface-base": pid() !== item.id,
                           }}
+                          onClick={() => setPID(item.id)}
                         >
                           <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
@@ -242,7 +331,10 @@ export function TemplatePanel(props: {
                             <Button
                               variant="ghost"
                               class="h-8 px-2 text-11-medium shrink-0"
-                              onClick={() => attach(item.id)}
+                              onClick={(event: MouseEvent) => {
+                                event.stopPropagation()
+                                attach(item.id)
+                              }}
                             >
                               Add
                             </Button>

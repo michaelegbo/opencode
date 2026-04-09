@@ -202,6 +202,16 @@ button {
   font: inherit;
 }
 
+html.__paddie_template_pick,
+html.__paddie_template_pick * {
+  cursor: crosshair !important;
+}
+
+[data-template-part].__paddie_template_target {
+  outline: 2px solid #64f0c8;
+  outline-offset: 4px;
+}
+
 .shell {
   min-height: 100vh;
   padding: 28px;
@@ -467,6 +477,10 @@ button {
   backdrop-filter: blur(14px);
 }
 
+.modal-backdrop[hidden] {
+  display: none;
+}
+
 .modal {
   width: min(560px, 100%);
   padding: 28px;
@@ -521,9 +535,9 @@ const preview = `<!doctype html>
     <title>Paddie Studio Template</title>
     <style>${css}</style>
   </head>
-  <body>
+  <body data-paddie-template="true">
     <div class="shell">
-      <header class="nav">
+      <header class="nav" data-template-part="nav">
         <div class="brand">
           <span class="brand-mark">P</span>
           <span>Paddie Landing</span>
@@ -533,7 +547,7 @@ const preview = `<!doctype html>
           <a href="#proof">Proof</a>
           <a href="#cta">Start</a>
         </nav>
-        <button class="ghost" data-template-part="button">Book demo</button>
+        <button class="ghost" data-template-part="button" data-template-open="modal">Book demo</button>
       </header>
       <main class="page">
         <section class="hero" id="hero" data-template-part="hero">
@@ -543,9 +557,9 @@ const preview = `<!doctype html>
             <p class="lede">A curated landing page template for fast UI iteration in Studio.</p>
             <div class="hero-actions">
               <button class="primary" data-template-part="button">Start free</button>
-              <button class="ghost" data-template-part="modal">See the modal</button>
+              <button class="ghost" data-template-part="modal" data-template-open="modal">See the modal</button>
             </div>
-            <div class="hero-metrics" id="proof">
+            <div class="hero-metrics" id="proof" data-template-part="metrics">
               <div class="metric"><span>124</span><small>launches</small></div>
               <div class="metric"><span>38%</span><small>lift in signups</small></div>
               <div class="metric"><span>42</span><small>teams shipped</small></div>
@@ -576,19 +590,19 @@ const preview = `<!doctype html>
           <button class="primary wide" data-template-part="button">Generate my first draft</button>
         </section>
       </main>
-      <div class="modal-backdrop" data-template-part="modal">
+      <div class="modal-backdrop" data-template-part="modal" data-template-modal hidden>
         <div class="modal">
           <div class="modal-head">
             <div>
               <p class="eyebrow">Template modal</p>
               <h3>Schedule a guided onboarding run</h3>
             </div>
-            <button class="ghost small">Close</button>
+            <button class="ghost small" data-template-close="modal">Close</button>
           </div>
           <p class="modal-copy">Use this modal as a reference for grouped content and action layout.</p>
           <div class="modal-actions">
-            <button class="primary">Confirm</button>
-            <button class="ghost small">Maybe later</button>
+            <button class="primary" data-template-close="modal">Confirm</button>
+            <button class="ghost small" data-template-close="modal">Maybe later</button>
           </div>
         </div>
       </div>
@@ -596,29 +610,124 @@ const preview = `<!doctype html>
     <script>
       (() => {
         const post = (type, payload = {}) => parent.postMessage({ source: "paddie-studio-template", type, payload }, "*")
+        const esc = window.CSS && CSS.escape ? CSS.escape.bind(CSS) : (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&")
+        const root = document.documentElement
+        const modal = document.querySelector("[data-template-modal]")
+        let on = false
         let last
-        const pick = (target) => target instanceof Element ? target.closest("[data-template-part]") : null
+        const ok = (el) => el instanceof Element && !["HTML", "BODY", "SCRIPT", "STYLE", "LINK", "META"].includes(el.tagName)
+        const pick = (target) => {
+          if (target instanceof Element && ok(target)) return target
+          if (target instanceof Node && target.parentElement && ok(target.parentElement)) return target.parentElement
+          return null
+        }
+        const part = (el) => el.closest("[data-template-part]")?.getAttribute("data-template-part") || undefined
+        const nth = (el) => {
+          const parent = el.parentElement
+          if (!parent) return ""
+          const list = Array.from(parent.children).filter((item) => item.tagName === el.tagName)
+          if (list.length <= 1) return ""
+          return ":nth-of-type(" + (list.indexOf(el) + 1) + ")"
+        }
+        const cls = (el) => {
+          const list = Array.from(el.classList).slice(0, 2)
+          if (list.length === 0) return ""
+          return list.map((item) => "." + esc(item)).join("")
+        }
+        const line = (el) => {
+          let out = el.tagName.toLowerCase()
+          if (el.id) out += "#" + el.id
+          const list = Array.from(el.classList).slice(0, 2)
+          if (list.length) out += "." + list.join(".")
+          return out
+        }
+        const path = (el) => {
+          const out = []
+          let cur = el
+          while (ok(cur)) {
+            let item = cur.tagName.toLowerCase()
+            if (cur.id) {
+              out.unshift(item + "#" + esc(cur.id))
+              break
+            }
+            item += cls(cur) + nth(cur)
+            out.unshift(item)
+            cur = cur.parentElement
+          }
+          return out.join(" > ")
+        }
+        const text = (el) => (el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 240)
         const mark = (node) => {
           if (last === node) return
-          if (last) last.style.outline = ""
+          if (last) last.classList.remove("__paddie_template_target")
           last = node
-          if (node) node.style.outline = "2px solid #64f0c8"
+          if (node) node.classList.add("__paddie_template_target")
+        }
+        const set = (next) => {
+          on = next
+          root.classList.toggle("__paddie_template_pick", on)
+          if (!on) mark(null)
+        }
+        const show = () => {
+          if (modal instanceof HTMLElement) modal.hidden = false
+        }
+        const hide = () => {
+          if (modal instanceof HTMLElement) modal.hidden = true
+        }
+        document.querySelectorAll("[data-template-open=modal]").forEach((node) => {
+          node.addEventListener("click", () => {
+            if (on) return
+            show()
+          })
+        })
+        document.querySelectorAll("[data-template-close=modal]").forEach((node) => {
+          node.addEventListener("click", () => {
+            if (on) return
+            hide()
+          })
+        })
+        if (modal instanceof HTMLElement) {
+          modal.addEventListener("click", (event) => {
+            if (on) return
+            if (event.target === modal) hide()
+          })
         }
         document.addEventListener("mousemove", (event) => {
+          if (!on) return
           const node = pick(event.target)
-          if (!node) return
           mark(node)
         }, true)
         document.addEventListener("click", (event) => {
+          if (!on) return
           const node = pick(event.target)
           if (!node) return
           event.preventDefault()
           event.stopPropagation()
           event.stopImmediatePropagation()
-          const id = node.getAttribute("data-template-part")
-          if (!id) return
-          post("pick", { id })
+          post("pick", {
+            id: part(node),
+            selector: path(node),
+            label: line(node),
+            text: text(node) || undefined,
+            html: (node.outerHTML || "").replace(/\\s+/g, " ").trim().slice(0, 4000),
+          })
         }, true)
+        document.addEventListener("keydown", (event) => {
+          if (!on || event.key !== "Escape") return
+          event.preventDefault()
+          event.stopPropagation()
+          set(false)
+          post("cancel")
+        }, true)
+        window.addEventListener("message", (event) => {
+          if (event.source !== parent) return
+          const data = event.data
+          if (!data || typeof data !== "object") return
+          if (data.source !== "paddie-studio-template-host") return
+          if (data.type !== "pick") return
+          set(Boolean(data.active))
+        })
+        post("ready")
       })()
     </script>
   </body>
@@ -742,6 +851,22 @@ const list = [
         selectors: ["hero"],
         files: ["src/App.tsx", "src/styles.css"],
         hint: "Map the narrative and CTA structure to the selected page section.",
+      },
+      {
+        id: "nav",
+        name: "Navigation bar",
+        description: "Top navigation with brand, links, and right-aligned action.",
+        selectors: ["nav"],
+        files: ["src/App.tsx", "src/styles.css"],
+        hint: "Adapt the navigation structure and spacing to the current product.",
+      },
+      {
+        id: "metrics",
+        name: "Metric strip",
+        description: "Compact stat cards for traction, proof, or key product numbers.",
+        selectors: ["metrics"],
+        files: ["src/App.tsx", "src/styles.css"],
+        hint: "Use this when the page needs a quick proof band or KPI summary.",
       },
       {
         id: "features",

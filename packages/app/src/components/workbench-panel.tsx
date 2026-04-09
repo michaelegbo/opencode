@@ -245,6 +245,8 @@ export function WorkbenchPanel(props: {
     left: 280,
     right: 420,
     box: 0,
+    previewW: 0,
+    previewH: 0,
     mode: "split" as Mode,
     surface: "studio" as Surface,
     tree: {} as Record<string, Node[]>,
@@ -260,6 +262,7 @@ export function WorkbenchPanel(props: {
 
   let wrap: HTMLDivElement | undefined
   let frame: HTMLIFrameElement | undefined
+  let stage: HTMLDivElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
   const delay = 500
@@ -275,16 +278,16 @@ export function WorkbenchPanel(props: {
   const box = createMemo(() => state.box || 1200)
   const leftMin = 220
   const rightMin = 320
-  const editMin = 380
+  const editMin = 320
   const leftMax = createMemo(() => {
     if (!showFiles()) return 0
-    const keep = (state.mode === "split" ? Math.min(820, Math.max(rightMin, state.right)) : 0) + editMin
+    const keep = (state.mode === "split" ? Math.max(rightMin, state.right) : 0) + editMin
     return Math.max(0, Math.min(420, box() - keep))
   })
   const rightMax = createMemo(() => {
     if (state.mode !== "split") return box()
     const keep = (showFiles() ? Math.min(420, Math.max(leftMin, state.left)) : 0) + editMin
-    return Math.max(0, Math.min(820, box() - keep))
+    return Math.max(0, box() - keep)
   })
   const leftFloor = createMemo(() => Math.min(leftMin, leftMax()))
   const rightFloor = createMemo(() => Math.min(rightMin, rightMax()))
@@ -295,6 +298,27 @@ export function WorkbenchPanel(props: {
     return Math.max(0, Math.min(state.right, rightMax()))
   })
   const edit = createMemo(() => Math.max(0, box() - left() - right()))
+  const previewW = createMemo(() => Math.max(0, state.previewW || right() - 24))
+  const previewH = createMemo(() => Math.max(0, state.previewH))
+  const frameW = createMemo(() => {
+    const w = previewW()
+    if (!w) return state.mode === "preview" ? 1200 : 1280
+    if (state.mode === "preview") return Math.max(960, Math.min(1600, Math.round(w)))
+    return 1280
+  })
+  const scale = createMemo(() => {
+    const w = previewW()
+    if (!w) return 1
+    return Math.min(1, w / frameW())
+  })
+  const frameH = createMemo(() => {
+    const h = previewH()
+    const zoom = scale()
+    if (!h || zoom <= 0) return 920
+    return Math.max(920, Math.round(h / zoom))
+  })
+  const scaledW = createMemo(() => Math.max(0, Math.round(frameW() * scale())))
+  const scaledH = createMemo(() => Math.max(0, Math.round(frameH() * scale())))
   const anim = createMemo(() =>
     size.active()
       ? "transition-none"
@@ -470,6 +494,8 @@ export function WorkbenchPanel(props: {
 
   const openFiles = () => {
     setState("files", true)
+    const next = Math.max(leftFloor(), Math.min(280, leftMax()))
+    if (state.left <= 0 && next > 0) setState("left", next)
     void load(root(), true)
   }
 
@@ -479,6 +505,18 @@ export function WorkbenchPanel(props: {
       const next = Math.ceil(width)
       if (!next || next === state.box) return
       setState("box", next)
+    },
+  )
+
+  createResizeObserver(
+    () => stage,
+    ({ width, height }) => {
+      const nextW = Math.ceil(width)
+      const nextH = Math.ceil(height)
+      if (!nextW || !nextH) return
+      if (nextW === state.previewW && nextH === state.previewH) return
+      setState("previewW", nextW)
+      setState("previewH", nextH)
     },
   )
 
@@ -496,6 +534,11 @@ export function WorkbenchPanel(props: {
 
   createEffect(() => {
     const max = leftMax()
+    if (!showFiles()) return
+    if (state.left <= 0 && max > 0) {
+      setState("left", Math.max(leftFloor(), Math.min(280, max)))
+      return
+    }
     if (state.left <= max) return
     setState("left", Math.round(max))
   })
@@ -650,7 +693,7 @@ export function WorkbenchPanel(props: {
     <button
       type="button"
       classList={{
-        "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
+        "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
         "bg-surface-base-active text-text-strong shadow-xs-border": state.surface === value,
         "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.surface !== value,
       }}
@@ -673,7 +716,7 @@ export function WorkbenchPanel(props: {
     <button
       type="button"
       classList={{
-        "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
+        "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
         "bg-surface-base-active text-text-strong shadow-xs-border": state.mode === value,
         "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.mode !== value,
       }}
@@ -690,23 +733,24 @@ export function WorkbenchPanel(props: {
       class="size-full bg-background-base flex flex-col overflow-hidden"
       style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.04), transparent 34%)" }}
     >
-      <div class="h-12 shrink-0 border-b border-border-weaker-base bg-background-base/95 backdrop-blur-sm flex items-center justify-between gap-3 px-3">
-        <div class="min-w-0 flex items-center gap-3">
-          <div class="min-w-0 px-2 py-1.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-2 shadow-xs-border">
+      <div class="min-h-12 shrink-0 border-b border-border-weaker-base bg-background-base/95 backdrop-blur-sm flex items-center justify-between gap-3 px-3 py-2">
+        <div class="min-w-0 flex-1 flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          <div class="h-9 shrink-0 min-w-0 px-3 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-2.5 shadow-xs-border">
             <div class="size-7 rounded-lg bg-background-stronger flex items-center justify-center text-icon-info-base">
               <Icon name="dot-grid" size="small" />
             </div>
-            <div class="min-w-0">
-              <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Studio</div>
-              <div class="text-12-medium text-text-base truncate">{base(root()) || root()}</div>
+            <div class="min-w-0 flex items-center gap-2">
+              <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak shrink-0">Studio</div>
+              <div class="h-4 w-px bg-border-weaker-base shrink-0" />
+              <div class="max-w-40 truncate text-12-medium text-text-base">{base(root()) || root()}</div>
             </div>
           </div>
-          <div class="h-9 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
+          <div class="h-9 shrink-0 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
             {surfaceButton("studio", "dot-grid", "Workspace")}
             {surfaceButton("templates", "layout-right-full", "Templates")}
           </div>
           <Show when={state.surface === "studio"}>
-            <div class="h-9 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
+            <div class="h-9 shrink-0 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
               {modeButton("code", "code", "Code")}
               {modeButton("split", "layout-right-partial", "Split")}
               {modeButton("preview", "eye", "Preview")}
@@ -715,7 +759,7 @@ export function WorkbenchPanel(props: {
               <button
                 type="button"
                 classList={{
-                  "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5 border": true,
+                  "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5 border": true,
                   "border-border-weak-base bg-surface-base-active text-text-strong shadow-xs-border": state.files,
                   "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
                 }}
@@ -961,35 +1005,51 @@ export function WorkbenchPanel(props: {
                 </div>
 
                 <div class="min-h-0 flex-1 bg-background-stronger p-3">
-                  <div class="size-full min-w-0 overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]">
-                    <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
-                      <div class="size-2 rounded-full bg-[#f87171]" />
-                      <div class="size-2 rounded-full bg-[#fbbf24]" />
-                      <div class="size-2 rounded-full bg-[#34d399]" />
-                      <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
-                        {state.url || "Preview canvas"}
-                      </div>
-                    </div>
-                    <div class="h-[calc(100%-40px)] min-w-0 overflow-hidden bg-[#181922]">
-                      <Show
-                        when={state.url}
-                        fallback={
-                          <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
-                            Preview will appear automatically when a localhost app is running in this workspace.
+                  <div ref={stage} class="size-full min-w-0 overflow-auto rounded-[22px] bg-[#181922]">
+                    <Show
+                      when={state.url}
+                      fallback={
+                        <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
+                          Preview will appear automatically when a localhost app is running in this workspace.
+                        </div>
+                      }
+                    >
+                      {(url) => (
+                        <div class="min-h-full min-w-full flex items-start justify-center p-4">
+                          <div
+                            class="relative shrink-0"
+                            style={{ width: `${scaledW()}px`, height: `${scaledH()}px` }}
+                          >
+                            <div
+                              class="absolute left-0 top-0 overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]"
+                              style={{
+                                width: `${frameW()}px`,
+                                height: `${frameH()}px`,
+                                transform: `scale(${scale()})`,
+                                "transform-origin": "top left",
+                              }}
+                            >
+                              <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
+                                <div class="size-2 rounded-full bg-[#f87171]" />
+                                <div class="size-2 rounded-full bg-[#fbbf24]" />
+                                <div class="size-2 rounded-full bg-[#34d399]" />
+                                <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
+                                  {url()}
+                                </div>
+                              </div>
+                              <iframe
+                                ref={frame}
+                                src={state.pick && state.doc ? undefined : url()}
+                                srcdoc={state.pick && state.doc ? state.doc : undefined}
+                                class="block w-full border-0 bg-white"
+                                style={{ height: `${Math.max(0, frameH() - 40)}px` }}
+                                title="Preview"
+                              />
+                            </div>
                           </div>
-                        }
-                      >
-                        {(url) => (
-                          <iframe
-                            ref={frame}
-                            src={state.pick && state.doc ? undefined : url()}
-                            srcdoc={state.pick && state.doc ? state.doc : undefined}
-                            class="block size-full bg-white"
-                            title="Preview"
-                          />
-                        )}
-                      </Show>
-                    </div>
+                        </div>
+                      )}
+                    </Show>
                   </div>
                 </div>
               </div>
