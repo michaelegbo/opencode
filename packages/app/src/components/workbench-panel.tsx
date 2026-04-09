@@ -1,6 +1,7 @@
 import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useParams } from "@solidjs/router"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Button } from "@opencode-ai/ui/button"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -131,6 +132,7 @@ export function WorkbenchPanel(props: {
     files: true,
     left: 280,
     right: 420,
+    box: 0,
     mode: "split" as Mode,
     tree: {} as Record<string, Node[]>,
     wait: {} as Record<string, boolean>,
@@ -140,6 +142,7 @@ export function WorkbenchPanel(props: {
     url: "",
   })
 
+  let wrap: HTMLDivElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
 
@@ -149,8 +152,17 @@ export function WorkbenchPanel(props: {
     () => previewFromSession(messages(), sync.data.part) ?? terminal.url() ?? previewFromTerminals(terminal.all()) ?? "",
   )
   const tree = () => state.tree
+  const showFiles = createMemo(() => state.mode !== "preview" && state.files)
+  const box = createMemo(() => state.box || 1200)
+  const leftMax = createMemo(() => Math.max(260, Math.min(460, box() * 0.38)))
+  const rightMax = createMemo(() => Math.max(360, Math.min(960, box() * 0.68)))
   const open = (path: string) => !!state.open[path]
   const wait = (path: string) => !!state.wait[path]
+  const setMode = (mode: Mode) => {
+    setState("mode", mode)
+    if (mode === "preview" || state.files) return
+    openFiles()
+  }
 
   const load = async (path: string, force = false) => {
     if (!api()) return
@@ -247,6 +259,15 @@ export function WorkbenchPanel(props: {
     void load(root(), true)
   }
 
+  createResizeObserver(
+    () => wrap,
+    ({ width }) => {
+      const next = Math.ceil(width)
+      if (!next || next === state.box) return
+      setState("box", next)
+    },
+  )
+
   createEffect(() => {
     const dir = root()
     const fs = api()
@@ -259,6 +280,18 @@ export function WorkbenchPanel(props: {
     })
   })
 
+  createEffect(() => {
+    const max = leftMax()
+    if (state.left <= max) return
+    setState("left", Math.round(max))
+  })
+
+  createEffect(() => {
+    const max = rightMax()
+    if (state.right <= max) return
+    setState("right", Math.round(max))
+  })
+
   command.register("workbench.preview", () => {
     const list = [
       {
@@ -266,25 +299,25 @@ export function WorkbenchPanel(props: {
         title: "Show Code",
         category: "Workbench",
         disabled: state.mode === "code",
-        onSelect: () => setState("mode", "code"),
+        onSelect: () => setMode("code"),
       },
       {
         id: "workbench.mode.split",
         title: "Show Code + Preview",
         category: "Workbench",
         disabled: state.mode === "split",
-        onSelect: () => setState("mode", "split"),
+        onSelect: () => setMode("split"),
       },
       {
         id: "workbench.mode.preview",
         title: "Show Preview",
         category: "Workbench",
         disabled: state.mode === "preview",
-        onSelect: () => setState("mode", "preview"),
+        onSelect: () => setMode("preview"),
       },
       {
-        id: "workbench.files.toggle",
-        title: state.files ? "Hide Files" : "Show Files",
+        id: "workbench.explorer.toggle",
+        title: state.files ? "Hide Explorer" : "Show Explorer",
         category: "Workbench",
         onSelect: () => {
           if (state.files) {
@@ -337,42 +370,44 @@ export function WorkbenchPanel(props: {
         "bg-surface-base-active text-text-strong": state.mode === value,
         "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.mode !== value,
       }}
-      onClick={() => setState("mode", value)}
+      onClick={() => setMode(value)}
     >
       {label}
     </button>
   )
 
   return (
-    <div class="size-full bg-background-base flex flex-col">
+    <div ref={wrap} class="size-full bg-background-base flex flex-col overflow-hidden">
       <div class="h-11 shrink-0 border-b border-border-weaker-base flex items-center justify-between gap-3 px-3">
         <div class="min-w-0 flex items-center gap-3">
           <div class="min-w-0">
             <div class="text-11-medium text-text-weak">Studio</div>
             <div class="text-12-medium text-text-base truncate">{base(root()) || root()}</div>
           </div>
-          <button
-            type="button"
-            classList={{
-              "h-7 px-2 rounded-md text-11-medium transition-colors": true,
-              "bg-surface-base-active text-text-strong": state.files,
-              "text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
-            }}
-            onClick={() => {
-              if (state.files) {
-                setState("files", false)
-                return
-              }
-              openFiles()
-            }}
-          >
-            Files
-          </button>
           <div class="h-8 p-0.5 rounded-lg border border-border-weaker-base bg-surface-base flex items-center gap-0.5">
             {modeButton("code", "Code")}
             {modeButton("split", "Split")}
             {modeButton("preview", "Preview")}
           </div>
+          <Show when={state.mode !== "preview"}>
+            <button
+              type="button"
+              classList={{
+                "h-7 px-2 rounded-md text-11-medium transition-colors": true,
+                "bg-surface-base-active text-text-strong": state.files,
+                "text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
+              }}
+              onClick={() => {
+                if (state.files) {
+                  setState("files", false)
+                  return
+                }
+                openFiles()
+              }}
+            >
+              Explorer
+            </button>
+          </Show>
         </div>
 
         <div class="shrink-0 flex items-center gap-2">
@@ -389,8 +424,8 @@ export function WorkbenchPanel(props: {
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 flex">
-        <Show when={state.files}>
+      <div class="min-h-0 flex-1 flex overflow-hidden">
+        <Show when={showFiles()}>
           <aside class="h-full shrink-0 border-r border-border-weaker-base bg-surface-base" style={{ width: `${state.left}px` }}>
             <div class="h-11 px-3 border-b border-border-weaker-base flex items-center justify-between gap-2">
               <div class="text-12-medium text-text-weak">Files</div>
@@ -418,12 +453,12 @@ export function WorkbenchPanel(props: {
             </div>
           </aside>
 
-          <div onPointerDown={() => undefined}>
+          <div class="relative shrink-0" onPointerDown={() => undefined}>
             <ResizeHandle
               direction="horizontal"
               size={state.left}
               min={220}
-              max={typeof window === "undefined" ? 420 : Math.min(520, window.innerWidth * 0.35)}
+              max={leftMax()}
               onResize={(size) => setState("left", size)}
             />
           </div>
@@ -502,13 +537,13 @@ export function WorkbenchPanel(props: {
         </Show>
 
         <Show when={state.mode === "split"}>
-          <div onPointerDown={() => undefined}>
+          <div class="relative shrink-0" onPointerDown={() => undefined}>
             <ResizeHandle
               direction="horizontal"
               edge="start"
               size={state.right}
               min={320}
-              max={typeof window === "undefined" ? 640 : Math.min(760, window.innerWidth * 0.55)}
+              max={rightMax()}
               onResize={(size) => setState("right", size)}
             />
           </div>
@@ -516,8 +551,11 @@ export function WorkbenchPanel(props: {
 
         <Show when={state.mode !== "code"}>
           <aside
-            class="h-full min-w-0 shrink-0 bg-surface-base flex flex-col"
-            classList={{ "border-l border-border-weaker-base": state.mode === "split" }}
+            class="h-full min-w-0 bg-surface-base flex flex-col flex-1"
+            classList={{
+              "border-l border-border-weaker-base": state.mode === "split",
+              "shrink-0": state.mode === "split",
+            }}
             style={state.mode === "split" ? { width: `${state.right}px` } : undefined}
           >
             <div class="p-3 border-b border-border-weaker-base flex flex-col gap-2">
@@ -535,7 +573,7 @@ export function WorkbenchPanel(props: {
               </div>
             </div>
 
-            <div class="min-h-0 flex-1 bg-background-base">
+            <div class="min-h-0 flex-1 bg-background-base w-full">
               <Show
                 when={state.url}
                 fallback={
@@ -544,7 +582,7 @@ export function WorkbenchPanel(props: {
                   </div>
                 }
               >
-                {(url) => <iframe src={url()} class="size-full bg-white" title="Preview" />}
+                {(url) => <iframe src={url()} class="block size-full bg-white" title="Preview" />}
               </Show>
             </div>
           </aside>

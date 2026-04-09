@@ -2056,7 +2056,7 @@ export default function Page() {
           />
 
           <Show when={desktopReviewOpen() && !desktopStudioOpen()}>
-            <div onPointerDown={() => size.start()}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"
                 size={layout.session.width()}
@@ -2072,20 +2072,29 @@ export default function Page() {
         </div>
 
         <Show when={desktopStudioOpen()}>
-          <div onPointerDown={() => size.start()}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="start"
-              size={layout.studio.width()}
-              min={420}
-              max={typeof window === "undefined" ? 1200 : window.innerWidth * 0.8}
-              onResize={(width) => {
-                size.touch()
-                layout.studio.resize(width)
-              }}
-            />
-          </div>
-          <aside class="relative min-w-0 h-full shrink-0 border-l border-border-weaker-base bg-background-base" style={{ width: `${layout.studio.width()}px` }}>
+          <Show when={!studioChatHidden()}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={layout.studio.width()}
+                min={420}
+                max={typeof window === "undefined" ? 1200 : window.innerWidth * 0.8}
+                onResize={(width) => {
+                  size.touch()
+                  layout.studio.resize(width)
+                }}
+              />
+            </div>
+          </Show>
+          <aside
+            class="relative min-w-0 h-full border-l border-border-weaker-base bg-background-base"
+            classList={{
+              "flex-1": studioChatHidden(),
+              "shrink-0": !studioChatHidden(),
+            }}
+            style={studioChatHidden() ? undefined : { width: `${layout.studio.width()}px` }}
+          >
             <WorkbenchPanel
               chatHidden={studioChatHidden()}
               onChatToggle={view().studio.toggleChat}
