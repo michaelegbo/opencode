@@ -19,12 +19,17 @@ type WorkbenchEntry = {
 type WorkbenchEvent = {
   paths: string[]
 }
+type WorkbenchSeed = {
+  path: string
+  content: string
+}
 type Workbench = {
   list(path: string): Promise<WorkbenchEntry[]>
   stat(path: string): Promise<WorkbenchEntry | null>
   read(path: string): Promise<string>
   write(path: string, data: string): Promise<void>
   watch(path: string, cb: (event: WorkbenchEvent) => void): Promise<VoidFunction>
+  create(input: { parent: string; name: string; files: WorkbenchSeed[] }): Promise<string>
 }
 
 export type Platform = {

@@ -154,6 +154,50 @@ describe("buildRequestParts", () => {
     }
   })
 
+  test("adds template references as synthetic text context", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "use this starter", start: 0, end: 16 }],
+      context: [
+        {
+          key: "ctx:template",
+          type: "template",
+          templateID: "landing",
+          templateName: "Landing Page Starter",
+          description: "A polished landing page starter.",
+          stack: "React + Tailwind",
+          partID: "hero",
+          partName: "Hero section",
+          hint: "Adapt this to the current hero.",
+          files: [
+            {
+              path: "src/App.tsx",
+              content: "export default function App() { return <section>Hero</section> }",
+            },
+            {
+              path: "src/styles.css",
+              content: ".hero { padding: 4rem; }",
+            },
+          ],
+        },
+      ],
+      images: [],
+      text: "use this starter",
+      messageID: "msg_template",
+      sessionID: "ses_template",
+      sessionDirectory: "/repo",
+    })
+
+    const part = result.requestParts.find((item) => item.type === "text" && item.synthetic)
+    expect(part?.type).toBe("text")
+    if (part?.type === "text") {
+      expect(part.text).toContain("Landing Page Starter")
+      expect(part.text).toContain("Hero section")
+      expect(part.text).toContain("React + Tailwind")
+      expect(part.text).toContain("--- src/App.tsx ---")
+      expect(part.text).toContain("Adapt this to the current hero.")
+    }
+  })
+
   test("handles Windows paths correctly (simulated on macOS)", () => {
     const prompt: Prompt = [{ type: "file", path: "src\\foo.ts", content: "@src\\foo.ts", start: 0, end: 11 }]
 

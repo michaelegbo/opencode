@@ -19,7 +19,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link"
 import { open, save } from "@tauri-apps/plugin-dialog"
-import { exists, readDir, readTextFile, stat, watch, writeTextFile } from "@tauri-apps/plugin-fs"
+import { exists, mkdir, readDir, readTextFile, stat, watch, writeTextFile } from "@tauri-apps/plugin-fs"
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http"
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification"
 import { type as ostype } from "@tauri-apps/plugin-os"
@@ -74,6 +74,13 @@ const base = (path: string) => {
   const trim = path.replace(/[\\/]+$/, "")
   const parts = trim.split(/[\\/]/)
   return parts.at(-1) ?? trim
+}
+
+const parent = (path: string) => {
+  const trim = path.replace(/[\\/]+$/, "")
+  const index = Math.max(trim.lastIndexOf("/"), trim.lastIndexOf("\\"))
+  if (index <= 0) return trim
+  return trim.slice(0, index)
 }
 
 const createPlatform = (): Platform => {
@@ -477,6 +484,26 @@ const createPlatform = (): Platform => {
           void guest(event.paths).then((paths) => cb({ paths }))
         }, { recursive: true, delayMs: 150 })
         return () => stop()
+      },
+      create: async (input) => {
+        const root = join(input.parent, input.name)
+        const hostRoot = await host(root)
+        const present = await exists(hostRoot).catch(() => false)
+        if (present) {
+          const kids = await readDir(hostRoot).catch(() => [])
+          if (kids.length > 0) throw new Error("Destination folder already exists and is not empty.")
+        } else {
+          await mkdir(hostRoot, { recursive: true })
+        }
+
+        await Promise.all(
+          input.files.map(async (file) => {
+            const next = join(root, file.path)
+            await mkdir(await host(parent(next)), { recursive: true })
+            await writeTextFile(await host(next), file.content)
+          }),
+        )
+        return root
       },
     },
   }

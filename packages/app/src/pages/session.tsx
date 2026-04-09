@@ -1013,6 +1013,7 @@ export default function Page() {
 
   const isEditableTarget = (target: EventTarget | null | undefined) => {
     if (!(target instanceof HTMLElement)) return false
+    if (target.closest("[data-workbench-editor], .monaco-editor")) return true
     return /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName) || target.isContentEditable
   }
 

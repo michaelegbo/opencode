@@ -4,6 +4,7 @@ import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
+import type { File as TemplateFile } from "@/template/library"
 import { Persist, persisted } from "@/utils/persist"
 
 interface PartBase {
@@ -57,7 +58,19 @@ export type ElementContextItem = {
   text?: string
 }
 
-export type ContextItem = FileContextItem | ElementContextItem
+export type TemplateContextItem = {
+  type: "template"
+  templateID: string
+  templateName: string
+  description: string
+  stack: string
+  partID?: string
+  partName?: string
+  hint?: string
+  files: TemplateFile[]
+}
+
+export type ContextItem = FileContextItem | ElementContextItem | TemplateContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
@@ -111,6 +124,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 
 function contextItemKey(item: ContextItem) {
   if (item.type === "element") return `${item.type}:${item.url}:${item.selector}`
+  if (item.type === "template") return `${item.type}:${item.templateID}:${item.partID ?? "full"}`
   const start = item.selection?.startLine
   const end = item.selection?.endLine
   const key = `${item.type}:${item.path}:${start}:${end}`

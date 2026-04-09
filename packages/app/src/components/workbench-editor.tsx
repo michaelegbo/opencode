@@ -102,5 +102,13 @@ export function WorkbenchEditor(props: {
     view?.dispose()
   })
 
-  return <div ref={root} class="size-full" />
+  return (
+    <div
+      ref={root}
+      class="size-full"
+      data-workbench-editor
+      data-prevent-autofocus
+      onPointerDown={() => view?.focus()}
+    />
+  )
 }

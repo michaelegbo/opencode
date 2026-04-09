@@ -24,7 +24,12 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
           {(item) => {
             const selected = props.active(item)
             const clickable = item.type === "file" && !!item.commentID
-            const label = item.type === "file" ? getFilenameTruncated(item.path, 14) : item.label
+            const label =
+              item.type === "file"
+                ? getFilenameTruncated(item.path, 14)
+                : item.type === "element"
+                  ? item.label
+                  : item.partName || item.templateName
             const tip =
               item.type === "file" ? (
                 <span class="flex max-w-[300px]">
@@ -33,13 +38,24 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                   </span>
                   <span class="shrink-0">{getFilename(item.path)}</span>
                 </span>
-              ) : (
+              ) : item.type === "element" ? (
                 <div class="flex max-w-[320px] flex-col gap-1">
                   <span class="truncate text-text-invert-base">{item.label}</span>
                   <span class="break-all text-text-invert-base/80">{item.selector}</span>
                 </div>
+              ) : (
+                <div class="flex max-w-[320px] flex-col gap-1">
+                  <span class="truncate text-text-invert-base">{item.templateName}</span>
+                  <span class="text-text-invert-base/80">{item.stack}</span>
+                  <span class="text-text-invert-base/70">{item.files.length} reference files</span>
+                </div>
               )
-            const body = item.type === "file" ? item.comment : item.text?.trim() || item.selector
+            const body =
+              item.type === "file"
+                ? item.comment
+                : item.type === "element"
+                  ? item.text?.trim() || item.selector
+                  : item.description
 
             return (
               <Tooltip value={tip} placement="top" openDelay={2000}>
@@ -55,8 +71,10 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                   <div class="flex items-center gap-1.5">
                     {item.type === "file" ? (
                       <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-3.5" />
-                    ) : (
+                    ) : item.type === "element" ? (
                       <Icon name="window-cursor" class="shrink-0 size-3.5 text-icon-info-base" />
+                    ) : (
+                      <Icon name="layout-right-full" class="shrink-0 size-3.5 text-icon-info-base" />
                     )}
                     <div class="flex items-center text-11-regular min-w-0 font-medium">
                       <span class="text-text-strong whitespace-nowrap">{label}</span>

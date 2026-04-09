@@ -1,10 +1,11 @@
-import { createMemo, For, Match, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Logo } from "@opencode-ai/ui/logo"
 import { useLayout } from "@/context/layout"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { Icon } from "@opencode-ai/ui/icon"
+import { showToast } from "@opencode-ai/ui/toast"
 import { usePlatform } from "@/context/platform"
 import { DateTime } from "luxon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -13,6 +14,14 @@ import { DialogSelectServer } from "@/components/dialog-select-server"
 import { useServer } from "@/context/server"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { materialize, templates } from "@/template/library"
+
+const slug = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "landing-page"
 
 export default function Home() {
   const sync = useGlobalSync()
@@ -41,6 +50,42 @@ export default function Home() {
     layout.projects.open(directory)
     server.projects.touch(directory)
     navigate(`/${base64Encode(directory)}`)
+  }
+
+  async function createProject() {
+    const tpl = templates()[0]
+    const fs = platform.workbench
+    if (!tpl || !fs || !platform.openDirectoryPickerDialog || !server.isLocal()) {
+      showToast({
+        variant: "error",
+        title: "Template starters need the desktop app",
+      })
+      return
+    }
+
+    const parent = await platform.openDirectoryPickerDialog({
+      title: "Choose a parent folder",
+      multiple: false,
+    })
+    const root = Array.isArray(parent) ? parent[0] : parent
+    if (!root) return
+
+    const raw = window.prompt("Project name", slug(tpl.name))
+    const name = raw?.trim()
+    if (!name) return
+
+    const next = await fs
+      .create({ parent: root, name: slug(name), files: materialize(tpl, name) })
+      .catch((err) => {
+        showToast({
+          variant: "error",
+          title: "Could not create project",
+          description: err instanceof Error ? err.message : String(err),
+        })
+        return
+      })
+    if (!next) return
+    openProject(next)
   }
 
   async function chooseProject() {
@@ -93,6 +138,11 @@ export default function Home() {
               <Button icon="folder-add-left" size="normal" class="pl-2 pr-3" onClick={chooseProject}>
                 {language.t("command.project.open")}
               </Button>
+              <Show when={platform.workbench && server.isLocal()}>
+                <Button icon="layout-right-full" size="normal" class="pl-2 pr-3" onClick={() => void createProject()}>
+                  Create from template
+                </Button>
+              </Show>
             </div>
             <ul class="flex flex-col gap-2">
               <For each={recent()}>
@@ -114,13 +164,18 @@ export default function Home() {
           </div>
         </Match>
         <Match when={!sync.ready}>
-          <div class="mt-30 mx-auto flex flex-col items-center gap-3">
-            <div class="text-12-regular text-text-weak">{language.t("common.loading")}</div>
-            <Button class="px-3" onClick={chooseProject}>
-              {language.t("command.project.open")}
-            </Button>
-          </div>
-        </Match>
+            <div class="mt-30 mx-auto flex flex-col items-center gap-3">
+              <div class="text-12-regular text-text-weak">{language.t("common.loading")}</div>
+              <Button class="px-3" onClick={chooseProject}>
+                {language.t("command.project.open")}
+              </Button>
+              <Show when={platform.workbench && server.isLocal()}>
+                <Button class="px-3" variant="ghost" onClick={() => void createProject()}>
+                  Create from template
+                </Button>
+              </Show>
+            </div>
+          </Match>
         <Match when={true}>
           <div class="mt-30 mx-auto flex flex-col items-center gap-3">
             <Icon name="folder-add-left" size="large" />
@@ -131,6 +186,11 @@ export default function Home() {
             <Button class="px-3 mt-1" onClick={chooseProject}>
               {language.t("command.project.open")}
             </Button>
+            <Show when={platform.workbench && server.isLocal()}>
+              <Button class="px-3" variant="ghost" onClick={() => void createProject()}>
+                Create from template
+              </Button>
+            </Show>
           </div>
         </Match>
       </Switch>

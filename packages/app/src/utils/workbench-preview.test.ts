@@ -50,6 +50,9 @@ function fs(input: Record<string, { dir?: string[]; file?: Record<string, string
       return item
     },
     async write() {},
+    async create(input) {
+      return join(input.parent, input.name)
+    },
     async watch() {
       return () => undefined
     },

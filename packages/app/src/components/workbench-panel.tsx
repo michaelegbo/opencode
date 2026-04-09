@@ -7,6 +7,7 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
+import { TemplatePanel } from "@/components/template-panel"
 import { WorkbenchEditor } from "@/components/workbench-editor"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -15,6 +16,7 @@ import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
+import { createSizing } from "@/pages/session/helpers"
 import { previewFromSession, previewFromTerminals } from "@/utils/preview-url"
 
 type Node = {
@@ -33,6 +35,7 @@ type Tab = {
 }
 
 type Mode = "code" | "split" | "preview"
+type Surface = "studio" | "templates"
 
 const base = (path: string) => {
   const trim = path.replace(/[\\/]+$/, "")
@@ -234,6 +237,7 @@ export function WorkbenchPanel(props: {
   const sdk = useSDK()
   const sync = useSync()
   const terminal = useTerminal()
+  const size = createSizing()
   const api = () => platform.workbench
   const root = createMemo(() => sync.data.path.directory || sdk.directory)
   const [state, setState] = createStore({
@@ -242,6 +246,7 @@ export function WorkbenchPanel(props: {
     right: 420,
     box: 0,
     mode: "split" as Mode,
+    surface: "studio" as Surface,
     tree: {} as Record<string, Node[]>,
     wait: {} as Record<string, boolean>,
     open: {} as Record<string, boolean>,
@@ -257,6 +262,8 @@ export function WorkbenchPanel(props: {
   let frame: HTMLIFrameElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
+  const delay = 500
+  const saves = new Map<string, number>()
 
   const tab = createMemo(() => state.tabs.find((item) => item.path === state.active))
   const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
@@ -266,15 +273,33 @@ export function WorkbenchPanel(props: {
   const tree = () => state.tree
   const showFiles = createMemo(() => state.mode !== "preview" && state.files)
   const box = createMemo(() => state.box || 1200)
-  const leftMax = createMemo(() => Math.max(260, Math.min(460, box() * 0.38)))
-  const rightMax = createMemo(() => Math.max(360, Math.min(960, box() * 0.68)))
-  const left = createMemo(() => (showFiles() ? state.left : 0))
+  const leftMin = 220
+  const rightMin = 320
+  const editMin = 380
+  const leftMax = createMemo(() => {
+    if (!showFiles()) return 0
+    const keep = (state.mode === "split" ? Math.min(820, Math.max(rightMin, state.right)) : 0) + editMin
+    return Math.max(0, Math.min(420, box() - keep))
+  })
+  const rightMax = createMemo(() => {
+    if (state.mode !== "split") return box()
+    const keep = (showFiles() ? Math.min(420, Math.max(leftMin, state.left)) : 0) + editMin
+    return Math.max(0, Math.min(820, box() - keep))
+  })
+  const leftFloor = createMemo(() => Math.min(leftMin, leftMax()))
+  const rightFloor = createMemo(() => Math.min(rightMin, rightMax()))
+  const left = createMemo(() => (showFiles() ? Math.max(0, Math.min(state.left, leftMax())) : 0))
   const right = createMemo(() => {
     if (state.mode === "code") return 0
     if (state.mode === "preview") return box()
-    return state.right
+    return Math.max(0, Math.min(state.right, rightMax()))
   })
   const edit = createMemo(() => Math.max(0, box() - left() - right()))
+  const anim = createMemo(() =>
+    size.active()
+      ? "transition-none"
+      : "transition-[width,opacity,transform] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+  )
   const open = (path: string) => !!state.open[path]
   const wait = (path: string) => !!state.wait[path]
   const setMode = (mode: Mode) => {
@@ -282,7 +307,7 @@ export function WorkbenchPanel(props: {
     if (mode === "preview" || state.files) return
     openFiles()
   }
-  const donePick = () => {
+  const stopPick = () => {
     setState("pick", false)
     setState("doc", "")
     setState("waitPick", false)
@@ -298,10 +323,7 @@ export function WorkbenchPanel(props: {
       return
     }
 
-    if (state.pick) {
-      donePick()
-      return
-    }
+    if (state.pick) return stopPick()
 
     setState("waitPick", true)
     const run = platform.fetch ?? fetch
@@ -358,39 +380,73 @@ export function WorkbenchPanel(props: {
     if (state.mode === "preview") setState("mode", "split")
   }
 
-  const change = (path: string, value: string) => {
-    setState("tabs", (list) =>
-      list.map((item) => (item.path === path ? { ...item, value, dirty: value !== item.saved } : item)),
-    )
-  }
-
-  const close = (path: string) => {
-    const list = state.tabs.filter((item) => item.path !== path)
-    setState("tabs", list)
-    if (state.active !== path) return
-    setState("active", list.at(-1)?.path ?? "")
-  }
-
-  const save = async () => {
-    const cur = tab()
-    if (!cur || !api()) return
+  const save = async (path = tab()?.path, opts?: { quiet?: boolean }) => {
+    if (!path || !api()) return false
+    const cur = state.tabs.find((item) => item.path === path)
+    if (!cur) return false
+    const value = cur.value
     const ok = await api()!
-      .write(cur.path, cur.value)
+      .write(path, value)
       .then(() => true)
       .catch(() => false)
 
     if (!ok) {
-      showToast({
-        variant: "error",
-        title: "Could not save file",
-        description: cur.path,
-      })
-      return
+      if (!opts?.quiet) {
+        showToast({
+          variant: "error",
+          title: "Could not save file",
+          description: path,
+        })
+      }
+      return false
     }
 
     setState("tabs", (list) =>
-      list.map((item) => (item.path === cur.path ? { ...item, saved: cur.value, dirty: false } : item)),
+      list.map((item) => {
+        if (item.path !== path) return item
+        if (item.value !== value) return item
+        return { ...item, saved: value, dirty: false }
+      }),
     )
+    return true
+  }
+
+  const queue = (path: string) => {
+    const prev = saves.get(path)
+    if (prev !== undefined) clearTimeout(prev)
+    saves.set(
+      path,
+      window.setTimeout(() => {
+        saves.delete(path)
+        void save(path, { quiet: true })
+      }, delay),
+    )
+  }
+
+  const change = (path: string, value: string) => {
+    setState("tabs", (list) =>
+      list.map((item) => (item.path === path ? { ...item, value, dirty: value !== item.saved } : item)),
+    )
+    queue(path)
+  }
+
+  const close = async (path: string) => {
+    const pending = saves.get(path)
+    if (pending !== undefined) {
+      clearTimeout(pending)
+      saves.delete(path)
+    }
+
+    const cur = state.tabs.find((item) => item.path === path)
+    if (cur?.dirty) {
+      const ok = await save(path)
+      if (!ok) return
+    }
+
+    const list = state.tabs.filter((item) => item.path !== path)
+    setState("tabs", list)
+    if (state.active !== path) return
+    setState("active", list.at(-1)?.path ?? "")
   }
 
   const refresh = (paths?: string[]) => {
@@ -453,30 +509,45 @@ export function WorkbenchPanel(props: {
   command.register("workbench.preview", () => {
     const list = [
       {
+        id: "workbench.surface.studio",
+        title: "Show Workspace",
+        category: "Workbench",
+        disabled: state.surface === "studio",
+        onSelect: () => setState("surface", "studio"),
+      },
+      {
+        id: "workbench.surface.templates",
+        title: "Show Templates",
+        category: "Workbench",
+        disabled: state.surface === "templates",
+        onSelect: () => setState("surface", "templates"),
+      },
+      {
         id: "workbench.mode.code",
         title: "Show Code",
         category: "Workbench",
-        disabled: state.mode === "code",
+        disabled: state.mode === "code" || state.surface !== "studio",
         onSelect: () => setMode("code"),
       },
       {
         id: "workbench.mode.split",
         title: "Show Code + Preview",
         category: "Workbench",
-        disabled: state.mode === "split",
+        disabled: state.mode === "split" || state.surface !== "studio",
         onSelect: () => setMode("split"),
       },
       {
         id: "workbench.mode.preview",
         title: "Show Preview",
         category: "Workbench",
-        disabled: state.mode === "preview",
+        disabled: state.mode === "preview" || state.surface !== "studio",
         onSelect: () => setMode("preview"),
       },
       {
         id: "workbench.explorer.toggle",
         title: state.files ? "Hide Explorer" : "Show Explorer",
         category: "Workbench",
+        disabled: state.surface !== "studio",
         onSelect: () => {
           if (state.files) {
             setState("files", false)
@@ -492,6 +563,7 @@ export function WorkbenchPanel(props: {
         id: "workbench.chat.toggle",
         title: props.chatHidden ? "Show Chat" : "Hide Chat",
         category: "Workbench",
+        disabled: false,
         onSelect: props.onChatToggle,
       })
     }
@@ -502,7 +574,7 @@ export function WorkbenchPanel(props: {
   createEffect(() => {
     const next = detected()
     if (!next || next === state.url) return
-    donePick()
+    stopPick()
     setState("url", next)
   })
 
@@ -510,7 +582,7 @@ export function WorkbenchPanel(props: {
     on(
       () => `${root()}\n${params.id ?? ""}`,
       () => {
-        donePick()
+        stopPick()
         setState("url", "")
       },
       { defer: true },
@@ -525,7 +597,7 @@ export function WorkbenchPanel(props: {
 
       const type = (event.data as { type?: string }).type
       if (type === "cancel") {
-        donePick()
+        stopPick()
         return
       }
 
@@ -556,10 +628,9 @@ export function WorkbenchPanel(props: {
         const node = document.querySelector('[data-component="prompt-input"]')
         if (node instanceof HTMLElement) node.focus()
       })
-      donePick()
       showToast({
         title: "Element added to chat",
-        description: label,
+        description: `${label} · picker still active`,
       })
     }
 
@@ -570,10 +641,25 @@ export function WorkbenchPanel(props: {
   onCleanup(() => {
     stop?.()
     if (tick !== undefined) clearTimeout(tick)
+    Array.from(saves.values()).forEach((id) => clearTimeout(id))
+    state.tabs.filter((item) => item.dirty).forEach((item) => void save(item.path, { quiet: true }))
   })
 
-  const pane =
-    "h-full shrink-0 min-w-0 overflow-hidden transition-[width,opacity] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width,opacity] motion-reduce:transition-none"
+  const pane = "h-full shrink-0 min-w-0 overflow-hidden will-change-[width,opacity]"
+  const surfaceButton = (value: Surface, icon: "dot-grid" | "layout-right-full", label: string) => (
+    <button
+      type="button"
+      classList={{
+        "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
+        "bg-surface-base-active text-text-strong shadow-xs-border": state.surface === value,
+        "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.surface !== value,
+      }}
+      onClick={() => setState("surface", value)}
+    >
+      <Icon name={icon} size="small" />
+      {label}
+    </button>
+  )
 
   if (!api()) {
     return (
@@ -583,51 +669,68 @@ export function WorkbenchPanel(props: {
     )
   }
 
-  const modeButton = (value: Mode, label: string) => (
+  const modeButton = (value: Mode, icon: "code" | "layout-right-partial" | "eye", label: string) => (
     <button
       type="button"
       classList={{
-        "h-7 px-2 rounded-md text-11-medium transition-colors": true,
-        "bg-surface-base-active text-text-strong": state.mode === value,
+        "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
+        "bg-surface-base-active text-text-strong shadow-xs-border": state.mode === value,
         "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.mode !== value,
       }}
       onClick={() => setMode(value)}
     >
+      <Icon name={icon} size="small" />
       {label}
     </button>
   )
 
   return (
-    <div ref={wrap} class="size-full bg-background-base flex flex-col overflow-hidden">
-      <div class="h-11 shrink-0 border-b border-border-weaker-base flex items-center justify-between gap-3 px-3">
+    <div
+      ref={wrap}
+      class="size-full bg-background-base flex flex-col overflow-hidden"
+      style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.04), transparent 34%)" }}
+    >
+      <div class="h-12 shrink-0 border-b border-border-weaker-base bg-background-base/95 backdrop-blur-sm flex items-center justify-between gap-3 px-3">
         <div class="min-w-0 flex items-center gap-3">
-          <div class="min-w-0">
-            <div class="text-11-medium text-text-weak">Studio</div>
-            <div class="text-12-medium text-text-base truncate">{base(root()) || root()}</div>
+          <div class="min-w-0 px-2 py-1.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-2 shadow-xs-border">
+            <div class="size-7 rounded-lg bg-background-stronger flex items-center justify-center text-icon-info-base">
+              <Icon name="dot-grid" size="small" />
+            </div>
+            <div class="min-w-0">
+              <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Studio</div>
+              <div class="text-12-medium text-text-base truncate">{base(root()) || root()}</div>
+            </div>
           </div>
-          <div class="h-8 p-0.5 rounded-lg border border-border-weaker-base bg-surface-base flex items-center gap-0.5">
-            {modeButton("code", "Code")}
-            {modeButton("split", "Split")}
-            {modeButton("preview", "Preview")}
+          <div class="h-9 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
+            {surfaceButton("studio", "dot-grid", "Workspace")}
+            {surfaceButton("templates", "layout-right-full", "Templates")}
           </div>
-          <Show when={state.mode !== "preview"}>
-            <button
-              type="button"
-              classList={{
-                "h-7 px-2 rounded-md text-11-medium transition-colors": true,
-                "bg-surface-base-active text-text-strong": state.files,
-                "text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
-              }}
-              onClick={() => {
-                if (state.files) {
-                  setState("files", false)
-                  return
-                }
-                openFiles()
-              }}
-            >
-              Explorer
-            </button>
+          <Show when={state.surface === "studio"}>
+            <div class="h-9 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
+              {modeButton("code", "code", "Code")}
+              {modeButton("split", "layout-right-partial", "Split")}
+              {modeButton("preview", "eye", "Preview")}
+            </div>
+            <Show when={state.mode !== "preview"}>
+              <button
+                type="button"
+                classList={{
+                  "h-8 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5 border": true,
+                  "border-border-weak-base bg-surface-base-active text-text-strong shadow-xs-border": state.files,
+                  "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
+                }}
+                onClick={() => {
+                  if (state.files) {
+                    setState("files", false)
+                    return
+                  }
+                  openFiles()
+                }}
+              >
+                <Icon name={state.files ? "file-tree-active" : "file-tree"} size="small" />
+                Explorer
+              </button>
+            </Show>
           </Show>
         </div>
 
@@ -645,202 +748,255 @@ export function WorkbenchPanel(props: {
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 flex overflow-hidden">
-        <aside
-          class={`${pane} bg-surface-base`}
-          classList={{
-            "border-r border-border-weaker-base": left() > 0,
-            "pointer-events-none opacity-0": left() === 0,
-          }}
-          style={{ width: `${left()}px` }}
-        >
-          <div class="h-11 px-3 border-b border-border-weaker-base flex items-center justify-between gap-2">
-            <div class="text-12-medium text-text-weak">Files</div>
-            <Button
-              variant="ghost"
-              class="h-8 px-2 text-12-medium"
-              onClick={() => void load(root(), true)}
-              aria-label="Refresh files"
-            >
-              <Icon name="reset" size="small" />
-            </Button>
-          </div>
-          <div class="h-[calc(100%-44px)] overflow-auto p-2">
-            <Tree
-              path={root()}
-              level={0}
-              active={() => state.active}
-              load={load}
-              open={open}
-              wait={wait}
-              tree={tree}
-              toggle={(path) => setState("open", path, (value) => !value)}
-              file={read}
-            />
-          </div>
-        </aside>
-
-        <Show when={state.files && state.mode !== "preview"}>
-          <div class="relative shrink-0" onPointerDown={() => undefined}>
-            <ResizeHandle
-              direction="horizontal"
-              size={state.left}
-              min={220}
-              max={leftMax()}
-              onResize={(size) => setState("left", size)}
-            />
-          </div>
-        </Show>
-
-        <section
-          class={`${pane} flex flex-col`}
-          classList={{
-            "pointer-events-none opacity-0": edit() === 0,
-          }}
-          style={{ width: `${edit()}px` }}
-        >
-          <div class="h-11 border-b border-border-weaker-base flex items-center justify-between gap-3 px-3">
-            <div class="min-w-0 flex-1 flex items-center gap-1 overflow-x-auto">
-              <For each={state.tabs}>
-                {(item) => (
-                  <div
-                    classList={{
-                      "h-8 pl-2 pr-1 rounded-md flex items-center gap-2 shrink-0 border": true,
-                      "bg-surface-base-active border-border-weak-base": state.active === item.path,
-                      "bg-transparent border-transparent hover:bg-surface-base-hover": state.active !== item.path,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      class="min-w-0 flex-1 flex items-center gap-2"
-                      onClick={() => setState("active", item.path)}
-                    >
-                      <FileIcon node={{ path: item.path, type: "file" }} class="size-4" />
-                      <span class="max-w-48 truncate text-12-medium text-text-base">{item.name}</span>
-                      <Show when={item.dirty}>
-                        <div class="size-1.5 rounded-full bg-icon-info-base" />
-                      </Show>
-                    </button>
-                    <button
-                      type="button"
-                      class="size-5 rounded-sm flex items-center justify-center hover:bg-surface-raised-base-hover"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        close(item.path)
-                      }}
-                      aria-label={`Close ${item.name}`}
-                    >
-                      <Icon name="close-small" size="small" class="text-icon-base" />
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-
-            <div class="shrink-0 flex items-center gap-2">
-              <Show when={tab()?.dirty}>
-                <Button variant="ghost" class="h-8 px-3 text-12-medium" onClick={() => void save()}>
-                  {language.t("common.save")}
-                </Button>
-              </Show>
-            </div>
-          </div>
-
-          <div class="min-h-0 flex-1">
-            <Show
-              when={tab()}
-              fallback={
-                <div class="size-full flex flex-col items-center justify-center gap-3 text-text-weak">
-                  <Icon name="code" class="size-8" />
-                  <div class="text-14-medium">Open a file from the tree to start editing.</div>
+      <Show
+        when={state.surface === "studio"}
+        fallback={<TemplatePanel chatHidden={props.chatHidden} onChatToggle={props.onChatToggle} />}
+      >
+        <div class="min-h-0 flex-1 flex overflow-hidden p-3 gap-3">
+          <aside
+            class={`${pane} ${anim()} bg-background-stronger`}
+            classList={{
+              "pointer-events-none opacity-0": left() === 0,
+            }}
+            style={{ width: `${left()}px` }}
+          >
+            <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
+              <div class="h-12 px-3 border-b border-border-weaker-base flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Explorer</div>
+                  <div class="text-12-medium text-text-base">Files</div>
                 </div>
-              }
-            >
-              {(item) => (
-                <WorkbenchEditor
-                  path={item().path}
-                  value={item().value}
-                  onChange={(value) => change(item().path, value)}
-                  onSave={() => void save()}
-                />
-              )}
-            </Show>
-          </div>
-        </section>
-
-        <Show when={state.mode === "split"}>
-          <div class="relative shrink-0" onPointerDown={() => undefined}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="start"
-              size={state.right}
-              min={320}
-              max={rightMax()}
-              onResize={(size) => setState("right", size)}
-            />
-          </div>
-        </Show>
-
-        <aside
-          class={`${pane} bg-surface-base flex flex-col`}
-          classList={{
-            "border-l border-border-weaker-base": state.mode === "split" && right() > 0,
-            "pointer-events-none opacity-0": right() === 0,
-          }}
-          style={{ width: `${right()}px` }}
-        >
-          <div class="p-3 border-b border-border-weaker-base flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-13-medium text-text-base">Preview</div>
-              <div class="min-w-0 flex items-center gap-2">
-                <Show when={state.url}>
-                  {(url) => <div class="min-w-0 text-11-medium text-text-weak truncate">{url()}</div>}
-                </Show>
                 <Button
                   variant="ghost"
-                  class={state.pick ? "h-8 px-2 bg-surface-base-active text-text-strong" : "h-8 px-2"}
-                  disabled={!state.url || state.waitPick}
-                  onClick={pick}
-                  aria-label={state.pick ? "Stop selecting elements" : "Select an element from preview"}
+                  class="h-8 px-2 text-12-medium"
+                  onClick={() => void load(root(), true)}
+                  aria-label="Refresh files"
                 >
-                  <Icon name="window-cursor" class="size-4" />
+                  <Icon name="reset" size="small" />
                 </Button>
               </div>
-            </div>
-
-            <div class="text-11-medium text-text-weak">
-              {state.waitPick
-                ? "Loading the picker snapshot..."
-                : state.pick
-                  ? "Click any element in the preview to add it to the chat box."
-                  : state.url
-                    ? "Following the latest localhost app from chat or terminal."
-                    : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
-            </div>
-          </div>
-
-          <div class="min-h-0 flex-1 bg-background-base w-full">
-            <Show
-              when={state.url}
-              fallback={
-                <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
-                  Preview will appear automatically when a localhost app is running in this workspace.
-                </div>
-              }
-            >
-              {(url) => (
-                <iframe
-                  ref={frame}
-                  src={state.pick && state.doc ? undefined : url()}
-                  srcdoc={state.pick && state.doc ? state.doc : undefined}
-                  class="block size-full bg-white"
-                  title="Preview"
+              <div class="h-[calc(100%-48px)] overflow-auto p-2.5">
+                <Tree
+                  path={root()}
+                  level={0}
+                  active={() => state.active}
+                  load={load}
+                  open={open}
+                  wait={wait}
+                  tree={tree}
+                  toggle={(path) => setState("open", path, (value) => !value)}
+                  file={read}
                 />
-              )}
-            </Show>
-          </div>
-        </aside>
-      </div>
+              </div>
+            </div>
+          </aside>
+
+          <Show when={state.files && state.mode !== "preview"}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
+              <ResizeHandle
+                direction="horizontal"
+                size={state.left}
+                min={leftFloor()}
+                max={leftMax()}
+                onResize={(next) => {
+                  size.touch()
+                  setState("left", next)
+                }}
+              />
+            </div>
+          </Show>
+
+          <section
+            class={`${pane} ${anim()} flex flex-col`}
+            classList={{
+              "pointer-events-none opacity-0": edit() === 0,
+            }}
+            style={{ width: `${edit()}px` }}
+          >
+            <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
+              <div class="h-12 border-b border-border-weaker-base flex items-center justify-between gap-3 px-3">
+                <div class="min-w-0 flex-1 flex items-center gap-1 overflow-x-auto">
+                  <For each={state.tabs}>
+                    {(item) => (
+                      <div
+                        classList={{
+                          "h-8 pl-2 pr-1 rounded-lg flex items-center gap-2 shrink-0 border": true,
+                          "bg-surface-base-active border-border-weak-base shadow-xs-border": state.active === item.path,
+                          "bg-transparent border-transparent hover:bg-surface-base-hover": state.active !== item.path,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          class="min-w-0 flex-1 flex items-center gap-2"
+                          onClick={() => setState("active", item.path)}
+                        >
+                          <FileIcon node={{ path: item.path, type: "file" }} class="size-4" />
+                          <span class="max-w-48 truncate text-12-medium text-text-base">{item.name}</span>
+                          <Show when={item.dirty}>
+                            <div class="size-1.5 rounded-full bg-icon-info-base" />
+                          </Show>
+                        </button>
+                        <button
+                          type="button"
+                          class="size-5 rounded-sm flex items-center justify-center hover:bg-surface-raised-base-hover"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            close(item.path)
+                          }}
+                          aria-label={`Close ${item.name}`}
+                        >
+                          <Icon name="close-small" size="small" class="text-icon-base" />
+                        </button>
+                      </div>
+                    )}
+                  </For>
+                </div>
+
+                <div class="shrink-0 flex items-center gap-2">
+                  <Show when={tab()?.dirty}>
+                    <Button variant="ghost" class="h-8 px-3 text-12-medium" onClick={() => void save()}>
+                      {language.t("common.save")}
+                    </Button>
+                  </Show>
+                </div>
+              </div>
+
+              <div class="min-h-0 flex-1 bg-background-base">
+                <Show
+                  when={tab()}
+                  fallback={
+                    <div class="size-full flex flex-col items-center justify-center gap-3 text-text-weak">
+                      <div class="size-14 rounded-[18px] border border-border-weaker-base bg-surface-base flex items-center justify-center shadow-xs-border">
+                        <Icon name="code" class="size-8" />
+                      </div>
+                      <div class="text-14-medium">Open a file from the tree to start editing.</div>
+                    </div>
+                  }
+                >
+                  {(item) => (
+                    <WorkbenchEditor
+                      path={item().path}
+                      value={item().value}
+                      onChange={(value) => change(item().path, value)}
+                      onSave={() => void save()}
+                    />
+                  )}
+                </Show>
+              </div>
+            </div>
+          </section>
+
+          <Show when={state.mode === "split"}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={state.right}
+                min={rightFloor()}
+                max={rightMax()}
+                onResize={(next) => {
+                  size.touch()
+                  setState("right", next)
+                }}
+              />
+            </div>
+          </Show>
+
+          <aside
+            class={`${pane} ${anim()} bg-background-stronger flex flex-col`}
+            classList={{
+              "pointer-events-none opacity-0": right() === 0,
+            }}
+            style={{ width: `${right()}px` }}
+          >
+            <div class={state.mode === "preview" ? "size-full pl-3 pb-3 pr-3" : "size-full"}>
+              <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
+                <div class="p-3 border-b border-border-weaker-base flex flex-col gap-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Preview</div>
+                      <div class="text-13-medium text-text-base">Live browser canvas</div>
+                    </div>
+                    <div class="shrink-0 flex items-center gap-2">
+                      <Show when={state.url}>
+                        <Button
+                          variant="ghost"
+                          class="h-8 px-2"
+                          onClick={() => platform.openLink(state.url)}
+                          aria-label="Open preview in browser"
+                        >
+                          <Icon name="open-file" class="size-4" />
+                        </Button>
+                      </Show>
+                      <Button
+                        variant="ghost"
+                        class={state.pick ? "h-8 px-2 bg-surface-base-active text-text-strong" : "h-8 px-2"}
+                        disabled={!state.url || state.waitPick}
+                        onClick={pick}
+                        aria-label={state.pick ? "Stop selecting elements" : "Select an element from preview"}
+                      >
+                        <Icon name="window-cursor" class="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 min-w-0">
+                    <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-stronger px-3 flex items-center gap-2">
+                      <div class={`size-2 rounded-full ${state.url ? "bg-icon-success-base" : "bg-icon-disabled"}`} />
+                      <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
+                        {state.url || "Waiting for a localhost app from chat or terminal"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="text-11-medium text-text-weak">
+                    {state.waitPick
+                      ? "Loading the picker snapshot..."
+                      : state.pick
+                        ? "Click any element in the preview to add it to the chat box."
+                        : state.url
+                          ? "Following the latest localhost app from chat or terminal."
+                          : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
+                  </div>
+                </div>
+
+                <div class="min-h-0 flex-1 bg-background-stronger p-3">
+                  <div class="size-full min-w-0 overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]">
+                    <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
+                      <div class="size-2 rounded-full bg-[#f87171]" />
+                      <div class="size-2 rounded-full bg-[#fbbf24]" />
+                      <div class="size-2 rounded-full bg-[#34d399]" />
+                      <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
+                        {state.url || "Preview canvas"}
+                      </div>
+                    </div>
+                    <div class="h-[calc(100%-40px)] min-w-0 overflow-hidden bg-[#181922]">
+                      <Show
+                        when={state.url}
+                        fallback={
+                          <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
+                            Preview will appear automatically when a localhost app is running in this workspace.
+                          </div>
+                        }
+                      >
+                        {(url) => (
+                          <iframe
+                            ref={frame}
+                            src={state.pick && state.doc ? undefined : url()}
+                            srcdoc={state.pick && state.doc ? state.doc : undefined}
+                            class="block size-full bg-white"
+                            title="Preview"
+                          />
+                        )}
+                      </Show>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </Show>
     </div>
   )
 }

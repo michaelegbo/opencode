@@ -9,6 +9,7 @@ import type {
   FileContextItem,
   ImageAttachmentPart,
   Prompt,
+  TemplateContextItem,
 } from "@/context/prompt"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
@@ -17,7 +18,7 @@ type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id
 
 type BuildRequestPartsInput = {
   prompt: Prompt
-  context: ({ key: string } & (FileContextItem | ElementContextItem))[]
+  context: ({ key: string } & (FileContextItem | ElementContextItem | TemplateContextItem))[]
   images: ImageAttachmentPart[]
   text: string
   messageID: string
@@ -49,6 +50,9 @@ const isFileAttachment = (part: Prompt[number]): part is FileAttachmentPart => p
 const isAgentAttachment = (part: Prompt[number]): part is AgentPart => part.type === "agent"
 const isElementContext = (item: BuildRequestPartsInput["context"][number]): item is { key: string } & ElementContextItem =>
   item.type === "element"
+const isTemplateContext = (
+  item: BuildRequestPartsInput["context"][number],
+): item is { key: string } & TemplateContextItem => item.type === "template"
 
 const formatElementNote = (item: ElementContextItem) => {
   const lines = [
@@ -60,6 +64,25 @@ const formatElementNote = (item: ElementContextItem) => {
   if (text) lines.push(`Text: ${text}`)
   lines.push(`Outer HTML:\n${item.html}`)
   return lines.join("\n")
+}
+
+const formatTemplateNote = (item: TemplateContextItem) => {
+  const lines = [
+    "The user attached the following design template as implementation reference.",
+    `Template: ${item.templateName}`,
+    `Description: ${item.description}`,
+    `Stack: ${item.stack}`,
+  ]
+  if (item.partName) lines.push(`Selected part: ${item.partName}`)
+  if (item.hint?.trim()) lines.push(`Guidance: ${item.hint.trim()}`)
+  lines.push("Adapt this reference to the current codebase instead of copying it blindly.")
+  lines.push("Reference files:")
+  lines.push(
+    ...item.files.map((file) => {
+      return [`--- ${file.path} ---`, file.content].join("\n")
+    }),
+  )
+  return lines.join("\n\n")
 }
 
 const toOptimisticPart = (part: PromptRequestPart, sessionID: string, messageID: string): Part => {
@@ -148,6 +171,17 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
           id: Identifier.ascending("part"),
           type: "text",
           text: formatElementNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
+    if (isTemplateContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatTemplateNote(item),
           synthetic: true,
         } satisfies PromptRequestPart,
       ]

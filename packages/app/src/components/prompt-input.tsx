@@ -1029,6 +1029,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             })
             continue
           }
+          if (item.type === "template") {
+            prompt.context.add({
+              type: item.type,
+              templateID: item.templateID,
+              templateName: item.templateName,
+              description: item.description,
+              stack: item.stack,
+              partID: item.partID,
+              partName: item.partName,
+              hint: item.hint,
+              files: item.files,
+            })
+            continue
+          }
           prompt.context.add({
             type: item.type,
             path: item.path,
