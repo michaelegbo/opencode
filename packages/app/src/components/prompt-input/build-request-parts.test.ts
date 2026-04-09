@@ -124,6 +124,36 @@ describe("buildRequestParts", () => {
     expect(files.some((part) => part.type === "file" && part.url === "file:///repo/src/shared.ts")).toBe(true)
   })
 
+  test("adds selected preview elements as synthetic text context", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "update this", start: 0, end: 11 }],
+      context: [
+        {
+          key: "ctx:element",
+          type: "element",
+          url: "http://localhost:4173",
+          label: "button#cta.hero",
+          selector: "main > section.hero > button#cta",
+          text: "Get started",
+          html: '<button id="cta" class="hero">Get started</button>',
+        },
+      ],
+      images: [],
+      text: "update this",
+      messageID: "msg_element",
+      sessionID: "ses_element",
+      sessionDirectory: "/repo",
+    })
+
+    const part = result.requestParts.find((item) => item.type === "text" && item.synthetic)
+    expect(part?.type).toBe("text")
+    if (part?.type === "text") {
+      expect(part.text).toContain("button#cta.hero")
+      expect(part.text).toContain("main > section.hero > button#cta")
+      expect(part.text).toContain('<button id="cta" class="hero">Get started</button>')
+    }
+  })
+
   test("handles Windows paths correctly (simulated on macOS)", () => {
     const prompt: Prompt = [{ type: "file", path: "src\\foo.ts", content: "@src\\foo.ts", start: 0, end: 11 }]
 

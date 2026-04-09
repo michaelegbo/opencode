@@ -48,7 +48,16 @@ export type FileContextItem = {
   preview?: string
 }
 
-export type ContextItem = FileContextItem
+export type ElementContextItem = {
+  type: "element"
+  url: string
+  selector: string
+  label: string
+  html: string
+  text?: string
+}
+
+export type ContextItem = FileContextItem | ElementContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
@@ -101,7 +110,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 }
 
 function contextItemKey(item: ContextItem) {
-  if (item.type !== "file") return item.type
+  if (item.type === "element") return `${item.type}:${item.url}:${item.selector}`
   const start = item.selection?.startLine
   const end = item.selection?.endLine
   const key = `${item.type}:${item.path}:${start}:${end}`

@@ -11,6 +11,7 @@ import { WorkbenchEditor } from "@/components/workbench-editor"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -37,6 +38,112 @@ const base = (path: string) => {
   const trim = path.replace(/[\\/]+$/, "")
   const parts = trim.split(/[\\/]/)
   return parts.at(-1) ?? trim
+}
+
+const esc = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+
+const pickDoc = (url: string, html: string) => {
+  const css = `<style>
+html.__paddie_pick, html.__paddie_pick * { cursor: crosshair !important; }
+.__paddie_pick_target { outline: 2px solid #60a5fa !important; outline-offset: 2px !important; }
+</style>`
+  const js = `<script>
+(() => {
+  const esc = window.CSS && CSS.escape ? CSS.escape.bind(CSS) : (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&")
+  const ok = (el) => el instanceof Element && !["HTML", "BODY", "SCRIPT", "STYLE", "LINK", "META"].includes(el.tagName)
+  const nth = (el) => {
+    const parent = el.parentElement
+    if (!parent) return ""
+    const kids = Array.from(parent.children).filter((item) => item.tagName === el.tagName)
+    if (kids.length <= 1) return ""
+    return ":nth-of-type(" + (kids.indexOf(el) + 1) + ")"
+  }
+  const cls = (el) => {
+    const list = Array.from(el.classList).slice(0, 2)
+    if (list.length === 0) return ""
+    return list.map((item) => "." + esc(item)).join("")
+  }
+  const line = (el) => {
+    let out = el.tagName.toLowerCase()
+    if (el.id) out += "#" + el.id
+    const list = Array.from(el.classList).slice(0, 2)
+    if (list.length) out += "." + list.join(".")
+    return out
+  }
+  const path = (el) => {
+    const out = []
+    let cur = el
+    while (ok(cur)) {
+      let item = cur.tagName.toLowerCase()
+      if (cur.id) {
+        out.unshift(item + "#" + esc(cur.id))
+        break
+      }
+      item += cls(cur) + nth(cur)
+      out.unshift(item)
+      cur = cur.parentElement
+    }
+    return out.join(" > ")
+  }
+  const text = (el) => (el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 240)
+  let last
+  const mark = (el) => {
+    if (last === el) return
+    if (last) last.classList.remove("__paddie_pick_target")
+    last = el
+    if (el) el.classList.add("__paddie_pick_target")
+  }
+  const post = (type, payload = {}) => parent.postMessage({ source: "paddie-studio-preview", type, payload }, "*")
+  const find = (target) => {
+    if (!(target instanceof Element)) return
+    const hit = target.closest("*")
+    if (!ok(hit)) return
+    return hit
+  }
+  document.documentElement.classList.add("__paddie_pick")
+  document.addEventListener("mousemove", (event) => {
+    const hit = find(event.target)
+    if (!hit) return
+    mark(hit)
+  }, true)
+  document.addEventListener("click", (event) => {
+    const hit = find(event.target)
+    if (!hit) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    post("pick", {
+      url: ${JSON.stringify(url)},
+      selector: path(hit),
+      label: line(hit),
+      text: text(hit) || undefined,
+      html: (hit.outerHTML || "").replace(/\\s+/g, " ").trim().slice(0, 4000),
+    })
+  }, true)
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return
+    event.preventDefault()
+    event.stopPropagation()
+    post("cancel")
+  }, true)
+  post("ready")
+})()
+</script>`
+
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1><base href="${esc(url)}">${css}${js}`)
+  }
+
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html([^>]*)>/i, `<html$1><head><base href="${esc(url)}">${css}${js}</head>`)
+  }
+
+  return `<!doctype html><html><head><base href="${esc(url)}">${css}${js}</head><body>${html}</body></html>`
 }
 
 function Tree(props: {
@@ -122,6 +229,7 @@ export function WorkbenchPanel(props: {
   const command = useCommand()
   const language = useLanguage()
   const platform = usePlatform()
+  const prompt = usePrompt()
   const params = useParams()
   const sdk = useSDK()
   const sync = useSync()
@@ -140,9 +248,13 @@ export function WorkbenchPanel(props: {
     tabs: [] as Tab[],
     active: "",
     url: "",
+    pick: false,
+    doc: "",
+    waitPick: false,
   })
 
   let wrap: HTMLDivElement | undefined
+  let frame: HTMLIFrameElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
 
@@ -162,6 +274,45 @@ export function WorkbenchPanel(props: {
     setState("mode", mode)
     if (mode === "preview" || state.files) return
     openFiles()
+  }
+  const donePick = () => {
+    setState("pick", false)
+    setState("doc", "")
+    setState("waitPick", false)
+  }
+  const pick = () => {
+    const url = state.url
+    if (!url) {
+      showToast({
+        variant: "error",
+        title: "No preview is running",
+        description: "Run the app first, then turn on element selection.",
+      })
+      return
+    }
+
+    if (state.pick) {
+      donePick()
+      return
+    }
+
+    setState("waitPick", true)
+    const run = platform.fetch ?? fetch
+    void run(url)
+      .then((res) => res.text())
+      .then((html) => {
+        setState("doc", pickDoc(url, html))
+        setState("pick", true)
+        setState("waitPick", false)
+      })
+      .catch(() => {
+        setState("waitPick", false)
+        showToast({
+          variant: "error",
+          title: "Could not load preview picker",
+          description: url,
+        })
+      })
   }
 
   const load = async (path: string, force = false) => {
@@ -344,10 +495,70 @@ export function WorkbenchPanel(props: {
   createEffect(() => {
     const next = detected()
     if (!next || next === state.url) return
+    donePick()
     setState("url", next)
   })
 
-  createEffect(on(() => `${root()}\n${params.id ?? ""}`, () => setState("url", ""), { defer: true }))
+  createEffect(
+    on(
+      () => `${root()}\n${params.id ?? ""}`,
+      () => {
+        donePick()
+        setState("url", "")
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frame?.contentWindow) return
+      if (typeof event.data !== "object" || !event.data) return
+      if ((event.data as { source?: string }).source !== "paddie-studio-preview") return
+
+      const type = (event.data as { type?: string }).type
+      if (type === "cancel") {
+        donePick()
+        return
+      }
+
+      if (type !== "pick") return
+      const data = (event.data as { payload?: Record<string, unknown> }).payload
+      if (!data) return
+      const url = typeof data.url === "string" ? data.url : state.url
+      const selector = typeof data.selector === "string" ? data.selector : ""
+      const label = typeof data.label === "string" ? data.label : selector || "selected element"
+      const html = typeof data.html === "string" ? data.html : ""
+      const text = typeof data.text === "string" ? data.text : undefined
+      if (!url || !selector || !html) return
+
+      prompt.context.items()
+        .filter((item) => item.type === "element" && item.url === url && item.selector === selector)
+        .forEach((item) => prompt.context.remove(item.key))
+
+      prompt.context.add({
+        type: "element",
+        url,
+        selector,
+        label,
+        html,
+        text,
+      })
+      if (props.chatHidden) props.onChatToggle?.()
+      requestAnimationFrame(() => {
+        const node = document.querySelector('[data-component="prompt-input"]')
+        if (node instanceof HTMLElement) node.focus()
+      })
+      donePick()
+      showToast({
+        title: "Element added to chat",
+        description: label,
+      })
+    }
+
+    window.addEventListener("message", onMessage)
+    onCleanup(() => window.removeEventListener("message", onMessage))
+  })
 
   onCleanup(() => {
     stop?.()
@@ -561,15 +772,30 @@ export function WorkbenchPanel(props: {
             <div class="p-3 border-b border-border-weaker-base flex flex-col gap-2">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-13-medium text-text-base">Preview</div>
-                <Show when={state.url}>
-                  {(url) => <div class="text-11-medium text-text-weak truncate">{url()}</div>}
-                </Show>
+                <div class="min-w-0 flex items-center gap-2">
+                  <Show when={state.url}>
+                    {(url) => <div class="min-w-0 text-11-medium text-text-weak truncate">{url()}</div>}
+                  </Show>
+                  <Button
+                    variant="ghost"
+                    class={state.pick ? "h-8 px-2 bg-surface-base-active text-text-strong" : "h-8 px-2"}
+                    disabled={!state.url || state.waitPick}
+                    onClick={pick}
+                    aria-label={state.pick ? "Stop selecting elements" : "Select an element from preview"}
+                  >
+                    <Icon name="window-cursor" class="size-4" />
+                  </Button>
+                </div>
               </div>
 
               <div class="text-11-medium text-text-weak">
-                {state.url
-                  ? "Following the latest localhost app from chat or terminal."
-                  : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
+                {state.waitPick
+                  ? "Loading the picker snapshot..."
+                  : state.pick
+                    ? "Click any element in the preview to add it to the chat box."
+                    : state.url
+                      ? "Following the latest localhost app from chat or terminal."
+                      : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
               </div>
             </div>
 
@@ -582,7 +808,15 @@ export function WorkbenchPanel(props: {
                   </div>
                 }
               >
-                {(url) => <iframe src={url()} class="block size-full bg-white" title="Preview" />}
+                {(url) => (
+                  <iframe
+                    ref={frame}
+                    src={state.pick && state.doc ? undefined : url()}
+                    srcdoc={state.pick && state.doc ? state.doc : undefined}
+                    class="block size-full bg-white"
+                    title="Preview"
+                  />
+                )}
               </Show>
             </div>
           </aside>
