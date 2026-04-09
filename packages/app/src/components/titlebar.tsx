@@ -64,11 +64,48 @@ export function Titlebar() {
     const parts = location.pathname.replace(/\/+$/, "").split("/")
     return parts.at(-1) === "session"
   })
+  const session = createMemo(() => {
+    if (!params.dir) return false
+    return location.pathname.replace(/\/+$/, "").split("/").includes("session")
+  })
   const workbench = createMemo(() => {
     if (!params.dir) return false
     const parts = location.pathname.replace(/\/+$/, "").split("/")
     return parts.at(-1) === "workbench"
   })
+  const studioKey = createMemo(() => (params.dir ? `${params.dir}${params.id ? "/" + params.id : ""}` : ""))
+  const studioView = layout.view(studioKey)
+  const studio = createMemo(() => {
+    if (!params.dir) return false
+    return studioView.studio.opened()
+  })
+  const openStudio = () => {
+    if (!params.dir) return
+    const view = studioView
+    const path = params.id ? `/${params.dir}/session/${params.id}` : `/${params.dir}/session`
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      navigate(`/${params.dir}/workbench`)
+      return
+    }
+
+    if (!session()) {
+      view.studio.showChat()
+      view.studio.open()
+      navigate(path)
+      return
+    }
+
+    if (view.studio.opened()) {
+      view.studio.showChat()
+      view.studio.close()
+      return
+    }
+
+    layout.fileTree.close()
+    view.reviewPanel.close()
+    view.studio.showChat()
+    view.studio.open()
+  }
 
   createEffect(() => {
     const current = path()
@@ -259,18 +296,15 @@ export function Titlebar() {
                     "opacity-0 duration-120 ease-in delay-0 pointer-events-none": layout.sidebar.opened(),
                   }}
                 >
-                  <Tooltip placement="bottom" value="Workbench" openDelay={2000}>
+                  <Tooltip placement="bottom" value="Studio" openDelay={2000}>
                     <Button
                       variant="ghost"
                       class="titlebar-icon w-8 h-6 p-0 box-border"
                       disabled={layout.sidebar.opened()}
                       tabIndex={layout.sidebar.opened() ? -1 : undefined}
-                      onClick={() => {
-                        if (!params.dir) return
-                        navigate(`/${params.dir}/workbench`)
-                      }}
-                      aria-label="Workbench"
-                      aria-current={workbench() ? "page" : undefined}
+                      onClick={openStudio}
+                      aria-label="Studio"
+                      aria-current={workbench() || studio() ? "page" : undefined}
                     >
                       <Icon size="small" name="code" />
                     </Button>

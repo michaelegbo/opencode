@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import { Log } from "../util/log"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
+import PROMPT_PREVIEW from "./template/preview.txt"
 import PROMPT_REVIEW from "./template/review.txt"
 
 export namespace Command {
@@ -62,6 +63,7 @@ export namespace Command {
 
   export const Default = {
     INIT: "init",
+    PREVIEW: "preview",
     REVIEW: "review",
   } as const
 
@@ -101,6 +103,15 @@ export namespace Command {
           },
           subtask: true,
           hints: hints(PROMPT_REVIEW),
+        }
+        commands[Default.PREVIEW] = {
+          name: Default.PREVIEW,
+          description: "detect and run the primary frontend preview",
+          source: "command",
+          get template() {
+            return PROMPT_PREVIEW.replace("${path}", ctx.worktree)
+          },
+          hints: hints(PROMPT_PREVIEW),
         }
 
         for (const [name, command] of Object.entries(cfg.command ?? {})) {

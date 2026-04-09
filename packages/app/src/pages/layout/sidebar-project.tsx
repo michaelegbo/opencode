@@ -149,8 +149,22 @@ const ProjectTile = (props: {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
-          <ContextMenu.Item onSelect={() => navigate(`/${base64Encode(props.project.worktree)}/workbench`)}>
-            <ContextMenu.ItemLabel>Open workbench</ContextMenu.ItemLabel>
+          <ContextMenu.Item
+            onSelect={() => {
+              const dir = base64Encode(props.project.worktree)
+              if (typeof window !== "undefined" && window.innerWidth < 768) {
+                navigate(`/${dir}/workbench`)
+                return
+              }
+              const view = layout.view(dir)
+              layout.fileTree.close()
+              view.reviewPanel.close()
+              view.studio.showChat()
+              view.studio.open()
+              navigate(`/${dir}/session`)
+            }}
+          >
+            <ContextMenu.ItemLabel>Open studio</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
             <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
