@@ -1,12 +1,11 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, For, on, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useParams } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Terminal } from "@/components/terminal"
 import { WorkbenchEditor } from "@/components/workbench-editor"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -14,7 +13,7 @@ import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { detectPreview, type PreviewTarget } from "@/utils/workbench-preview"
+import { previewFromSession, previewFromTerminals } from "@/utils/preview-url"
 
 type Node = {
   name: string
@@ -37,12 +36,6 @@ const base = (path: string) => {
   const trim = path.replace(/[\\/]+$/, "")
   const parts = trim.split(/[\\/]/)
   return parts.at(-1) ?? trim
-}
-
-const find = (text: string) => {
-  const hit = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[a-z0-9.-]+):\d+(?:\/\S*)?/i)?.[0]
-  if (!hit) return
-  return hit.replace("0.0.0.0", "localhost").replace("[::1]", "localhost")
 }
 
 function Tree(props: {
@@ -128,12 +121,12 @@ export function WorkbenchPanel(props: {
   const command = useCommand()
   const language = useLanguage()
   const platform = usePlatform()
+  const params = useParams()
   const sdk = useSDK()
   const sync = useSync()
   const terminal = useTerminal()
   const api = () => platform.workbench
   const root = createMemo(() => sync.data.path.directory || sdk.directory)
-  const [frame, setFrame] = createSignal(0)
   const [state, setState] = createStore({
     files: true,
     left: 280,
@@ -144,37 +137,20 @@ export function WorkbenchPanel(props: {
     open: {} as Record<string, boolean>,
     tabs: [] as Tab[],
     active: "",
-    targets: [] as PreviewTarget[],
-    target: "",
-    pty: "",
     url: "",
-    err: "",
   })
 
-  let frameRef: HTMLIFrameElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
 
   const tab = createMemo(() => state.tabs.find((item) => item.path === state.active))
-  const target = createMemo(() => state.targets.find((item) => item.id === state.target))
-  const pty = createMemo(() => terminal.all().find((item) => item.id === state.pty))
-  const running = createMemo(() => !!pty())
+  const messages = createMemo(() => (params.id ? (sync.data.message[params.id] ?? []) : []))
+  const detected = createMemo(
+    () => previewFromSession(messages(), sync.data.part) ?? terminal.url() ?? previewFromTerminals(terminal.all()) ?? "",
+  )
   const tree = () => state.tree
   const open = (path: string) => !!state.open[path]
   const wait = (path: string) => !!state.wait[path]
-  const note = (text: string) => {
-    const next = find(text)
-    if (next) setState("url", next)
-  }
-  const hint = (path?: string) => {
-    const name = base(path ?? "").toLowerCase()
-    if (name === "package.json") return true
-    if (name === "bun.lock" || name === "bun.lockb" || name === "yarn.lock" || name === "pnpm-lock.yaml") return true
-    if (name === "package-lock.json" || name === "npm-shrinkwrap.json") return true
-    if (name.startsWith("vite.config.") || name.startsWith("next.config.") || name.startsWith("nuxt.config.")) return true
-    if (name.startsWith("astro.config.") || name.startsWith("svelte.config.")) return true
-    return false
-  }
 
   const load = async (path: string, force = false) => {
     if (!api()) return
@@ -245,51 +221,6 @@ export function WorkbenchPanel(props: {
     setState("tabs", (list) =>
       list.map((item) => (item.path === cur.path ? { ...item, saved: cur.value, dirty: false } : item)),
     )
-
-    if (cur.path.endsWith("package.json")) void scan()
-  }
-
-  const scan = async () => {
-    if (!api()) return
-    const list = await detectPreview({
-      fs: api()!,
-      root: root(),
-      os: platform.os,
-    }).catch(() => [])
-    const next = list[0]?.id ?? ""
-    setState("targets", list)
-    setState("target", (value) => (list.some((item) => item.id === value) ? value : next))
-  }
-
-  const stopPreview = async () => {
-    const id = state.pty
-    setState("pty", "")
-    if (!id) return
-    await terminal.close(id).catch(() => undefined)
-  }
-
-  const run = async () => {
-    const cmd = target()
-    if (!cmd || running()) return
-    await stopPreview()
-    setState("err", "")
-    setState("url", "")
-    const next = await sdk.client.pty
-      .create({
-        command: cmd.cmd,
-        args: cmd.args,
-        cwd: cmd.cwd,
-        title: "Preview",
-      })
-      .catch((err) => {
-        setState("err", String(err))
-        return null
-      })
-
-    const id = next?.data?.id
-    if (!id) return
-    terminal.open(id)
-    setState("pty", id)
   }
 
   const refresh = (paths?: string[]) => {
@@ -308,7 +239,6 @@ export function WorkbenchPanel(props: {
           )
         }),
       )
-      if (paths?.some((path) => hint(path))) await scan()
     }, 180)
   }
 
@@ -324,7 +254,6 @@ export function WorkbenchPanel(props: {
     stop?.()
     setState("open", dir, true)
     void load(dir, true)
-    void scan()
     void fs.watch(dir, (event) => refresh(event.paths)).then((fn) => {
       stop = fn
     })
@@ -332,36 +261,6 @@ export function WorkbenchPanel(props: {
 
   command.register("workbench.preview", () => {
     const list = [
-      {
-        id: "workbench.preview.run",
-        title: "Run Preview",
-        category: "Workbench",
-        disabled: !target() || running(),
-        onSelect: () => void run(),
-      },
-      {
-        id: "workbench.preview.stop",
-        title: "Stop Preview",
-        category: "Workbench",
-        disabled: !running(),
-        onSelect: () => void stopPreview(),
-      },
-      {
-        id: "workbench.preview.reload",
-        title: "Reload Preview Frame",
-        category: "Workbench",
-        disabled: !state.url,
-        onSelect: () => {
-          setFrame((value) => value + 1)
-          frameRef?.contentWindow?.location.reload()
-        },
-      },
-      {
-        id: "workbench.preview.rescan",
-        title: "Rescan Preview Target",
-        category: "Workbench",
-        onSelect: () => void scan(),
-      },
       {
         id: "workbench.mode.code",
         title: "Show Code",
@@ -410,18 +309,12 @@ export function WorkbenchPanel(props: {
   })
 
   createEffect(() => {
-    const id = state.pty
-    if (!id) return
-    if (terminal.all().some((item) => item.id === id)) return
-    setState("pty", "")
+    const next = detected()
+    if (!next || next === state.url) return
+    setState("url", next)
   })
 
-  createEffect(() => {
-    if (state.pty) return
-    const next = [...terminal.all()].reverse().find((item) => /\bpreview\b/i.test(item.title))
-    if (!next) return
-    setState("pty", next.id)
-  })
+  createEffect(on(() => `${root()}\n${params.id ?? ""}`, () => setState("url", ""), { defer: true }))
 
   onCleanup(() => {
     stop?.()
@@ -630,127 +523,28 @@ export function WorkbenchPanel(props: {
             <div class="p-3 border-b border-border-weaker-base flex flex-col gap-2">
               <div class="flex items-center justify-between gap-2">
                 <div class="text-13-medium text-text-base">Preview</div>
-                <div class="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    class="h-8 px-3 text-12-medium"
-                    disabled={!target() || running()}
-                    onClick={() => void run()}
-                  >
-                    {target() ? `Run ${target()!.label}` : "No preview target"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    class="h-8 px-3 text-12-medium"
-                    disabled={!running()}
-                    onClick={() => void stopPreview()}
-                  >
-                    {language.t("prompt.action.stop")}
-                  </Button>
-                </div>
+                <Show when={state.url}>
+                  {(url) => <div class="text-11-medium text-text-weak truncate">{url()}</div>}
+                </Show>
               </div>
 
-              <Show when={state.targets.length > 0}>
-                <div class="flex flex-col gap-1">
-                  <Show when={state.targets.length > 1}>
-                    <label class="text-11-medium text-text-weak" for="workbench-preview-target">
-                      Frontend target
-                    </label>
-                    <select
-                      id="workbench-preview-target"
-                      class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-12-medium text-text-base"
-                      value={state.target}
-                      onChange={(event) => setState("target", event.currentTarget.value)}
-                    >
-                      <For each={state.targets}>
-                        {(item) => <option value={item.id}>{(item.rel || "workspace root") + " - " + item.label}</option>}
-                      </For>
-                    </select>
-                  </Show>
-                  <div class="text-11-medium text-text-weak">
-                    <Show when={target()} keyed>
-                      {(item) => `${item.rel || "workspace root"}${item.note ? ` - ${item.note}` : ""}`}
-                    </Show>
-                  </div>
-                </div>
-              </Show>
-
-              <TextField
-                value={state.url}
-                onChange={(value) => setState("url", value)}
-                placeholder="http://localhost:3000"
-                label="Preview URL"
-                hideLabel
-              />
-
-              <div class="flex items-center justify-between gap-2 text-11-medium text-text-weak">
-                <span>
-                  {running()
-                    ? "Running in the shared terminal."
-                    : state.pty
-                      ? "Preview stopped."
-                      : "Waiting for a localhost URL from the preview terminal."}
-                </span>
-                <Button
-                  variant="ghost"
-                  class="h-7 px-2 text-11-medium"
-                  onClick={() => {
-                    setFrame((value) => value + 1)
-                    frameRef?.contentWindow?.location.reload()
-                  }}
-                >
-                  Reload frame
-                </Button>
+              <div class="text-11-medium text-text-weak">
+                {state.url
+                  ? "Following the latest localhost app from chat or terminal."
+                  : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
               </div>
             </div>
 
-            <div class="min-h-0 flex-1 border-b border-border-weaker-base bg-background-base">
+            <div class="min-h-0 flex-1 bg-background-base">
               <Show
                 when={state.url}
                 fallback={
                   <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
-                    Start a dev server or paste a localhost URL to preview the app here.
+                    Preview will appear automatically when a localhost app is running in this workspace.
                   </div>
                 }
               >
-                {(url) => (
-                  <iframe ref={frameRef} data-frame={frame()} src={url()} class="size-full bg-white" title="Preview" />
-                )}
-              </Show>
-            </div>
-
-            <div class="h-48 min-h-0 border-t border-border-weaker-base bg-background-stronger">
-              <Show
-                when={pty()}
-                fallback={
-                  <div class="size-full flex items-center justify-center px-6 text-center">
-                    <Show
-                      when={state.err}
-                      fallback={
-                        <div class="text-13-medium text-text-weak">
-                          {state.targets.length > 0
-                            ? "Run the preview to open the shared terminal here."
-                            : "No frontend target detected in this workspace."}
-                        </div>
-                      }
-                    >
-                      {(err) => <div class="font-mono text-11 whitespace-pre-wrap break-words text-status-error-base">{err()}</div>}
-                    </Show>
-                  </div>
-                }
-              >
-                {(item) => (
-                  <div class="size-full">
-                    <Terminal
-                      pty={item()}
-                      autoFocus={false}
-                      onConnect={() => terminal.trim(item().id)}
-                      onCleanup={terminal.bind().update}
-                      onConnectError={() => terminal.bind().clone(item().id)}
-                      onOutput={note}
-                    />
-                  </div>
-                )}
+                {(url) => <iframe src={url()} class="size-full bg-white" title="Preview" />}
               </Show>
             </div>
           </aside>

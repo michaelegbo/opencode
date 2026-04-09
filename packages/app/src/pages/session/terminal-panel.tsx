@@ -289,6 +289,7 @@ export function TerminalPanel() {
                               onConnect={() => ops.trim(id)}
                               onCleanup={ops.update}
                               onConnectError={() => ops.clone(id)}
+                              onOutput={terminal.note}
                             />
                           </div>
                         )}
