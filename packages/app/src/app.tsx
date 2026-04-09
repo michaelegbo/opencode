@@ -62,6 +62,12 @@ const SessionRoute = () => (
   </SessionProviders>
 )
 
+const WorkbenchRoute = () => (
+  <SessionProviders>
+    <Workbench />
+  </SessionProviders>
+)
+
 const SessionIndexRoute = () => <Navigate href="session" />
 
 function UiI18nBridge(props: ParentProps) {
@@ -300,7 +306,7 @@ export function AppInterface(props: {
                 <Route path="/" component={HomeRoute} />
                 <Route path="/:dir" component={DirectoryLayout}>
                   <Route path="/" component={SessionIndexRoute} />
-                  <Route path="/workbench" component={Workbench} />
+                  <Route path="/workbench" component={WorkbenchRoute} />
                   <Route path="/session/:id?" component={SessionRoute} />
                 </Route>
               </Dynamic>
