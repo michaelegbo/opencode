@@ -2088,7 +2088,7 @@ export default function Page() {
             </div>
           </Show>
           <aside
-            class="relative min-w-0 h-full border-l border-border-weaker-base bg-background-base"
+            class="relative min-w-0 h-full border-l border-border-weaker-base bg-background-base transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none"
             classList={{
               "flex-1": studioChatHidden(),
               "shrink-0": !studioChatHidden(),
