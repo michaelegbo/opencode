@@ -2,26 +2,23 @@ import { getFilename } from "@opencode-ai/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type {
+  AgentPart,
+  ElementContextItem,
+  FileAttachmentPart,
+  FileContextItem,
+  ImageAttachmentPart,
+  Prompt,
+  TemplateContextItem,
+} from "@/context/prompt"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
 
 type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
 
-type ContextFile = {
-  key: string
-  type: "file"
-  path: string
-  selection?: FileSelection
-  comment?: string
-  commentID?: string
-  commentOrigin?: "review" | "file"
-  preview?: string
-}
-
 type BuildRequestPartsInput = {
   prompt: Prompt
-  context: ContextFile[]
+  context: ({ key: string } & (FileContextItem | ElementContextItem | TemplateContextItem))[]
   images: ImageAttachmentPart[]
   text: string
   messageID: string
@@ -51,6 +48,46 @@ const parseCommentMentions = (comment: string) => {
 
 const isFileAttachment = (part: Prompt[number]): part is FileAttachmentPart => part.type === "file"
 const isAgentAttachment = (part: Prompt[number]): part is AgentPart => part.type === "agent"
+const isElementContext = (item: BuildRequestPartsInput["context"][number]): item is { key: string } & ElementContextItem =>
+  item.type === "element"
+const isTemplateContext = (
+  item: BuildRequestPartsInput["context"][number],
+): item is { key: string } & TemplateContextItem => item.type === "template"
+
+const formatElementNote = (item: ElementContextItem) => {
+  const lines = [
+    `The user selected the following preview element from ${item.url}.`,
+    `Element: ${item.label}`,
+    `Selector: ${item.selector}`,
+  ]
+  const text = item.text?.trim()
+  if (text) lines.push(`Text: ${text}`)
+  lines.push(`Outer HTML:\n${item.html}`)
+  return lines.join("\n")
+}
+
+const formatTemplateNote = (item: TemplateContextItem) => {
+  const lines = [
+    "The user attached the following design template as implementation reference.",
+    `Template: ${item.templateName}`,
+    `Description: ${item.description}`,
+    `Stack: ${item.stack}`,
+  ]
+  if (item.partName) lines.push(`Selected part: ${item.partName}`)
+  if (item.label) lines.push(`Selected element: ${item.label}`)
+  if (item.selector) lines.push(`Selector: ${item.selector}`)
+  if (item.text?.trim()) lines.push(`Text: ${item.text.trim()}`)
+  if (item.html?.trim()) lines.push(`Outer HTML:\n${item.html.trim()}`)
+  if (item.hint?.trim()) lines.push(`Guidance: ${item.hint.trim()}`)
+  lines.push("Adapt this reference to the current codebase instead of copying it blindly.")
+  lines.push("Reference files:")
+  lines.push(
+    ...item.files.map((file) => {
+      return [`--- ${file.path} ---`, file.content].join("\n")
+    }),
+  )
+  return lines.join("\n\n")
+}
 
 const toOptimisticPart = (part: PromptRequestPart, sessionID: string, messageID: string): Part => {
   if (part.type === "text") {
@@ -131,7 +168,29 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
   })
 
   const used = new Set(files.map((part) => part.url))
-  const context = input.context.flatMap((item) => {
+  const context: PromptRequestPart[] = input.context.flatMap<PromptRequestPart>((item) => {
+    if (isElementContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatElementNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
+    if (isTemplateContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatTemplateNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
     const path = absolute(input.sessionDirectory, item.path)
     const url = `file://${encodeFilePath(path)}${fileQuery(item.selection)}`
     const comment = item.comment?.trim()

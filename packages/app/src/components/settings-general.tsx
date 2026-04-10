@@ -175,6 +175,12 @@ export const SettingsGeneral: Component = () => {
       label: language.label(locale),
     })),
   )
+  const modes = createMemo(
+    (): { value: "queue" | "steer"; label: string }[] => [
+      { value: "queue", label: language.t("settings.general.row.followup.option.queue") },
+      { value: "steer", label: language.t("settings.general.row.followup.option.steer") },
+    ],
+  )
 
   const noneSound = { id: "none", label: "sound.option.none" } as const
   const soundOptions = [noneSound, ...SOUND_OPTIONS]
@@ -238,6 +244,23 @@ export const SettingsGeneral: Component = () => {
           <div data-action="settings-auto-accept-permissions">
             <Switch checked={accepting()} disabled={!dir()} onChange={toggleAccept} />
           </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.followup.title")}
+          description={language.t("settings.general.row.followup.description")}
+        >
+          <Select
+            data-action="settings-followup"
+            options={modes()}
+            current={modes().find((item) => item.value === settings.general.followup())}
+            value={(item) => item.value}
+            label={(item) => item.label}
+            onSelect={(item) => item && settings.general.setFollowup(item.value)}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+          />
         </SettingsRow>
 
         <SettingsRow

@@ -19,6 +19,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link"
 import { open, save } from "@tauri-apps/plugin-dialog"
+import { exists, mkdir, readDir, readTextFile, stat, watch, writeTextFile } from "@tauri-apps/plugin-fs"
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http"
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification"
 import { type as ostype } from "@tauri-apps/plugin-os"
@@ -46,7 +47,7 @@ void initI18n()
 
 let update: Update | null = null
 
-const deepLinkEvent = "opencode:deep-link"
+const deepLinkEvent = "paddiestudio:deep-link"
 
 const emitDeepLinks = (urls: string[]) => {
   if (urls.length === 0) return
@@ -60,6 +61,26 @@ const listenForDeepLinks = async () => {
   const startUrls = await getCurrent().catch(() => null)
   if (startUrls?.length) emitDeepLinks(startUrls)
   await onOpenUrl((urls) => emitDeepLinks(urls)).catch(() => undefined)
+}
+
+const join = (dir: string, name: string) => {
+  const root = dir.replace(/[\\/]+$/, "")
+  if (!root) return name
+  const sep = root.includes("\\") ? "\\" : "/"
+  return `${root}${sep}${name}`
+}
+
+const base = (path: string) => {
+  const trim = path.replace(/[\\/]+$/, "")
+  const parts = trim.split(/[\\/]/)
+  return parts.at(-1) ?? trim
+}
+
+const parent = (path: string) => {
+  const trim = path.replace(/[\\/]+$/, "")
+  const index = Math.max(trim.lastIndexOf("/"), trim.lastIndexOf("\\"))
+  if (index <= 0) return trim
+  return trim.slice(0, index)
 }
 
 const createPlatform = (): Platform => {
@@ -80,6 +101,16 @@ const createPlatform = (): Platform => {
       return Promise.all(result.map((path) => commands.wslPath(path, "linux").catch(() => path))) as any
     }
     return commands.wslPath(result, "linux").catch(() => result) as any
+  }
+
+  const host = async (path: string) => {
+    if (os !== "windows" || !window.__OPENCODE__?.wsl) return path
+    return commands.wslPath(path, "windows").catch(() => path)
+  }
+
+  const guest = async (paths: string[]) => {
+    if (os !== "windows" || !window.__OPENCODE__?.wsl) return paths
+    return Promise.all(paths.map((path) => commands.wslPath(path, "linux").catch(() => path)))
   }
 
   return {
@@ -406,6 +437,75 @@ const createPlatform = (): Platform => {
         }, "image/png")
       })
     },
+
+    workbench: {
+      list: async (path) => {
+        const root = await host(path)
+        const list = await readDir(root)
+        const out = await Promise.all(
+          list.map(async (item) => {
+            const file = join(path, item.name)
+            const next = await stat(join(root, item.name)).catch(() => null)
+            return {
+              name: item.name,
+              path: file,
+              dir: item.isDirectory,
+              file: item.isFile,
+              size: next?.size ?? 0,
+              mtime: next?.mtime ? next.mtime.getTime() : null,
+            }
+          }),
+        )
+        return out.sort((a, b) => {
+          if (a.dir !== b.dir) return a.dir ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+      },
+
+      stat: async (path) => {
+        const next = await host(path)
+        const ok = await exists(next).catch(() => false)
+        if (!ok) return null
+        const info = await stat(next)
+        return {
+          name: base(path),
+          path,
+          dir: info.isDirectory,
+          file: info.isFile,
+          size: info.size,
+          mtime: info.mtime ? info.mtime.getTime() : null,
+        }
+      },
+
+      read: async (path) => readTextFile(await host(path)),
+      write: async (path, data) => writeTextFile(await host(path), data),
+      watch: async (path, cb) => {
+        const stop = await watch(await host(path), (event) => {
+          void guest(event.paths).then((paths) => cb({ paths }))
+        }, { recursive: true, delayMs: 150 })
+        return () => stop()
+      },
+      create: async (input) => {
+        const root = join(input.parent, input.name)
+        const hostRoot = await host(root)
+        const present = await exists(hostRoot).catch(() => false)
+        if (present) {
+          const kids = await readDir(hostRoot).catch(() => [])
+          if (kids.length > 0) throw new Error("Destination folder already exists and is not empty.")
+        } else {
+          await mkdir(hostRoot, { recursive: true })
+        }
+
+        await Promise.all(
+          input.files.map(async (file) => {
+            const next = join(root, file.path)
+            await mkdir(await host(parent(next)), { recursive: true })
+            await writeTextFile(await host(next), file.content)
+          }),
+        )
+        return root
+      },
+    },
   }
 }
 
@@ -418,7 +518,7 @@ void listenForDeepLinks()
 render(() => {
   const platform = createPlatform()
   const loadLocale = async () => {
-    const current = await platform.storage?.("opencode.global.dat").getItem("language")
+    const current = await platform.storage?.("paddie-studio.global.dat").getItem("language")
     const legacy = current ? undefined : await platform.storage?.().getItem("language.v1")
     const raw = current ?? legacy
     if (!raw) return

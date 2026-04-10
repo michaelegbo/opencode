@@ -53,7 +53,7 @@ impl MainWindow {
             app,
             decorations,
         )
-        .title("OpenCode")
+        .title(title(app))
         .disable_drag_drop_handler()
         .zoom_hotkeys_enabled(false)
         .visible(true)
@@ -136,6 +136,7 @@ impl LoadingWindow {
             app,
             decorations,
         )
+        .title(title(app))
         .center()
         .resizable(false)
         .inner_size(640.0, 480.0)
@@ -143,6 +144,13 @@ impl LoadingWindow {
 
         Ok(Self(window_builder.build()?))
     }
+}
+
+fn title(app: &AppHandle) -> String {
+    app.config()
+        .product_name
+        .clone()
+        .unwrap_or_else(|| "Paddie Studio".into())
 }
 
 fn base_window_config<'a, R: Runtime, M: Manager<R>>(

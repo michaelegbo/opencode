@@ -24,6 +24,7 @@ import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
 import { Truncate } from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
+import { TerminalTool } from "./terminal"
 import { Glob } from "../util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -140,6 +141,7 @@ export namespace ToolRegistry {
             builtin: yield* Effect.forEach(
               [
                 InvalidTool,
+                TerminalTool,
                 BashTool,
                 ReadTool,
                 GlobTool,

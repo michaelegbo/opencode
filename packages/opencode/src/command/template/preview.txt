@@ -1,0 +1,15 @@
+Detect the primary user-facing frontend for the workspace at `${path}` and run it.
+
+Prefer the app that renders in a browser. In a monorepo, choose the frontend over backend or API services.
+
+Use the tools to:
+- inspect workspace manifests and package scripts
+- identify the best frontend target
+- start the correct dev or preview server with the terminal tool, using the title `Preview`, so it stays attached to the shared terminal UI
+- leave the server running if it needs to keep serving the app
+
+When you reply:
+- state which app or package you chose
+- state the exact command you ran
+- report the localhost URL when it appears
+- if there are multiple plausible frontends, briefly say why you picked this one
