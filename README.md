@@ -5,14 +5,15 @@
 <h1 align="center">Paddie Studio</h1>
 
 <p align="center">
-  Desktop-first AI coding workspace built as an official fork of
-  <a href="https://github.com/anomalyco/opencode">OpenCode</a>.
+  A unified visual environment for designing, previewing, and shaping production code with AI.
 </p>
 
 <p align="center">
-  <a href="https://github.com/michaelegbo/opencode">Official fork</a>
+  Build visually.
   |
-  <a href="https://github.com/anomalyco/opencode">Upstream</a>
+  Direct the assistant.
+  |
+  Export the codebase anytime.
   |
   <a href="#development">Development</a>
   |
@@ -21,87 +22,114 @@
 
 ---
 
-Paddie Studio keeps the OpenCode runtime and agent model, then layers on a more visual product workflow:
+Paddie Studio is built to collapse the distance between chat, canvas, and code.
+Instead of bouncing between a browser preview, an editor, and an assistant thread, you stay in one workspace where you can inspect a live app, select real UI elements, attach templates, and ask the assistant to implement changes directly against the project.
 
-- chat and Studio side by side
-- filesystem explorer + Monaco editor in the same shell
-- AI-run localhost preview that follows the active app automatically
-- desktop, tablet, and mobile viewport switching
-- element picking from preview directly into chat context
-- bundled templates that can be attached to chat or used to create starters
+Today, the core experience centers on:
 
-It is designed for building, reviewing, and iterating on frontend products without bouncing between separate apps.
+- a Studio shell that keeps chat and product work side by side
+- a live browser canvas that follows the running localhost app
+- direct code editing with a real filesystem and Monaco tabs
+- template-driven building for pages and reusable sections
+- element picking from preview into chat context
+
+Paddie Studio is being shaped toward a broader visual development workflow that combines interface building, reusable templates and components, richer project memory, and more automation over time.
 
 ## Screenshots
-
-![Paddie Studio desktop workbench](.github/assets/readme/studio-hero.png)
 
 <table>
   <tr>
     <td width="50%">
-      <img src=".github/assets/readme/studio-editor.png" alt="Paddie Studio editor surface" />
-      <p><strong>Studio workspace</strong><br>Chat, files, code, and preview can live in a single side-by-side flow.</p>
+      <img src=".github/assets/readme/paddie-preview.png" alt="Paddie Studio preview workspace" />
+      <p><strong>Studio + live preview</strong><br>Chat, Studio controls, and the live browser canvas all stay visible in one desktop workflow.</p>
     </td>
     <td width="50%">
-      <img src=".github/assets/readme/studio-preview.png" alt="Paddie Studio preview surface" />
-      <p><strong>Live browser canvas</strong><br>Preview follows the running localhost app and supports desktop, tablet, and mobile views.</p>
+      <img src=".github/assets/readme/paddie-templates.png" alt="Paddie Studio templates surface" />
+      <p><strong>Templates surface</strong><br>Browse bundled starters, inspect curated parts, and attach full templates or selected sections into chat.</p>
     </td>
   </tr>
 </table>
 
-## What Paddie Studio Adds
+## Introducing Paddie Studio
 
-### 1. Studio beside chat
+### Design. Preview. Iterate.
 
-OpenCode is extended with a persistent Studio shell that sits beside the conversation instead of replacing it. You can keep the AI conversation open while working in:
+Paddie Studio combines a visual product workspace with an AI co-developer so you can move from idea to implementation without switching tools every few minutes.
+
+The Studio surface keeps these views close together:
 
 - `Code`
 - `Split`
 - `Preview`
 - `Templates`
 
-The chat can be shown or hidden, and the Studio surface can be resized without leaving the current session.
+That means you can inspect the product, edit the source, and direct the assistant from one place.
 
-### 2. Real editing workflow
+### Visual interface workflow
 
-Paddie Studio turns the workspace into a proper local editor:
+The current Studio workflow is centered on a live, product-facing canvas:
+
+- preview follows the active localhost app automatically
+- desktop, tablet, and mobile viewport switching
+- real desktop viewport presets including `1920x1080`, `1600x900`, and `1440x900`
+- direct element selection from the preview into chat
+- responsive Studio resizing beside chat
+
+If you want to work manually, the same shell also gives you:
 
 - filesystem explorer for the current project
 - Monaco editor tabs
-- direct typing and editing inside the code surface
+- direct typing and editing in code
 - autosave by default
-- smooth transitions between code and preview layouts
 
-### 3. AI-driven preview
+### Your AI co-developer lives inside the editor
 
-The preview is designed to feel like a product canvas instead of a detached browser:
+Instead of describing changes against a vague screenshot, you can work with real project context:
 
-- follows localhost URLs from chat or the main terminal
-- supports desktop, tablet, and mobile preview modes
-- desktop presets include `1920x1080`, `1600x900`, and `1440x900`
-- can open the running app externally when needed
+- ask the assistant to run the app
+- let preview follow the running URL
+- pick real elements from the page
+- attach files, template parts, and selected targets to the prompt
+- ask the assistant to apply changes with that context already attached
 
-### 4. Element picker
+This is the core Paddie Studio loop today.
 
-You can select elements directly from the preview and send them into the composer as structured context. This lets you say things like:
-
-- "Tighten the spacing on this section"
-- "Restyle this CTA"
-- "Move this block above the fold"
-
-The picker stays active so you can add multiple elements before prompting the model.
-
-### 5. Templates
+### Start with a template
 
 Paddie Studio includes a bundled template system for reference-driven building:
 
 - browse a starter visually
 - attach a full template to chat
-- attach curated parts like hero, CTA, button, or modal
-- select template parts from preview
+- attach curated parts like hero, CTA, button, modal, navbar, and metrics
+- select parts directly from the template preview
 - create a starter project from the bundled template
 
-The current seeded template is a React + Tailwind landing-page starter.
+The current seeded template is a React + Tailwind landing-page starter, and the longer-term direction is to expand this into a richer component and template ecosystem.
+
+## Product Direction
+
+Paddie Studio is being shaped toward a broader visual development system built around three bigger ideas:
+
+### 1. Production-ready templates and components
+
+The template system is meant to grow beyond a single starter into a reusable library of:
+
+- full-page starters
+- curated sections
+- reusable components
+- community and marketplace-style building blocks over time
+
+### 2. Visual automation and workflow building
+
+The longer-term goal is not just UI generation, but a workspace where interface building and backend workflow orchestration can live closer together, so design, logic, and automation are part of one system instead of separate tools.
+
+### 3. Smarter project memory
+
+Paddie Studio is also being steered toward deeper memory and context handling, so the assistant becomes better at:
+
+- remembering project structure
+- reusing prior design and implementation decisions
+- applying richer context across multiple iterations
 
 ## Workflow
 
@@ -127,21 +155,20 @@ Or:
 2. Choose a destination folder.
 3. Open the new project in Studio and continue from there.
 
-## Why This Repo Exists
+## Open Source and Upstream
 
-Paddie Studio is an official public fork of OpenCode at:
+Paddie Studio is an official public fork of OpenCode:
 
-- [michaelegbo/opencode](https://github.com/michaelegbo/opencode)
+- fork: [michaelegbo/opencode](https://github.com/michaelegbo/opencode)
+- upstream: [anomalyco/opencode](https://github.com/anomalyco/opencode)
 
-Upstream remains:
-
-- [anomalyco/opencode](https://github.com/anomalyco/opencode)
-
-This fork stays structurally close to upstream so new upstream changes can still be pulled in, while the product layer evolves around:
+That relationship matters for maintenance, but it is not the product story.
+The fork stays structurally close to upstream so new OpenCode changes can still be pulled in, while Paddie Studio focuses the product layer around:
 
 - desktop-first usage
 - visual UI building
 - richer preview workflows
+- templates and reusable product patterns
 - branded packaging and app identity
 
 ## Development

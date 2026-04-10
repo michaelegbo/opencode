@@ -405,13 +405,14 @@ export default function Page() {
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopStudioOpen() || desktopReviewOpen() || desktopFileTreeOpen())
   const split = createMemo(() => ui.split || (typeof window === "undefined" ? 0 : window.innerWidth))
+  const chatMin = 320
+  const studioMin = 360
   const studioMax = createMemo(() => {
     const width = split()
     if (!width) return 1200
-    const keep = Math.max(380, Math.floor(width * 0.38))
-    return Math.max(420, width - keep)
+    return Math.max(studioMin, width - chatMin)
   })
-  const studioWidth = createMemo(() => Math.min(layout.studio.width(), studioMax()))
+  const studioWidth = createMemo(() => Math.max(studioMin, Math.min(layout.studio.width(), studioMax())))
   const sessionPanelWidth = createMemo(() => {
     if (desktopStudioOpen()) {
       if (studioChatHidden()) return "0px"
@@ -2099,7 +2100,7 @@ export default function Page() {
                 direction="horizontal"
                 edge="start"
                 size={studioWidth()}
-                min={420}
+                min={studioMin}
                 max={studioMax()}
                 onResize={(width) => {
                   size.touch()
