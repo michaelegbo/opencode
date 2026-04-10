@@ -36,6 +36,12 @@ type Tab = {
 
 type Mode = "code" | "split" | "preview"
 type Surface = "studio" | "templates"
+type Device = "desktop" | "tablet" | "mobile"
+
+const views = {
+  tablet: { w: 834, h: 1194 },
+  mobile: { w: 430, h: 932 },
+} as const
 
 const base = (path: string) => {
   const trim = path.replace(/[\\/]+$/, "")
@@ -249,6 +255,7 @@ export function WorkbenchPanel(props: {
     previewH: 0,
     mode: "split" as Mode,
     surface: "studio" as Surface,
+    device: "desktop" as Device,
     tree: {} as Record<string, Node[]>,
     wait: {} as Record<string, boolean>,
     open: {} as Record<string, boolean>,
@@ -260,7 +267,7 @@ export function WorkbenchPanel(props: {
     waitPick: false,
   })
 
-  let wrap: HTMLDivElement | undefined
+  let body: HTMLDivElement | undefined
   let frame: HTMLIFrameElement | undefined
   let stage: HTMLDivElement | undefined
   let stop: VoidFunction | undefined
@@ -298,27 +305,38 @@ export function WorkbenchPanel(props: {
     return Math.max(0, Math.min(state.right, rightMax()))
   })
   const edit = createMemo(() => Math.max(0, box() - left() - right()))
-  const previewW = createMemo(() => Math.max(0, state.previewW || right() - 24))
-  const previewH = createMemo(() => Math.max(0, state.previewH))
+  const previewW = createMemo(() => Math.max(0, (state.previewW || right()) - 32))
+  const previewH = createMemo(() => Math.max(0, state.previewH - 32))
+  const chrome = 40
+  const preset = createMemo(() => {
+    if (state.device === "tablet") return views.tablet
+    if (state.device === "mobile") return views.mobile
+    return null
+  })
   const frameW = createMemo(() => {
+    if (preset()) return preset()!.w
     const w = previewW()
     if (!w) return state.mode === "preview" ? 1200 : 1280
     if (state.mode === "preview") return Math.max(960, Math.min(1600, Math.round(w)))
     return 1280
   })
+  const shellH = createMemo(() => (preset() ? preset()!.h + chrome : 920))
   const scale = createMemo(() => {
     const w = previewW()
-    if (!w) return 1
-    return Math.min(1, w / frameW())
+    const h = previewH()
+    if (!w || !h) return 1
+    if (!preset()) return Math.min(1, w / frameW())
+    return Math.min(1, w / frameW(), h / shellH())
   })
   const frameH = createMemo(() => {
+    if (preset()) return shellH()
     const h = previewH()
     const zoom = scale()
     if (!h || zoom <= 0) return 920
-    return Math.max(920, Math.round(h / zoom))
+    return Math.max(shellH(), Math.round(h / zoom))
   })
-  const scaledW = createMemo(() => Math.max(0, Math.round(frameW() * scale())))
-  const scaledH = createMemo(() => Math.max(0, Math.round(frameH() * scale())))
+  const scaledW = createMemo(() => Math.max(0, Math.min(previewW(), Math.floor(frameW() * scale()))))
+  const scaledH = createMemo(() => Math.max(0, Math.min(previewH(), Math.floor(frameH() * scale()))))
   const anim = createMemo(() =>
     size.active()
       ? "transition-none"
@@ -500,7 +518,7 @@ export function WorkbenchPanel(props: {
   }
 
   createResizeObserver(
-    () => wrap,
+    () => body,
     ({ width }) => {
       const next = Math.ceil(width)
       if (!next || next === state.box) return
@@ -510,9 +528,9 @@ export function WorkbenchPanel(props: {
 
   createResizeObserver(
     () => stage,
-    ({ width, height }) => {
-      const nextW = Math.ceil(width)
-      const nextH = Math.ceil(height)
+    () => {
+      const nextW = Math.ceil(stage?.clientWidth ?? 0)
+      const nextH = Math.ceil(stage?.clientHeight ?? 0)
       if (!nextW || !nextH) return
       if (nextW === state.previewW && nextH === state.previewH) return
       setState("previewW", nextW)
@@ -689,13 +707,14 @@ export function WorkbenchPanel(props: {
   })
 
   const pane = "h-full shrink-0 min-w-0 overflow-hidden will-change-[width,opacity]"
+  const seg = "h-10 shrink-0 rounded-2xl border border-border-weaker-base bg-surface-base/95 p-1 shadow-xs-border backdrop-blur-sm flex items-center gap-1"
   const surfaceButton = (value: Surface, icon: "dot-grid" | "layout-right-full", label: string) => (
     <button
       type="button"
       classList={{
-        "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
-        "bg-surface-base-active text-text-strong shadow-xs-border": state.surface === value,
-        "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.surface !== value,
+        "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-all duration-150 flex items-center gap-1.5 border": true,
+        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border": state.surface === value,
+        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.surface !== value,
       }}
       onClick={() => setState("surface", value)}
     >
@@ -716,9 +735,9 @@ export function WorkbenchPanel(props: {
     <button
       type="button"
       classList={{
-        "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5": true,
-        "bg-surface-base-active text-text-strong shadow-xs-border": state.mode === value,
-        "text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.mode !== value,
+        "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-all duration-150 flex items-center gap-1.5 border": true,
+        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border": state.mode === value,
+        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.mode !== value,
       }}
       onClick={() => setMode(value)}
     >
@@ -726,69 +745,85 @@ export function WorkbenchPanel(props: {
       {label}
     </button>
   )
+  const deviceButton = (value: Device, label: string) => (
+    <button
+      type="button"
+      classList={{
+        "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-all duration-150 flex items-center justify-center border": true,
+        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border": state.device === value,
+        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.device !== value,
+      }}
+      onClick={() => setState("device", value)}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <div
-      ref={wrap}
       class="size-full bg-background-base flex flex-col overflow-hidden"
       style={{ background: "radial-gradient(circle at top, rgba(255,255,255,0.04), transparent 34%)" }}
     >
-      <div class="min-h-12 shrink-0 border-b border-border-weaker-base bg-background-base/95 backdrop-blur-sm flex items-center justify-between gap-3 px-3 py-2">
-        <div class="min-w-0 flex-1 flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
-          <div class="h-9 shrink-0 min-w-0 px-3 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-2.5 shadow-xs-border">
-            <div class="size-7 rounded-lg bg-background-stronger flex items-center justify-center text-icon-info-base">
-              <Icon name="dot-grid" size="small" />
+      <div class="shrink-0 border-b border-border-weaker-base bg-background-base/95 backdrop-blur-sm px-3 py-3">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex flex-1 flex-wrap items-center gap-2.5">
+            <div class="h-10 shrink-0 min-w-0 max-w-full px-3.5 rounded-2xl border border-border-weaker-base bg-surface-base/95 flex items-center gap-2.5 shadow-xs-border backdrop-blur-sm">
+              <div class="size-8 rounded-xl bg-background-stronger flex items-center justify-center text-icon-info-base shadow-xs-border">
+                <Icon name="dot-grid" size="small" />
+              </div>
+              <div class="min-w-0 flex items-center gap-2.5">
+                <div class="text-[10px] font-medium uppercase tracking-[0.18em] text-text-weak shrink-0">Studio</div>
+                <div class="h-4 w-px bg-border-weaker-base shrink-0" />
+                <div class="max-w-40 truncate text-13-medium text-text-strong">{base(root()) || root()}</div>
+              </div>
             </div>
-            <div class="min-w-0 flex items-center gap-2">
-              <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak shrink-0">Studio</div>
-              <div class="h-4 w-px bg-border-weaker-base shrink-0" />
-              <div class="max-w-40 truncate text-12-medium text-text-base">{base(root()) || root()}</div>
-            </div>
-          </div>
-          <div class="h-9 shrink-0 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
-            {surfaceButton("studio", "dot-grid", "Workspace")}
-            {surfaceButton("templates", "layout-right-full", "Templates")}
-          </div>
-          <Show when={state.surface === "studio"}>
-            <div class="h-9 shrink-0 p-0.5 rounded-xl border border-border-weaker-base bg-surface-base flex items-center gap-0.5 shadow-xs-border">
-              {modeButton("code", "code", "Code")}
-              {modeButton("split", "layout-right-partial", "Split")}
-              {modeButton("preview", "eye", "Preview")}
-            </div>
-            <Show when={state.mode !== "preview"}>
-              <button
-                type="button"
-                classList={{
-                  "h-8 shrink-0 px-2.5 rounded-lg text-11-medium transition-colors flex items-center gap-1.5 border": true,
-                  "border-border-weak-base bg-surface-base-active text-text-strong shadow-xs-border": state.files,
-                  "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
-                }}
-                onClick={() => {
-                  if (state.files) {
-                    setState("files", false)
-                    return
-                  }
-                  openFiles()
-                }}
-              >
-                <Icon name={state.files ? "file-tree-active" : "file-tree"} size="small" />
-                Explorer
-              </button>
-            </Show>
-          </Show>
-        </div>
 
-        <div class="shrink-0 flex items-center gap-2">
-          <Show when={props.onChatToggle}>
-            <Button variant="ghost" class="h-8 px-3 text-12-medium" onClick={props.onChatToggle}>
-              {props.chatHidden ? "Show chat" : "Hide chat"}
-            </Button>
-          </Show>
-          <Show when={props.onClose}>
-            <Button variant="ghost" class="h-8 px-3 text-12-medium" onClick={props.onClose}>
-              {language.t("common.close")}
-            </Button>
-          </Show>
+            <div class={seg}>
+              {surfaceButton("studio", "dot-grid", "Workspace")}
+              {surfaceButton("templates", "layout-right-full", "Templates")}
+            </div>
+
+            <Show when={state.surface === "studio"}>
+              <div class={seg}>
+                {modeButton("code", "code", "Code")}
+                {modeButton("split", "layout-right-partial", "Split")}
+                {modeButton("preview", "eye", "Preview")}
+              </div>
+              <Show when={state.mode !== "preview"}>
+                <button
+                  type="button"
+                  classList={{
+                    "h-10 shrink-0 px-3.5 rounded-2xl text-11-medium transition-all duration-150 flex items-center gap-2 border shadow-xs-border": true,
+                    "border-border-weak-base bg-surface-base-active text-text-strong": state.files,
+                    "border-border-weaker-base bg-surface-base/95 text-text-weak hover:bg-surface-base-hover hover:text-text-base": !state.files,
+                  }}
+                  onClick={() => {
+                    if (state.files) {
+                      setState("files", false)
+                      return
+                    }
+                    openFiles()
+                  }}
+                >
+                  <Icon name={state.files ? "file-tree-active" : "file-tree"} size="small" />
+                  Explorer
+                </button>
+              </Show>
+            </Show>
+          </div>
+
+          <div class="shrink-0 flex flex-wrap items-center justify-end gap-2">
+            <Show when={props.onChatToggle}>
+              <Button variant="ghost" class="h-10 rounded-2xl px-3.5 text-12-medium border border-transparent hover:border-border-weaker-base" onClick={props.onChatToggle}>
+                {props.chatHidden ? "Show chat" : "Hide chat"}
+              </Button>
+            </Show>
+            <Show when={props.onClose}>
+              <Button variant="ghost" class="h-10 rounded-2xl px-3.5 text-12-medium border border-transparent hover:border-border-weaker-base" onClick={props.onClose}>
+                {language.t("common.close")}
+              </Button>
+            </Show>
+          </div>
         </div>
       </div>
 
@@ -796,7 +831,7 @@ export function WorkbenchPanel(props: {
         when={state.surface === "studio"}
         fallback={<TemplatePanel chatHidden={props.chatHidden} onChatToggle={props.onChatToggle} />}
       >
-        <div class="min-h-0 flex-1 flex overflow-hidden p-3 gap-3">
+        <div ref={body} class="min-h-0 flex-1 flex overflow-hidden p-3 gap-3">
           <aside
             class={`${pane} ${anim()} bg-background-stronger`}
             classList={{
@@ -984,12 +1019,17 @@ export function WorkbenchPanel(props: {
                     </div>
                   </div>
 
-                  <div class="flex items-center gap-2 min-w-0">
+                  <div class="flex flex-wrap items-center gap-2 min-w-0">
                     <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-stronger px-3 flex items-center gap-2">
                       <div class={`size-2 rounded-full ${state.url ? "bg-icon-success-base" : "bg-icon-disabled"}`} />
                       <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
                         {state.url || "Waiting for a localhost app from chat or terminal"}
                       </div>
+                    </div>
+                    <div class="shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-stronger p-1 flex items-center gap-1 overflow-x-auto">
+                      {deviceButton("desktop", "Desktop")}
+                      {deviceButton("tablet", "Tablet")}
+                      {deviceButton("mobile", "Mobile")}
                     </div>
                   </div>
 
@@ -1021,7 +1061,7 @@ export function WorkbenchPanel(props: {
                             style={{ width: `${scaledW()}px`, height: `${scaledH()}px` }}
                           >
                             <div
-                              class="absolute left-0 top-0 overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]"
+                              class="absolute left-0 top-0 box-border overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)] flex flex-col"
                               style={{
                                 width: `${frameW()}px`,
                                 height: `${frameH()}px`,
@@ -1041,8 +1081,7 @@ export function WorkbenchPanel(props: {
                                 ref={frame}
                                 src={state.pick && state.doc ? undefined : url()}
                                 srcdoc={state.pick && state.doc ? state.doc : undefined}
-                                class="block w-full border-0 bg-white"
-                                style={{ height: `${Math.max(0, frameH() - 40)}px` }}
+                                class="block min-h-0 flex-1 w-full border-0 bg-white"
                                 title="Preview"
                               />
                             </div>
