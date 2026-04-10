@@ -482,7 +482,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
 
-    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const commentKeys = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const commentItems: CommentItem[] = commentKeys.flatMap((item) => {
+      if (item.type !== "file") return []
+      return [
+        {
+          path: item.path,
+          selection: item.selection,
+          comment: item.comment,
+          commentID: item.commentID,
+          commentOrigin: item.commentOrigin,
+          preview: item.preview,
+        },
+      ]
+    })
     const messageID = Identifier.ascending("message")
 
     const removeOptimisticMessage = () => {
@@ -493,7 +506,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    removeCommentItems(commentItems)
+    removeCommentItems(commentKeys)
     clearInput()
 
     const waitForWorktree = async () => {

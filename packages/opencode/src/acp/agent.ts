@@ -288,7 +288,7 @@ export namespace ACP {
                 const content: ToolCallContent[] = []
                 if (output) {
                   const hash = Hash.fast(output)
-                  if (part.tool === "bash") {
+                  if (part.tool === "bash" || part.tool === "terminal") {
                     if (this.bashSnapshots.get(part.callID) === hash) {
                       await this.connection
                         .sessionUpdate({
@@ -1110,7 +1110,7 @@ export namespace ACP {
     }
 
     private bashOutput(part: ToolPart) {
-      if (part.tool !== "bash") return
+      if (part.tool !== "bash" && part.tool !== "terminal") return
       if (!("metadata" in part.state) || !part.state.metadata || typeof part.state.metadata !== "object") return
       const output = part.state.metadata["output"]
       if (typeof output !== "string") return
@@ -1556,6 +1556,7 @@ export namespace ACP {
     const tool = toolName.toLocaleLowerCase()
     switch (tool) {
       case "bash":
+      case "terminal":
         return "execute"
       case "webfetch":
         return "fetch"
@@ -1592,6 +1593,8 @@ export namespace ACP {
         return input["path"] ? [{ path: input["path"] }] : []
       case "bash":
         return []
+      case "terminal":
+        return input["workdir"] ? [{ path: input["workdir"] }] : []
       case "list":
         return input["path"] ? [{ path: input["path"] }] : []
       default:

@@ -875,27 +875,48 @@ it.live("assertNotBusy succeeds when idle", () =>
 // Shell semantics
 
 it.live(
-  "shell rejects with BusyError when loop running",
+  "shell queues behind a running loop",
   () =>
     provideTmpdirServer(
       Effect.fnUntraced(function* ({ llm }) {
+        const gate = defer<void>()
         const prompt = yield* SessionPrompt.Service
         const sessions = yield* Session.Service
         const chat = yield* sessions.create({ title: "Pinned" })
-        yield* llm.hang
-        yield* user(chat.id, "hi")
+        yield* llm.hold("done", gate.promise)
 
-        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+        const ask = yield* prompt
+          .prompt({
+            sessionID: chat.id,
+            agent: "build",
+            model: ref,
+            parts: [{ type: "text", text: "hi" }],
+          })
+          .pipe(Effect.forkChild)
         yield* llm.wait(1)
 
-        const exit = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.exit)
-        expect(Exit.isFailure(exit)).toBe(true)
-        if (Exit.isFailure(exit)) {
-          expect(Cause.squash(exit.cause)).toBeInstanceOf(Session.BusyError)
+        const sh = yield* prompt.shell({ sessionID: chat.id, agent: "build", command: "echo hi" }).pipe(Effect.forkChild)
+        yield* Effect.sleep(50)
+
+        expect(yield* llm.calls).toBe(1)
+
+        gate.resolve()
+
+        const [done, exit] = yield* Effect.all([Fiber.await(ask), Fiber.await(sh)])
+        expect(Exit.isSuccess(done)).toBe(true)
+        expect(Exit.isSuccess(exit)).toBe(true)
+        if (Exit.isSuccess(done)) {
+          expect(done.value.info.role).toBe("assistant")
+          expect(done.value.parts.some((part) => part.type === "text" && part.text === "done")).toBe(true)
+        }
+        if (Exit.isSuccess(exit)) {
+          expect(exit.value.info.role).toBe("assistant")
+          const tool = completedTool(exit.value.parts)
+          if (tool) expect(tool.state.output).toContain("hi")
         }
 
-        yield* prompt.cancel(chat.id)
-        yield* Fiber.await(fiber)
+        const status = yield* SessionStatus.Service
+        expect((yield* status.get(chat.id)).type).toBe("idle")
       }),
       { git: true, config: providerCfg },
     ),

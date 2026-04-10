@@ -6,6 +6,7 @@ import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { HoverCard } from "@opencode-ai/ui/hover-card"
 import { Icon } from "@opencode-ai/ui/icon"
 import { createSortable } from "@thisbeyond/solid-dnd"
+import { useNavigate } from "@solidjs/router"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -74,6 +75,7 @@ const ProjectTile = (props: {
 }): JSX.Element => {
   const notification = useNotification()
   const layout = useLayout()
+  const navigate = useNavigate()
   const unseenCount = createMemo(() =>
     props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -147,6 +149,23 @@ const ProjectTile = (props: {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
+          <ContextMenu.Item
+            onSelect={() => {
+              const dir = base64Encode(props.project.worktree)
+              if (typeof window !== "undefined" && window.innerWidth < 768) {
+                navigate(`/${dir}/workbench`)
+                return
+              }
+              const view = layout.view(dir)
+              layout.fileTree.close()
+              view.reviewPanel.close()
+              view.studio.showChat()
+              view.studio.open()
+              navigate(`/${dir}/session`)
+            }}
+          >
+            <ContextMenu.ItemLabel>Open studio</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
             <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>

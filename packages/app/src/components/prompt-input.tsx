@@ -278,7 +278,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const commentCount = createMemo(() => {
     if (store.mode === "shell") return 0
-    return prompt.context.items().filter((item) => !!item.comment?.trim()).length
+    return prompt.context.items().filter((item) => item.type === "file" && !!item.comment?.trim()).length
   })
   const blank = createMemo(() => {
     const text = prompt
@@ -309,7 +309,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const contextItems = createMemo(() => {
     const items = prompt.context.items()
     if (store.mode !== "shell") return items
-    return items.filter((item) => !item.comment?.trim())
+    return items.filter((item) => item.type !== "file" || !item.comment?.trim())
   })
 
   const hasUserPrompt = createMemo(() => {
@@ -1018,6 +1018,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         }
 
         for (const item of edit.context) {
+          if (item.type === "element") {
+            prompt.context.add({
+              type: item.type,
+              url: item.url,
+              selector: item.selector,
+              label: item.label,
+              html: item.html,
+              text: item.text,
+            })
+            continue
+          }
+          if (item.type === "template") {
+            prompt.context.add({
+              type: item.type,
+              templateID: item.templateID,
+              templateName: item.templateName,
+              description: item.description,
+              stack: item.stack,
+              partID: item.partID,
+              partName: item.partName,
+              hint: item.hint,
+              files: item.files,
+            })
+            continue
+          }
           prompt.context.add({
             type: item.type,
             path: item.path,
@@ -1300,11 +1325,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           items={contextItems()}
           active={(item) => {
             const active = comments.active()
-            return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+            return item.type === "file" && !!item.commentID && item.commentID === active?.id && item.path === active?.file
           }}
-          openComment={openComment}
+          openComment={(item) => item.type === "file" && openComment(item)}
           remove={(item) => {
-            if (item.commentID) comments.remove(item.path, item.commentID)
+            if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
             prompt.context.remove(item.key)
           }}
           t={(key) => language.t(key as Parameters<typeof language.t>[0])}

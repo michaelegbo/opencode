@@ -1,11 +1,12 @@
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "solid-js"
+import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { useSDK } from "./sdk"
 import type { Platform } from "./platform"
 import { defaultTitle, titleNumber } from "./terminal-title"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
+import { previewUrl } from "@/utils/preview-url"
 
 export type LocalPTY = {
   id: string
@@ -35,6 +36,20 @@ function num(value: unknown) {
 
 function numberFromTitle(title: string) {
   return titleNumber(title, MAX_TERMINAL_SESSIONS)
+}
+
+function key(path: string) {
+  const next = path.replace(/\\/g, "/").replace(/\/+$/, "")
+  if (/^[a-z]:/i.test(next)) return next.toLowerCase()
+  return next
+}
+
+function inside(root: string, cwd: string) {
+  const base = key(root)
+  const next = key(cwd)
+  if (!base || !next) return false
+  if (next === base) return true
+  return next.startsWith(`${base}/`)
 }
 
 function pty(value: unknown): LocalPTY | undefined {
@@ -132,6 +147,7 @@ export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[], plat
 
 function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, legacySessionID?: string) {
   const legacy = getLegacyTerminalStorageKeys(dir, legacySessionID)
+  const [url, setUrl] = createSignal("")
 
   const [store, setStore, _, ready] = persisted(
     {
@@ -184,6 +200,35 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
     removeExited(event.properties.id)
   })
   onCleanup(unsub)
+  const created = sdk.event.on("pty.created", (event: { properties: { info: { id: string; title: string; cwd: string } } }) => {
+    const info = event.properties.info
+    if (!inside(dir, info.cwd)) return
+    const titleNumber = numberFromTitle(info.title) ?? 0
+    const index = store.all.findIndex((item) => item.id === info.id)
+    if (index >= 0) {
+      setStore("all", index, (item) => ({ ...item, title: info.title, titleNumber }))
+      return
+    }
+    setStore("all", (all) => [...all, { id: info.id, title: info.title, titleNumber }])
+    if (!store.active) setStore("active", info.id)
+  })
+  onCleanup(created)
+  const updated = sdk.event.on("pty.updated", (event: { properties: { info: { id: string; title: string; cwd: string } } }) => {
+    const info = event.properties.info
+    if (!inside(dir, info.cwd)) return
+    const index = store.all.findIndex((item) => item.id === info.id)
+    if (index === -1) return
+    setStore("all", index, (item) => ({
+      ...item,
+      title: info.title,
+      titleNumber: numberFromTitle(info.title) ?? item.titleNumber,
+    }))
+  })
+  onCleanup(updated)
+  const deleted = sdk.event.on("pty.deleted", (event: { properties: { id: string } }) => {
+    removeExited(event.properties.id)
+  })
+  onCleanup(deleted)
 
   const update = (client: ReturnType<typeof useSDK>["client"], pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
@@ -243,11 +288,17 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
     ready,
     all: createMemo(() => store.all),
     active: createMemo(() => store.active),
+    url,
     clear() {
       batch(() => {
         setStore("active", undefined)
         setStore("all", [])
       })
+      setUrl("")
+    },
+    note(text: string) {
+      const next = previewUrl(text)
+      if (next) setUrl(next)
     },
     new() {
       const nextNumber = pickNextTerminalNumber()
@@ -257,6 +308,10 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
         .then((pty: { data?: { id?: string; title?: string } }) => {
           const id = pty.data?.id
           if (!id) return
+          if (store.all.some((item) => item.id === id)) {
+            setStore("active", id)
+            return
+          }
           const newTerminal = {
             id,
             title: pty.data?.title ?? defaultTitle(nextNumber),
@@ -421,6 +476,8 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       ready: () => workspace().ready(),
       all: () => workspace().all(),
       active: () => workspace().active(),
+      url: () => workspace().url(),
+      note: (text: string) => workspace().note(text),
       new: () => workspace().new(),
       update: (pty: Partial<LocalPTY> & { id: string }) => workspace().update(pty),
       trim: (id: string) => workspace().trim(id),

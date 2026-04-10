@@ -1,0 +1,16 @@
+Starts a long-running command in a shared terminal session and leaves it running.
+
+Use this for:
+- frontend dev servers
+- preview servers
+- file watchers
+- other long-lived processes the user may want to keep open and revisit
+
+Do NOT use this for short checks like `git status`, `npm test`, or one-off commands that should finish and return their full output immediately. Use the Bash tool for those.
+
+Usage notes:
+- Pass the executable in `command` and the remaining tokens in `args`.
+- Use `workdir` instead of wrapping the command in `cd`.
+- Use a clear `title` when the session should be easy to find later. For browser previews, prefer `Preview`.
+- By default this tool waits briefly for a localhost URL to appear in the terminal output and returns it when found.
+- The process keeps running after the tool returns. If you need to stop it later, use the app terminal UI or remove the PTY session through the app.

@@ -162,7 +162,7 @@ describe("Runner", () => {
 
       const a = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
       yield* Effect.sleep("10 millis")
-      const b = yield* runner.ensureRunning(Effect.succeed("y")).pipe(Effect.forkChild)
+      const b = yield* runner.enqueueRunning(Effect.succeed("y")).pipe(Effect.forkChild)
       yield* Effect.sleep("10 millis")
 
       yield* runner.cancel
@@ -172,6 +172,54 @@ describe("Runner", () => {
       expect(Exit.isSuccess(exitB)).toBe(true)
       if (Exit.isSuccess(exitA)) expect(exitA.value).toBe("fallback")
       if (Exit.isSuccess(exitB)) expect(exitB.value).toBe("fallback")
+    }),
+  )
+
+  it.live(
+    "enqueueRunning runs pending work in order",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const gate = yield* Deferred.make<void>()
+      const hits = yield* Ref.make<string[]>([])
+
+      const a = yield* runner
+        .enqueueRunning(
+          Effect.gen(function* () {
+            yield* Ref.update(hits, (list) => [...list, "first"])
+            yield* Deferred.await(gate)
+            return "first"
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Effect.sleep("10 millis")
+
+      const b = yield* runner
+        .enqueueRunning(
+          Effect.gen(function* () {
+            yield* Ref.update(hits, (list) => [...list, "second"])
+            return "second"
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Effect.sleep("10 millis")
+
+      expect(runner.state._tag).toBe("Running")
+      if (runner.state._tag !== "Running") throw new Error("expected running")
+      expect(runner.state.queue).toHaveLength(1)
+      expect(runner.queued).toBe(1)
+      expect(yield* Ref.get(hits)).toEqual(["first"])
+
+      yield* Deferred.succeed(gate, undefined)
+
+      const [exitA, exitB] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+      expect(Exit.isSuccess(exitA)).toBe(true)
+      expect(Exit.isSuccess(exitB)).toBe(true)
+      if (Exit.isSuccess(exitA)) expect(exitA.value).toBe("first")
+      if (Exit.isSuccess(exitB)) expect(exitB.value).toBe("second")
+      expect(yield* Ref.get(hits)).toEqual(["first", "second"])
+      expect(runner.busy).toBe(false)
+      expect(runner.queued).toBe(0)
     }),
   )
 
@@ -364,7 +412,9 @@ describe("Runner", () => {
 
       const run = yield* runner.ensureRunning(Effect.succeed("run-result")).pipe(Effect.forkChild)
       yield* Effect.sleep("10 millis")
-      expect(runner.state._tag).toBe("ShellThenRun")
+      expect(runner.state._tag).toBe("Shell")
+      if (runner.state._tag !== "Shell") throw new Error("expected shell")
+      expect(runner.state.queue).toHaveLength(1)
 
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.await(sh)
@@ -372,7 +422,8 @@ describe("Runner", () => {
       const exit = yield* Fiber.await(run)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) expect(exit.value).toBe("run-result")
-      expect(runner.state._tag).toBe("Idle")
+      const tag = String(runner.state._tag)
+      if (tag !== "Idle") throw new Error("expected idle")
     }),
   )
 
@@ -428,7 +479,9 @@ describe("Runner", () => {
 
       const run = yield* runner.ensureRunning(Effect.succeed("y")).pipe(Effect.forkChild)
       yield* Effect.sleep("10 millis")
-      expect(runner.state._tag).toBe("ShellThenRun")
+      expect(runner.state._tag).toBe("Shell")
+      if (runner.state._tag !== "Shell") throw new Error("expected shell")
+      expect(runner.state.queue).toHaveLength(1)
 
       yield* runner.cancel
       expect(runner.busy).toBe(false)

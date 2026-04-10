@@ -20,7 +20,7 @@ type PersistTarget = {
 }
 
 const LEGACY_STORAGE = "default.dat"
-const GLOBAL_STORAGE = "opencode.global.dat"
+const GLOBAL_STORAGE = "paddie-studio.global.dat"
 const LOCAL_PREFIX = "opencode."
 const fallback = new Map<string, boolean>()
 
