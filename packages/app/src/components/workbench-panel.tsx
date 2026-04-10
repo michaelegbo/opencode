@@ -5,6 +5,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { Button } from "@opencode-ai/ui/button"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Mark } from "@opencode-ai/ui/logo"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
 import { TemplatePanel } from "@/components/template-panel"
@@ -756,6 +757,7 @@ export function WorkbenchPanel(props: {
       {label}
     </button>
   )
+  const deskLabel = (value: Desk) => `${views[value].w}x${views[value].h}`
   const deskButton = (value: Desk) => (
     <button
       type="button"
@@ -768,9 +770,9 @@ export function WorkbenchPanel(props: {
         setState("device", "desktop")
         setState("desk", value)
       }}
-      title={views[value].label}
+      title={deskLabel(value)}
     >
-      {views[value].label}
+      {deskLabel(value)}
     </button>
   )
 
@@ -784,7 +786,7 @@ export function WorkbenchPanel(props: {
           <div class="min-w-0 flex flex-1 flex-wrap items-center gap-2.5">
             <div class="h-10 shrink-0 min-w-0 max-w-full px-3.5 rounded-2xl border border-border-weaker-base bg-surface-base/95 flex items-center gap-2.5 shadow-xs-border backdrop-blur-sm">
               <div class="size-8 rounded-xl bg-background-stronger flex items-center justify-center text-icon-info-base shadow-xs-border">
-                <Icon name="dot-grid" size="small" />
+                <Mark class="size-4.5 text-icon-info-base" />
               </div>
               <div class="min-w-0 flex items-center gap-2.5">
                 <div class="text-[10px] font-medium uppercase tracking-[0.18em] text-text-weak shrink-0">Studio</div>
