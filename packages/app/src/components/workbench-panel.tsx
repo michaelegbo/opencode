@@ -37,8 +37,12 @@ type Tab = {
 type Mode = "code" | "split" | "preview"
 type Surface = "studio" | "templates"
 type Device = "desktop" | "tablet" | "mobile"
+type Desk = "1920" | "1600" | "1440"
 
 const views = {
+  "1920": { w: 1920, h: 1080, label: "1920×1080" },
+  "1600": { w: 1600, h: 900, label: "1600×900" },
+  "1440": { w: 1440, h: 900, label: "1440×900" },
   tablet: { w: 834, h: 1194 },
   mobile: { w: 430, h: 932 },
 } as const
@@ -256,6 +260,7 @@ export function WorkbenchPanel(props: {
     mode: "split" as Mode,
     surface: "studio" as Surface,
     device: "desktop" as Device,
+    desk: "1920" as Desk,
     tree: {} as Record<string, Node[]>,
     wait: {} as Record<string, boolean>,
     open: {} as Record<string, boolean>,
@@ -309,34 +314,27 @@ export function WorkbenchPanel(props: {
   const previewH = createMemo(() => Math.max(0, state.previewH - 32))
   const chrome = 40
   const preset = createMemo(() => {
+    if (state.device === "desktop") return views[state.desk]
     if (state.device === "tablet") return views.tablet
     if (state.device === "mobile") return views.mobile
     return null
   })
   const frameW = createMemo(() => {
-    if (preset()) return preset()!.w
-    const w = previewW()
-    if (!w) return state.mode === "preview" ? 1200 : 1280
-    if (state.mode === "preview") return Math.max(960, Math.min(1600, Math.round(w)))
-    return 1280
+    return preset()?.w ?? 1440
   })
-  const shellH = createMemo(() => (preset() ? preset()!.h + chrome : 920))
+  const shellH = createMemo(() => (preset()?.h ?? 900) + chrome)
   const scale = createMemo(() => {
     const w = previewW()
     const h = previewH()
     if (!w || !h) return 1
-    if (!preset()) return Math.min(1, w / frameW())
     return Math.min(1, w / frameW(), h / shellH())
   })
   const frameH = createMemo(() => {
-    if (preset()) return shellH()
-    const h = previewH()
-    const zoom = scale()
-    if (!h || zoom <= 0) return 920
-    return Math.max(shellH(), Math.round(h / zoom))
+    return shellH()
   })
   const scaledW = createMemo(() => Math.max(0, Math.min(previewW(), Math.floor(frameW() * scale()))))
   const scaledH = createMemo(() => Math.max(0, Math.min(previewH(), Math.floor(frameH() * scale()))))
+  const compact = createMemo(() => right() > 0 && right() < 760)
   const anim = createMemo(() =>
     size.active()
       ? "transition-none"
@@ -758,6 +756,23 @@ export function WorkbenchPanel(props: {
       {label}
     </button>
   )
+  const deskButton = (value: Desk) => (
+    <button
+      type="button"
+      classList={{
+        "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-all duration-150 flex items-center justify-center border min-w-max": true,
+        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border": state.desk === value,
+        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.desk !== value,
+      }}
+      onClick={() => {
+        setState("device", "desktop")
+        setState("desk", value)
+      }}
+      title={views[value].label}
+    >
+      {views[value].label}
+    </button>
+  )
 
   return (
     <div
@@ -991,12 +1006,18 @@ export function WorkbenchPanel(props: {
             <div class={state.mode === "preview" ? "size-full pl-3 pb-3 pr-3" : "size-full"}>
               <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
                 <div class="p-3 border-b border-border-weaker-base flex flex-col gap-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
+                  <div
+                    classList={{
+                      "flex min-w-0 gap-3": true,
+                      "items-start justify-between": !compact(),
+                      "flex-col": compact(),
+                    }}
+                  >
+                    <div class="min-w-0 flex-1">
                       <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Preview</div>
                       <div class="text-13-medium text-text-base">Live browser canvas</div>
                     </div>
-                    <div class="shrink-0 flex items-center gap-2">
+                    <div class="min-w-0 shrink-0 flex items-center gap-2 self-start max-w-full overflow-x-auto">
                       <Show when={state.url}>
                         <Button
                           variant="ghost"
@@ -1019,15 +1040,23 @@ export function WorkbenchPanel(props: {
                     </div>
                   </div>
 
-                  <div class="flex flex-wrap items-center gap-2 min-w-0">
+                  <div
+                    classList={{
+                      "min-w-0 gap-2": true,
+                      "flex flex-wrap items-center": !compact(),
+                      "flex flex-col items-stretch": compact(),
+                    }}
+                  >
                     <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-stronger px-3 flex items-center gap-2">
                       <div class={`size-2 rounded-full ${state.url ? "bg-icon-success-base" : "bg-icon-disabled"}`} />
                       <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
                         {state.url || "Waiting for a localhost app from chat or terminal"}
                       </div>
                     </div>
-                    <div class="shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-stronger p-1 flex items-center gap-1 overflow-x-auto">
-                      {deviceButton("desktop", "Desktop")}
+                    <div class="min-w-0 shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-stronger p-1 flex items-center gap-1 overflow-x-auto">
+                      {deskButton("1920")}
+                      {deskButton("1600")}
+                      {deskButton("1440")}
                       {deviceButton("tablet", "Tablet")}
                       {deviceButton("mobile", "Mobile")}
                     </div>

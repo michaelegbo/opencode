@@ -347,6 +347,7 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     reviewSnap: false,
+    split: 0,
     scrollGesture: 0,
     scroll: {
       overflow: false,
@@ -403,10 +404,18 @@ export default function Page() {
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(() => desktopStudioOpen() || desktopReviewOpen() || desktopFileTreeOpen())
+  const split = createMemo(() => ui.split || (typeof window === "undefined" ? 0 : window.innerWidth))
+  const studioMax = createMemo(() => {
+    const width = split()
+    if (!width) return 1200
+    const keep = Math.max(380, Math.floor(width * 0.38))
+    return Math.max(420, width - keep)
+  })
+  const studioWidth = createMemo(() => Math.min(layout.studio.width(), studioMax()))
   const sessionPanelWidth = createMemo(() => {
     if (desktopStudioOpen()) {
       if (studioChatHidden()) return "0px"
-      return `calc(100% - ${layout.studio.width()}px)`
+      return `calc(100% - ${studioWidth()}px)`
     }
     if (!desktopSidePanelOpen()) return "100%"
     if (desktopReviewOpen()) return `${layout.session.width()}px`
@@ -1865,6 +1874,17 @@ export default function Page() {
     },
   )
 
+  let splitRef: HTMLDivElement | undefined
+
+  createResizeObserver(
+    () => splitRef,
+    ({ width }) => {
+      const next = Math.ceil(width)
+      if (!next || next === ui.split) return
+      setUi("split", next)
+    },
+  )
+
   const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
@@ -1914,7 +1934,7 @@ export default function Page() {
   return (
     <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
       <SessionHeader />
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+      <div ref={splitRef} class="flex-1 min-h-0 flex flex-col md:flex-row">
         <Show when={!isDesktop() && !!params.id}>
           <Tabs value={store.mobileTab} class="h-auto">
             <Tabs.List>
@@ -2078,9 +2098,9 @@ export default function Page() {
               <ResizeHandle
                 direction="horizontal"
                 edge="start"
-                size={layout.studio.width()}
+                size={studioWidth()}
                 min={420}
-                max={typeof window === "undefined" ? 1200 : window.innerWidth * 0.8}
+                max={studioMax()}
                 onResize={(width) => {
                   size.touch()
                   layout.studio.resize(width)
@@ -2094,7 +2114,7 @@ export default function Page() {
               "flex-1": studioChatHidden(),
               "shrink-0": !studioChatHidden(),
             }}
-            style={studioChatHidden() ? undefined : { width: `${layout.studio.width()}px` }}
+            style={studioChatHidden() ? undefined : { width: `${studioWidth()}px` }}
           >
             <WorkbenchPanel
               chatHidden={studioChatHidden()}
