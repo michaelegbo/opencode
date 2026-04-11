@@ -29,4 +29,13 @@ describe("template library", () => {
     expect(pkg?.content).toContain('"name": "orbit-studio"')
     expect(html?.content).toContain("<title>Orbit Studio</title>")
   })
+
+  test("preview picker highlights any hovered element", () => {
+    const tpl = template("landing")
+    expect(tpl).toBeDefined()
+    if (!tpl) return
+    expect(tpl.preview).toContain(".__paddie_template_target {")
+    expect(tpl.preview).not.toContain("[data-template-part].__paddie_template_target")
+    expect(tpl.preview).toContain("const find = (target) => {")
+  })
 })

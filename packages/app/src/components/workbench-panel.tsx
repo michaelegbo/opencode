@@ -35,7 +35,7 @@ type Tab = {
   dirty: boolean
 }
 
-type Mode = "code" | "split" | "preview"
+type Mode = "code" | "preview"
 type Surface = "studio" | "templates"
 type Device = "desktop" | "tablet" | "mobile"
 type Desk = "1920" | "1600" | "1440"
@@ -53,6 +53,8 @@ const base = (path: string) => {
   const parts = trim.split(/[\\/]/)
   return parts.at(-1) ?? trim
 }
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 const esc = (value: string) =>
   value
@@ -258,10 +260,11 @@ export function WorkbenchPanel(props: {
     box: 0,
     previewW: 0,
     previewH: 0,
-    mode: "split" as Mode,
+    mode: "code" as Mode,
     surface: "studio" as Surface,
     device: "desktop" as Device,
     desk: "1920" as Desk,
+    zoom: 100,
     tree: {} as Record<string, Node[]>,
     wait: {} as Record<string, boolean>,
     open: {} as Record<string, boolean>,
@@ -290,26 +293,14 @@ export function WorkbenchPanel(props: {
   const showFiles = createMemo(() => state.mode !== "preview" && state.files)
   const box = createMemo(() => state.box || 1200)
   const leftMin = 220
-  const rightMin = 320
   const editMin = 320
   const leftMax = createMemo(() => {
     if (!showFiles()) return 0
-    const keep = (state.mode === "split" ? Math.max(rightMin, state.right) : 0) + editMin
-    return Math.max(0, Math.min(420, box() - keep))
-  })
-  const rightMax = createMemo(() => {
-    if (state.mode !== "split") return box()
-    const keep = (showFiles() ? Math.min(420, Math.max(leftMin, state.left)) : 0) + editMin
-    return Math.max(0, box() - keep)
+    return Math.max(0, Math.min(420, box() - editMin))
   })
   const leftFloor = createMemo(() => Math.min(leftMin, leftMax()))
-  const rightFloor = createMemo(() => Math.min(rightMin, rightMax()))
   const left = createMemo(() => (showFiles() ? Math.max(0, Math.min(state.left, leftMax())) : 0))
-  const right = createMemo(() => {
-    if (state.mode === "code") return 0
-    if (state.mode === "preview") return box()
-    return Math.max(0, Math.min(state.right, rightMax()))
-  })
+  const right = createMemo(() => (state.mode === "preview" ? box() : 0))
   const edit = createMemo(() => Math.max(0, box() - left() - right()))
   const previewW = createMemo(() => Math.max(0, (state.previewW || right()) - 32))
   const previewH = createMemo(() => Math.max(0, state.previewH - 32))
@@ -324,17 +315,19 @@ export function WorkbenchPanel(props: {
     return preset()?.w ?? 1440
   })
   const shellH = createMemo(() => (preset()?.h ?? 900) + chrome)
-  const scale = createMemo(() => {
+  const fit = createMemo(() => {
     const w = previewW()
     const h = previewH()
     if (!w || !h) return 1
     return Math.min(1, w / frameW(), h / shellH())
   })
+  const scale = createMemo(() => fit() * (state.zoom / 100))
   const frameH = createMemo(() => {
     return shellH()
   })
-  const scaledW = createMemo(() => Math.max(0, Math.min(previewW(), Math.floor(frameW() * scale()))))
-  const scaledH = createMemo(() => Math.max(0, Math.min(previewH(), Math.floor(frameH() * scale()))))
+  const scaledW = createMemo(() => Math.max(0, Math.floor(frameW() * scale())))
+  const scaledH = createMemo(() => Math.max(0, Math.floor(frameH() * scale())))
+  const zoom = createMemo(() => `${state.zoom}%`)
   const compact = createMemo(() => right() > 0 && right() < 760)
   const anim = createMemo(() =>
     size.active()
@@ -385,6 +378,21 @@ export function WorkbenchPanel(props: {
       })
   }
 
+  const reload = () => {
+    const url = state.url
+    if (!url || !frame) return
+    stopPick()
+    frame.src = "about:blank"
+    requestAnimationFrame(() => {
+      if (!frame) return
+      frame.src = url
+    })
+  }
+
+  const zoomOut = () => setState("zoom", (value) => clamp(value - 10, 50, 200))
+  const zoomIn = () => setState("zoom", (value) => clamp(value + 10, 50, 200))
+  const zoomReset = () => setState("zoom", 100)
+
   const load = async (path: string, force = false) => {
     if (!api()) return
     if (!force && (state.tree[path] || state.wait[path])) return
@@ -418,7 +426,7 @@ export function WorkbenchPanel(props: {
 
     setState("tabs", (list) => [...list, { name: base(path), path, value: next, saved: next, dirty: false }])
     setState("active", path)
-    if (state.mode === "preview") setState("mode", "split")
+    if (state.mode === "preview") setState("mode", "code")
   }
 
   const save = async (path = tab()?.path, opts?: { quiet?: boolean }) => {
@@ -560,12 +568,6 @@ export function WorkbenchPanel(props: {
     setState("left", Math.round(max))
   })
 
-  createEffect(() => {
-    const max = rightMax()
-    if (state.right <= max) return
-    setState("right", Math.round(max))
-  })
-
   command.register("workbench.preview", () => {
     const list = [
       {
@@ -588,13 +590,6 @@ export function WorkbenchPanel(props: {
         category: "Workbench",
         disabled: state.mode === "code" || state.surface !== "studio",
         onSelect: () => setMode("code"),
-      },
-      {
-        id: "workbench.mode.split",
-        title: "Show Code + Preview",
-        category: "Workbench",
-        disabled: state.mode === "split" || state.surface !== "studio",
-        onSelect: () => setMode("split"),
       },
       {
         id: "workbench.mode.preview",
@@ -730,7 +725,7 @@ export function WorkbenchPanel(props: {
     )
   }
 
-  const modeButton = (value: Mode, icon: "code" | "layout-right-partial" | "eye", label: string) => (
+  const modeButton = (value: Mode, icon: "code" | "eye", label: string) => (
     <button
       type="button"
       classList={{
@@ -803,7 +798,6 @@ export function WorkbenchPanel(props: {
             <Show when={state.surface === "studio"}>
               <div class={seg}>
                 {modeButton("code", "code", "Code")}
-                {modeButton("split", "layout-right-partial", "Split")}
                 {modeButton("preview", "eye", "Preview")}
               </div>
               <Show when={state.mode !== "preview"}>
@@ -982,22 +976,6 @@ export function WorkbenchPanel(props: {
             </div>
           </section>
 
-          <Show when={state.mode === "split"}>
-            <div class="relative shrink-0" onPointerDown={() => size.start()}>
-              <ResizeHandle
-                direction="horizontal"
-                edge="start"
-                size={state.right}
-                min={rightFloor()}
-                max={rightMax()}
-                onResize={(next) => {
-                  size.touch()
-                  setState("right", next)
-                }}
-              />
-            </div>
-          </Show>
-
           <aside
             class={`${pane} ${anim()} bg-background-stronger flex flex-col`}
             classList={{
@@ -1023,9 +1001,22 @@ export function WorkbenchPanel(props: {
                       <Show when={state.url}>
                         <Button
                           variant="ghost"
+                          class="h-8 px-3 gap-2 text-11-medium"
+                          onClick={reload}
+                          aria-label="Reload preview"
+                          title="Reload preview"
+                        >
+                          <Icon name="reset" class="size-4" />
+                          <Show when={!compact()}>
+                            <span>Reload</span>
+                          </Show>
+                        </Button>
+                        <Button
+                          variant="ghost"
                           class="h-8 px-2"
                           onClick={() => platform.openLink(state.url)}
                           aria-label="Open preview in browser"
+                          title="Open preview in browser"
                         >
                           <Icon name="open-file" class="size-4" />
                         </Button>
@@ -1036,6 +1027,7 @@ export function WorkbenchPanel(props: {
                         disabled={!state.url || state.waitPick}
                         onClick={pick}
                         aria-label={state.pick ? "Stop selecting elements" : "Select an element from preview"}
+                        title={state.pick ? "Stop selecting elements" : "Select an element from preview"}
                       >
                         <Icon name="window-cursor" class="size-4" />
                       </Button>
@@ -1056,6 +1048,35 @@ export function WorkbenchPanel(props: {
                       </div>
                     </div>
                     <div class="min-w-0 shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-stronger p-1 flex items-center gap-1 overflow-x-auto">
+                      <Button
+                        variant="ghost"
+                        class="h-8 px-2 text-11-medium shrink-0"
+                        onClick={zoomOut}
+                        disabled={state.zoom <= 50}
+                        aria-label="Zoom out preview"
+                        title="Zoom out preview"
+                      >
+                        -
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        class="h-8 px-2 text-11-medium shrink-0"
+                        onClick={zoomReset}
+                        aria-label="Reset preview zoom"
+                        title="Reset preview zoom"
+                      >
+                        {zoom()}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        class="h-8 px-2 text-11-medium shrink-0"
+                        onClick={zoomIn}
+                        disabled={state.zoom >= 200}
+                        aria-label="Zoom in preview"
+                        title="Zoom in preview"
+                      >
+                        +
+                      </Button>
                       {deskButton("1920")}
                       {deskButton("1600")}
                       {deskButton("1440")}

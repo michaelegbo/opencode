@@ -18,6 +18,8 @@ const slug = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "landing-page"
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
 type Device = "desktop" | "tablet" | "mobile"
 type Desk = "1920" | "1600" | "1440"
 
@@ -28,6 +30,15 @@ const views = {
   tablet: { w: 834, h: 1194, label: "Tablet" },
   mobile: { w: 430, h: 932, label: "Mobile" },
 } as const
+
+const mini = {
+  w: 1440,
+  h: 940,
+  scale: 0.18,
+} as const
+
+const miniH = Math.round(mini.h * mini.scale)
+const miniW = Math.round(mini.w * mini.scale)
 
 export function TemplatePanel(props: {
   chatHidden?: boolean
@@ -46,6 +57,7 @@ export function TemplatePanel(props: {
   const [parts, setParts] = createSignal(false)
   const [device, setDevice] = createSignal<Device>("desktop")
   const [desk, setDesk] = createSignal<Desk>("1920")
+  const [zoom, setZoom] = createSignal(100)
   const [w, setW] = createSignal(0)
   const [h, setH] = createSignal(0)
   let frame: HTMLIFrameElement | undefined
@@ -63,14 +75,19 @@ export function TemplatePanel(props: {
   const boxH = createMemo(() => Math.max(0, h() - 32))
   const frameW = createMemo(() => preset().w)
   const shellH = createMemo(() => preset().h + chrome)
-  const scale = createMemo(() => {
+  const fitScale = createMemo(() => {
     const x = boxW()
+    if (!x) return 1
+    if (device() === "desktop") return Math.min(1, x / frameW())
     const y = boxH()
-    if (!x || !y) return 1
+    if (!y) return Math.min(1, x / frameW())
     return Math.min(1, x / frameW(), y / shellH())
   })
-  const scaledW = createMemo(() => Math.max(0, Math.min(boxW(), Math.floor(frameW() * scale()))))
-  const scaledH = createMemo(() => Math.max(0, Math.min(boxH(), Math.floor(shellH() * scale()))))
+  const scale = createMemo(() => fitScale() * (zoom() / 100))
+  const scaledW = createMemo(() => Math.max(0, Math.floor(frameW() * scale())))
+  const scaledH = createMemo(() => Math.max(0, Math.floor(shellH() * scale())))
+  const canvasH = createMemo(() => Math.max(device() === "desktop" ? 520 : 420, scaledH() + 32))
+  const zoomText = createMemo(() => `${zoom()}%`)
   const reset = () => {
     const cur = tpl()
     if (!cur || !frame) return
@@ -85,6 +102,15 @@ export function TemplatePanel(props: {
       },
       "*",
     )
+
+  const fit = () => {
+    const nextW = Math.ceil(stage?.clientWidth ?? 0)
+    const nextH = Math.ceil(stage?.clientHeight ?? 0)
+    if (!nextW || !nextH) return
+    if (nextW === w() && nextH === h()) return
+    setW(nextW)
+    setH(nextH)
+  }
 
   const focus = () => {
     if (props.chatHidden) props.onChatToggle?.()
@@ -101,6 +127,7 @@ export function TemplatePanel(props: {
     setParts(false)
     setDevice("desktop")
     setDesk("1920")
+    setZoom(100)
     setView("detail")
   }
 
@@ -109,6 +136,10 @@ export function TemplatePanel(props: {
     setParts(false)
     setView("library")
   }
+
+  const zoomOut = () => setZoom((value) => clamp(value - 10, 50, 200))
+  const zoomIn = () => setZoom((value) => clamp(value + 10, 50, 200))
+  const zoomReset = () => setZoom(100)
 
   const attach = (
     next?: string,
@@ -247,16 +278,18 @@ export function TemplatePanel(props: {
     queueMicrotask(sync)
   })
 
+  createEffect(() => {
+    view()
+    parts()
+    device()
+    desk()
+    queueMicrotask(fit)
+    requestAnimationFrame(fit)
+  })
+
   createResizeObserver(
     () => stage,
-    () => {
-      const nextW = Math.ceil(stage?.clientWidth ?? 0)
-      const nextH = Math.ceil(stage?.clientHeight ?? 0)
-      if (!nextW || !nextH) return
-      if (nextW === w() && nextH === h()) return
-      setW(nextW)
-      setH(nextH)
-    },
+    fit,
   )
 
   const deskButton = (value: Desk) => (
@@ -317,18 +350,62 @@ export function TemplatePanel(props: {
                 <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <For each={list}>
                     {(item) => (
-                      <button
-                        type="button"
-                        class="rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors hover:bg-surface-base-hover"
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        class="rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors hover:bg-surface-base-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-weak-base"
                         onClick={() => open(item.id)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") return
+                          event.preventDefault()
+                          open(item.id)
+                        }}
                       >
-                        <div class="flex items-start justify-between gap-3">
+                        <div
+                          class="relative overflow-hidden rounded-[16px] border border-border-weaker-base bg-[#111218]"
+                          style={{ height: `${miniH + 16}px` }}
+                        >
+                          <div class="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-[#111218] via-[rgba(17,18,24,0.78)] to-transparent" />
+                          <div class="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_48%)]" />
+                          <div class="absolute inset-0 overflow-hidden p-2 flex items-start justify-center">
+                            <div class="relative shrink-0" style={{ width: `${miniW}px`, height: `${miniH}px` }}>
+                              <div
+                                class="absolute left-0 top-0 origin-top-left overflow-hidden rounded-[12px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]"
+                                style={{
+                                  width: `${mini.w}px`,
+                                  height: `${mini.h}px`,
+                                  transform: `scale(${mini.scale})`,
+                                }}
+                              >
+                                <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
+                                  <div class="size-2 rounded-full bg-[#f87171]" />
+                                  <div class="size-2 rounded-full bg-[#fbbf24]" />
+                                  <div class="size-2 rounded-full bg-[#34d399]" />
+                                  <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
+                                    {item.name}
+                                  </div>
+                                </div>
+                                <iframe
+                                  srcdoc={item.preview}
+                                  sandbox=""
+                                  loading="lazy"
+                                  tabIndex={-1}
+                                  aria-hidden="true"
+                                  class="pointer-events-none block h-[calc(100%-40px)] w-full border-0 bg-white"
+                                  title={`${item.name} preview`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111218] via-[rgba(17,18,24,0.88)] to-transparent" />
+                          <div class="pointer-events-none absolute right-3 top-3 rounded-full border border-border-weaker-base bg-background-base/85 px-2 py-0.5 text-10-medium text-text-weak backdrop-blur-sm">
+                            {item.stack}
+                          </div>
+                        </div>
+                        <div class="mt-4 flex items-start justify-between gap-3">
                           <div class="min-w-0">
                             <div class="text-16-medium text-text-base">{item.name}</div>
                             <div class="mt-2 text-13-medium text-text-weak">{item.description}</div>
-                          </div>
-                          <div class="rounded-full border border-border-weaker-base px-2 py-0.5 text-10-medium text-text-weak">
-                            {item.stack}
                           </div>
                         </div>
                         <div class="mt-4 flex items-center justify-between gap-3">
@@ -337,7 +414,7 @@ export function TemplatePanel(props: {
                             Open template
                           </div>
                         </div>
-                      </button>
+                      </div>
                     )}
                   </For>
                 </div>
@@ -346,14 +423,11 @@ export function TemplatePanel(props: {
           }
         >
           {(cur) => (
-            <div class="size-full overflow-hidden bg-background-base p-3">
-              <div class="size-full min-w-0 flex flex-col gap-3 overflow-hidden">
-                <div class="rounded-[18px] border border-border-weaker-base bg-surface-base px-4 py-4 flex flex-wrap items-start justify-between gap-4">
+            <div class="size-full overflow-auto bg-background-base p-3">
+              <div class="min-h-full min-w-0 flex flex-col gap-3">
+                <div class="rounded-[18px] border border-border-weaker-base bg-surface-base px-4 py-3">
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
-                      <Button variant="ghost" class="h-9 px-3 text-12-medium" onClick={back}>
-                        Back to library
-                      </Button>
                       <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Bundled starter</div>
                       <div class="rounded-full border border-border-weaker-base px-2 py-0.5 text-10-medium text-text-weak">
                         {cur().stack}
@@ -364,35 +438,39 @@ export function TemplatePanel(props: {
                         </div>
                       </Show>
                     </div>
-                    <div class="mt-2 text-20-medium text-text-base">{cur().name}</div>
-                    <div class="mt-2 max-w-[780px] text-13-medium text-text-weak">{cur().description}</div>
-                  </div>
-                  <div class="shrink-0 flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      variant={parts() ? "secondary" : "ghost"}
-                      class="h-9 px-3 text-12-medium"
-                      onClick={() => setParts((value) => !value)}
-                    >
-                      {parts() ? "Hide curated parts" : "Show curated parts"}
-                    </Button>
-                    <Button variant="ghost" class="h-9 px-3 text-12-medium" onClick={() => attach("full")}>
-                      Attach full template
-                    </Button>
-                    <Button class="h-9 px-3 text-12-medium" onClick={() => void create()}>
-                      Create starter project
-                    </Button>
+                    <div class="mt-2 text-18-medium text-text-base">{cur().name}</div>
+                    <div class="mt-1 max-w-[820px] text-12-medium text-text-weak">{cur().description}</div>
                   </div>
                 </div>
 
-                <div class={parts() ? "min-h-0 flex-1 grid grid-cols-[minmax(0,1fr)_320px] gap-3 overflow-hidden" : "min-h-0 flex-1 overflow-hidden"}>
-                  <div class="min-h-0 overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
-                    <div class="h-11 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
+                <div
+                  class={
+                    parts()
+                      ? "min-w-0 flex-1 grid gap-3 items-start xl:grid-cols-[minmax(0,1fr)_320px]"
+                      : "min-w-0 flex flex-col"
+                  }
+                >
+                  <div class="min-h-0 min-w-0 flex-1 overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
+                    <div class="min-h-11 border-b border-border-weaker-base bg-[#111218] flex flex-wrap items-center gap-2 px-4 py-2">
                       <div class="size-2 rounded-full bg-[#f87171]" />
                       <div class="size-2 rounded-full bg-[#fbbf24]" />
                       <div class="size-2 rounded-full bg-[#34d399]" />
                       <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
                         {cur().name} preview
                       </div>
+                      <Button
+                        variant={parts() ? "secondary" : "ghost"}
+                        class="h-7 px-2 text-11-medium"
+                        onClick={() => setParts((value) => !value)}
+                      >
+                        {parts() ? "Hide curated parts" : "Show curated parts"}
+                      </Button>
+                      <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={() => attach("full")}>
+                        Attach full template
+                      </Button>
+                      <Button class="h-7 px-2 text-11-medium" onClick={() => void create()}>
+                        Create starter project
+                      </Button>
                       <Button
                         variant={pick() ? "secondary" : "ghost"}
                         class="h-7 px-2 text-11-medium"
@@ -404,15 +482,43 @@ export function TemplatePanel(props: {
 
                     <div class="border-b border-border-weaker-base p-3 flex flex-col gap-3 bg-background-stronger">
                       <div class="flex flex-wrap items-center gap-2 justify-between">
-                        <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-base px-3 flex items-center gap-2">
-                          <div class={`size-2 rounded-full ${pick() ? "bg-icon-info-base" : "bg-icon-success-base"}`} />
-                          <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
-                            {pick()
-                              ? "Selection mode is on. Click any highlighted element to add it to chat."
-                              : "Browsing in desktop mode by default. Switch sizes when you want to inspect the layout."}
+                        <div class="min-w-0 flex flex-1 flex-wrap items-center gap-2">
+                          <Button variant="ghost" class="h-8 px-3 text-11-medium" onClick={back}>
+                            Back to library
+                          </Button>
+                          <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-base px-3 flex items-center gap-2">
+                            <div class={`size-2 rounded-full ${pick() ? "bg-icon-info-base" : "bg-icon-success-base"}`} />
+                            <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
+                              {pick()
+                                ? "Selection mode is on. Click any highlighted element to add it to chat."
+                                : "Browsing in desktop mode by default. Switch sizes when you want to inspect the layout."}
+                            </div>
                           </div>
                         </div>
                         <div class="min-w-0 shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-base p-1 flex items-center gap-1 overflow-x-auto">
+                          <Button
+                            variant="ghost"
+                            class="h-8 px-2 text-11-medium shrink-0"
+                            onClick={zoomOut}
+                            disabled={zoom() <= 50}
+                          >
+                            -
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="h-8 px-2 text-11-medium shrink-0"
+                            onClick={zoomReset}
+                          >
+                            {zoomText()}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="h-8 px-2 text-11-medium shrink-0"
+                            onClick={zoomIn}
+                            disabled={zoom() >= 200}
+                          >
+                            +
+                          </Button>
                           {deskButton("1920")}
                           {deskButton("1600")}
                           {deskButton("1440")}
@@ -427,9 +533,9 @@ export function TemplatePanel(props: {
                       </div>
                     </div>
 
-                    <div class="min-h-0 flex-1 bg-background-stronger p-3">
+                    <div class="bg-background-stronger p-3" style={{ height: `${canvasH()}px` }}>
                       <div ref={stage} class="size-full min-w-0 overflow-auto rounded-[22px] bg-[#181922]">
-                        <div class="min-h-full min-w-full flex items-start justify-center p-4">
+                        <div class="box-border min-h-full min-w-full overflow-hidden flex items-start justify-center p-4">
                           <div class="relative shrink-0" style={{ width: `${scaledW()}px`, height: `${scaledH()}px` }}>
                             <div
                               class="absolute left-0 top-0 box-border overflow-hidden rounded-[22px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)] flex flex-col"

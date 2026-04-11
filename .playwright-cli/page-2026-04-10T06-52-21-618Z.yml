@@ -1,0 +1,99 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - main [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e12]:
+          - generic [ref=e14]:
+            - button "Open sidebar" [ref=e18] [cursor=pointer]:
+              - img
+            - generic [ref=e20]:
+              - button "Components" [ref=e21] [cursor=pointer]
+              - generic [ref=e22]: /
+              - generic [ref=e23]:
+                - generic [ref=e24]: serafim
+                - generic [ref=e25]: /
+                - generic [ref=e26]: splite
+            - generic [ref=e27]:
+              - generic:
+                - button "Search":
+                  - img
+                  - generic: Search
+                  - generic:
+                    - img
+                    - generic: K
+              - generic [ref=e28]:
+                - button "Copy prompt" [disabled] [ref=e29]:
+                  - img [ref=e30]
+                  - generic [ref=e34]: Copy prompt
+                - button "Copy code" [disabled] [ref=e35]:
+                  - img [ref=e36]
+                  - generic [ref=e40]: Copy code
+                - button "View code" [disabled] [ref=e41]:
+                  - img [ref=e42]
+                  - generic [ref=e45]: View code
+          - img "21st logo static" [ref=e69]
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - generic [ref=e114]:
+              - button "21st logo 21st" [ref=e116] [cursor=pointer]:
+                - generic [ref=e117]:
+                  - generic [ref=e119]:
+                    - img "21st logo"
+                  - generic [ref=e121]: 21st
+                  - img
+              - button "Close sidebar" [ref=e123] [cursor=pointer]:
+                - img
+            - generic [ref=e126]:
+              - img
+              - textbox "Search" [ref=e127] [cursor=pointer]
+              - generic:
+                - img
+                - generic: K
+          - generic [ref=e128]:
+            - generic [ref=e131]:
+              - link "Home" [ref=e133] [cursor=pointer]:
+                - /url: /
+                - img [ref=e134]
+                - generic [ref=e137]: Home
+              - generic [ref=e138]:
+                - heading "Explore" [level=3] [ref=e140]
+                - generic [ref=e141]:
+                  - button "Components" [ref=e142] [cursor=pointer]:
+                    - img [ref=e143]
+                    - generic [ref=e145]: Components
+                    - img [ref=e147]
+                  - link "Agent Templates" [ref=e149] [cursor=pointer]:
+                    - /url: /community/templates
+                    - img [ref=e150]
+                    - generic [ref=e152]: Agent Templates
+                  - link "MCP" [ref=e153] [cursor=pointer]:
+                    - /url: /mcp
+                    - img [ref=e154]
+                    - generic [ref=e160]: MCP
+              - generic [ref=e161]:
+                - heading "Build" [level=3] [ref=e163]
+                - generic [ref=e164]:
+                  - button "Agents" [ref=e165] [cursor=pointer]:
+                    - img [ref=e166]
+                    - generic [ref=e181]: Agents
+                    - img [ref=e183]
+                  - link "1Code" [ref=e185] [cursor=pointer]:
+                    - /url: /1code
+                    - generic [ref=e186]:
+                      - img [ref=e187]
+                      - img [ref=e189]
+                    - generic [ref=e191]: 1Code
+                    - img [ref=e192]
+                  - link "Magic Chat" [ref=e196] [cursor=pointer]:
+                    - /url: /magic
+                    - img [ref=e197]
+                    - generic [ref=e201]: Magic Chat
+                    - img [ref=e202]
+            - generic [ref=e207]:
+              - generic [ref=e208]:
+                - button "Toggle theme" [ref=e209] [cursor=pointer]
+                - button "Settings" [ref=e211] [cursor=pointer]:
+                  - img
+              - button "Log in" [ref=e212] [cursor=pointer]:
+                - generic [ref=e213]: Log in
+  - region "Notifications alt+T"

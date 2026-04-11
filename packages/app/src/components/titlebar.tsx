@@ -299,7 +299,7 @@ export function Titlebar() {
                   <Tooltip placement="bottom" value="Studio" openDelay={2000}>
                     <Button
                       variant="ghost"
-                      class="titlebar-icon w-8 h-6 p-0 box-border"
+                      class="titlebar-icon h-6 px-2 gap-1.5 box-border inline-flex items-center"
                       disabled={layout.sidebar.opened()}
                       tabIndex={layout.sidebar.opened() ? -1 : undefined}
                       onClick={openStudio}
@@ -307,6 +307,7 @@ export function Titlebar() {
                       aria-current={workbench() || studio() ? "page" : undefined}
                     >
                       <Icon size="small" name="code" />
+                      <span class="text-xs font-medium leading-none">Studio</span>
                     </Button>
                   </Tooltip>
                 </div>
