@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import type { Prompt } from "@/context/prompt"
+import type { ContextItem, Prompt } from "@/context/prompt"
 
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
@@ -21,10 +21,12 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const sentPrompts: string[] = []
 const syncedDirectories: string[] = []
+const ctx: Array<ContextItem & { key: string }> = []
 
 let params: { id?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
+let promptErr: Error | undefined
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 
@@ -47,6 +49,7 @@ const clientFor = (directory: string) => {
       },
       prompt: async () => ({ data: undefined }),
       promptAsync: async () => {
+        if (promptErr) throw promptErr
         sentPrompts.push(directory)
         return { data: undefined }
       },
@@ -113,9 +116,24 @@ beforeAll(async () => {
       reset: () => undefined,
       set: () => undefined,
       context: {
-        add: () => undefined,
-        remove: () => undefined,
-        items: () => [],
+        add: (item: ContextItem) => {
+          const key =
+            item.type === "element"
+              ? `element:${item.url}:${item.selector}`
+              : item.type === "template"
+                ? `template:${item.templateID}:${item.partID ?? "full"}:${item.selector ?? "part"}`
+                : item.commentID
+                  ? `file:${item.path}:c=${item.commentID}`
+                  : `file:${item.path}`
+          if (ctx.find((entry) => entry.key === key)) return
+          ctx.push({ key, ...item })
+        },
+        remove: (key: string) => {
+          const index = ctx.findIndex((item) => item.key === key)
+          if (index === -1) return
+          ctx.splice(index, 1)
+        },
+        items: () => ctx,
       },
     }),
   }))
@@ -216,8 +234,10 @@ beforeEach(() => {
   sentShell.length = 0
   sentPrompts.length = 0
   syncedDirectories.length = 0
+  ctx.length = 0
   selected = "/repo/worktree-a"
   variant = undefined
+  promptErr = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
@@ -404,5 +424,92 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic).toEqual([])
     expect(sentPrompts).toEqual([])
     expect(submitted).toBe(0)
+  })
+
+  test("clears transient selected items after a normal send", async () => {
+    params = { id: "session-1" }
+    ctx.push(
+      {
+        key: "element:http://localhost:4173/:section#hero",
+        type: "element",
+        url: "http://localhost:4173/",
+        selector: "section#hero",
+        label: "hero",
+        html: "<section id='hero'></section>",
+      },
+      {
+        key: "template:landing:hero:div.hero",
+        type: "template",
+        templateID: "landing",
+        templateName: "Landing",
+        description: "desc",
+        stack: "React + Tailwind",
+        partID: "hero",
+        partName: "Hero",
+        selector: "div.hero",
+        files: [],
+      },
+    )
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+
+    expect(ctx).toEqual([])
+  })
+
+  test("restores transient selected items if sending fails", async () => {
+    params = { id: "session-1" }
+    promptErr = new Error("boom")
+    ctx.push({
+      key: "element:http://localhost:4173/:section#hero",
+      type: "element",
+      url: "http://localhost:4173/",
+      selector: "section#hero",
+      label: "hero",
+      html: "<section id='hero'></section>",
+    })
+
+    const submit = createPromptSubmit({
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(ctx).toHaveLength(1)
+    expect(ctx[0].type).toBe("element")
   })
 })
