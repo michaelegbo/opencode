@@ -27,6 +27,23 @@ export type TemplatePart = {
   hint?: string
 }
 
+/** Shown in the template gallery when `thumb_url` is missing. */
+export const DEFAULT_TEMPLATE_THUMB_DATA_URL =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+      <defs>
+        <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#14151d"/>
+          <stop offset="100%" style="stop-color:#1f2129"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="400" fill="url(#g)"/>
+      <text x="320" y="188" text-anchor="middle" fill="#8b92a8" font-family="system-ui,sans-serif" font-size="20">Template preview</text>
+      <text x="320" y="218" text-anchor="middle" fill="#5c6378" font-family="system-ui,sans-serif" font-size="14">Open to view full canvas</text>
+    </svg>`,
+  )
+
 export type UITemplateMeta = {
   id: string
   name: string

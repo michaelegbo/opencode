@@ -11,7 +11,12 @@ import { usePrompt } from "@/context/prompt"
 import { useServer } from "@/context/server"
 import { useAuth } from "@/context/auth"
 import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
-import { filesFor, materialize, part } from "@/template/helpers"
+import {
+  DEFAULT_TEMPLATE_THUMB_DATA_URL,
+  filesFor,
+  materialize,
+  part,
+} from "@/template/helpers"
 import type { UITemplateMeta, UITemplate } from "@/template/helpers"
 
 const slug = (value: string) =>
@@ -603,14 +608,11 @@ export function TemplatePanel(props: {
                                         {item.name}
                                       </div>
                                     </div>
-                                    <Show when={item.thumb_url}>
-                                      <img src={item.thumb_url!} class="block h-[calc(100%-40px)] w-full object-cover" alt={`${item.name} thumbnail`} />
-                                    </Show>
-                                    <Show when={!item.thumb_url}>
-                                      <div class="flex h-[calc(100%-40px)] w-full items-center justify-center bg-[#14151d]">
-                                        <div class="text-11-medium text-text-weak">Preview available on open</div>
-                                      </div>
-                                    </Show>
+                                    <img
+                                      src={item.thumb_url?.trim() || DEFAULT_TEMPLATE_THUMB_DATA_URL}
+                                      class="block h-[calc(100%-40px)] w-full object-cover"
+                                      alt={`${item.name} preview`}
+                                    />
                                   </div>
                                 </div>
                               </div>
