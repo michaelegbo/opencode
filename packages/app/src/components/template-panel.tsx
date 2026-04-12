@@ -19,6 +19,7 @@ import {
   previewDoc,
   previewHtml,
   previewUrl,
+  templateGalleryPreviewReady,
   templateIsReactProject,
 } from "@/template/helpers"
 import type { UITemplateMeta, UITemplate } from "@/template/helpers"
@@ -652,6 +653,16 @@ export function TemplatePanel(props: {
                               </div>
                               <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111218] via-[rgba(17,18,24,0.88)] to-transparent" />
                               <div class="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5">
+                                <Show when={item.is_active === false}>
+                                  <div class="rounded-full border border-border-weaker-base bg-black/35 px-2 py-0.5 text-10-medium text-text-weak backdrop-blur-sm">
+                                    Inactive
+                                  </div>
+                                </Show>
+                                <Show when={item.preview_ready === false}>
+                                  <div class="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-10-medium text-amber-200 backdrop-blur-sm">
+                                    Preview pending
+                                  </div>
+                                </Show>
                                 <Show when={item.tier !== "free"}>
                                   <div classList={{
                                     "rounded-full px-2 py-0.5 text-10-medium backdrop-blur-sm border": true,
@@ -719,6 +730,14 @@ export function TemplatePanel(props: {
                     </div>
                     <div class="mt-2 text-18-medium text-text-base">{cur().name}</div>
                     <div class="mt-1 max-w-[820px] text-12-medium text-text-weak">{cur().description}</div>
+                    <Show when={!templateGalleryPreviewReady(cur().preview)}>
+                      <div class="mt-2 max-w-[820px] rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-12-medium text-text-weak">
+                        Gallery preview is not generated yet (or SSR failed for this starter). You can still create a
+                        project from the files. Charts and other client-only widgets fill in after{" "}
+                        <span class="text-text-base font-medium">npm install</span> and{" "}
+                        <span class="text-text-base font-medium">npm run dev</span>.
+                      </div>
+                    </Show>
                     <Show when={templateIsReactProject(cur())}>
                       <div class="mt-2 max-w-[820px] rounded-xl border border-border-weaker-base bg-background-stronger px-3 py-2 text-12-medium text-text-weak">
                         This starter is a full React + Vite project. The canvas shows a server-rendered snapshot plus

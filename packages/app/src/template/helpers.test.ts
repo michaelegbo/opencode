@@ -3,6 +3,7 @@ import {
   previewDoc,
   previewHtml,
   previewUrl,
+  templateGalleryPreviewReady,
   templateIsReactProject,
   type UITemplate,
 } from "./helpers"
@@ -49,5 +50,12 @@ describe("template helpers", () => {
     expect(templateIsReactProject(tpl({ tags: ["paddie:react-package"] }))).toBe(true)
     expect(templateIsReactProject(tpl({ tags: ["react"] }))).toBe(false)
     expect(templateIsReactProject(tpl({}))).toBe(false)
+  })
+
+  test("templateGalleryPreviewReady rejects stubs", () => {
+    expect(templateGalleryPreviewReady("<html>ok</html>")).toBe(true)
+    expect(templateGalleryPreviewReady("x Preview unavailable y")).toBe(false)
+    expect(templateGalleryPreviewReady("SSR build did not run")).toBe(false)
+    expect(templateGalleryPreviewReady("")).toBe(false)
   })
 })

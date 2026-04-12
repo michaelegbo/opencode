@@ -55,6 +55,8 @@ export type UITemplateMeta = {
   parts_count: number
   parts_summary: string[]
   is_active: boolean
+  /** From API: false when preview snapshot is still placeholder or empty */
+  preview_ready?: boolean
   display_order: number
 }
 
@@ -80,6 +82,16 @@ export const part = (tpl: UITemplate, id?: string) => tpl.parts.find((item) => i
 /** Templates imported as full Vite + React trees (API may tag with `paddie:react-package`). */
 export const templateIsReactProject = (tpl: UITemplate) =>
   Boolean(tpl.tags?.includes("paddie:react-package"))
+
+/** Matches RMN `uiTemplatePreviewIsUnavailableStub` — gallery HTML is a real snapshot, not the import stub. */
+export function templateGalleryPreviewReady(preview: string | undefined): boolean {
+  if (preview == null) return false
+  const p = String(preview)
+  if (p.trim() === "") return false
+  if (p.includes("Preview unavailable")) return false
+  if (p.includes("SSR build did not run")) return false
+  return true
+}
 
 const url = (value: string) => /^https?:\/\//i.test(value)
 
