@@ -9,7 +9,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { isDefaultTitle as isDefaultTerminalTitle } from "@/context/terminal-title"
 import { useTerminal, type LocalPTY } from "@/context/terminal"
 import { useLanguage } from "@/context/language"
-import { focusTerminalById } from "@/pages/session/helpers"
+import { waitTerminalFocus } from "@/pages/session/helpers"
 
 export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () => void }): JSX.Element {
   const terminal = useTerminal()
@@ -24,6 +24,7 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
   })
   let input: HTMLInputElement | undefined
   let blurFrame: number | undefined
+  let stop: VoidFunction | undefined
   let editRequested = false
 
   const isDefaultTitle = () => {
@@ -53,9 +54,10 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
   const focus = () => {
     if (store.editing) return
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    requestAnimationFrame(() => {
-      focusTerminalById(props.terminal.id)
-      window.setTimeout(() => focusTerminalById(props.terminal.id), 120)
+    stop?.()
+    stop = waitTerminalFocus(props.terminal.id, {
+      active: terminal.active,
+      delays: [120, 240],
     })
   }
 
@@ -111,8 +113,8 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
   })
 
   onCleanup(() => {
-    if (blurFrame === undefined) return
-    cancelAnimationFrame(blurFrame)
+    if (blurFrame !== undefined) cancelAnimationFrame(blurFrame)
+    stop?.()
   })
 
   return (

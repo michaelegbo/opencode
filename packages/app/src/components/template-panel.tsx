@@ -16,6 +16,10 @@ import {
   filesFor,
   materialize,
   part,
+  previewDoc,
+  previewHtml,
+  previewUrl,
+  templateIsReactProject,
 } from "@/template/helpers"
 import type { UITemplateMeta, UITemplate } from "@/template/helpers"
 
@@ -115,12 +119,24 @@ export function TemplatePanel(props: {
   const [zoom, setZoom] = createSignal(100)
   const [w, setW] = createSignal(0)
   const [h, setH] = createSignal(0)
+  const [doc, setDoc] = createSignal("")
+  const [wait, setWait] = createSignal(false)
   const [showUpgrade, setShowUpgrade] = createSignal(false)
   const [upgradeInfo, setUpgradeInfo] = createSignal<{ required_tier: string; current_tier: string }>()
   let frame: HTMLIFrameElement | undefined
   let stage: HTMLDivElement | undefined
 
   const tpl = createMemo(() => detailCache()[id()])
+  const url = createMemo(() => {
+    const cur = tpl()
+    if (!cur) return ""
+    return previewUrl(cur)
+  })
+  const html = createMemo(() => {
+    const cur = tpl()
+    if (!cur) return ""
+    return previewHtml(cur)
+  })
   const hit = createMemo(() => {
     const t = tpl()
     if (!t) return undefined
@@ -157,7 +173,9 @@ export function TemplatePanel(props: {
     if (!opts?.force && detailCache()[templateId]) return true
     try {
       setDetailLoading(true)
-      const data = await paddieApi.get<UITemplate>(`/studio/ui-templates/${templateId}`)
+      const data = await paddieApi.get<UITemplate>(
+        `/studio/ui-templates/${templateId}?v=${Date.now()}`,
+      )
       setDetailCache((prev) => ({ ...prev, [templateId]: data }))
       return true
     } catch (err) {
@@ -224,20 +242,6 @@ export function TemplatePanel(props: {
   const scaledH = createMemo(() => Math.max(0, Math.floor(shellH() * scale())))
   const canvasH = createMemo(() => Math.max(device() === "desktop" ? 520 : 420, scaledH() + 32))
   const zoomText = createMemo(() => `${zoom()}%`)
-  const reset = () => {
-    const cur = tpl()
-    if (!cur || !frame) return
-    frame.srcdoc = cur.preview
-  }
-  const sync = () =>
-    frame?.contentWindow?.postMessage(
-      {
-        source: "paddie-studio-template-host",
-        type: "pick",
-        active: pick(),
-      },
-      "*",
-    )
 
   const fit = () => {
     const nextW = Math.ceil(stage?.clientWidth ?? 0)
@@ -260,6 +264,8 @@ export function TemplatePanel(props: {
     setID(next)
     setPID("full")
     setPick(false)
+    setDoc("")
+    setWait(false)
     setParts(false)
     setDevice("desktop")
     setDesk("1920")
@@ -270,6 +276,8 @@ export function TemplatePanel(props: {
 
   const back = () => {
     setPick(false)
+    setDoc("")
+    setWait(false)
     setParts(false)
     setView("library")
   }
@@ -363,17 +371,49 @@ export function TemplatePanel(props: {
     })
   }
 
+  const loadPick = async () => {
+    const cur = tpl()
+    if (!cur) return
+    const link = previewUrl(cur)
+    const text = html()
+    setWait(true)
+    try {
+      const next =
+        link
+          ? await (platform.fetch ?? fetch)(link)
+              .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
+              .catch(() => text)
+          : text
+      if (!next.trim()) {
+        showToast({
+          variant: "error",
+          title: "Could not load template picker",
+          description: "No preview document was available for this template.",
+        })
+        return
+      }
+      setDoc(previewDoc(link, next, cur.parts))
+      setPick(true)
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "Could not load template picker",
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setWait(false)
+    }
+  }
+
   onMount(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame?.contentWindow) return
       if (typeof event.data !== "object" || !event.data) return
       if ((event.data as { source?: string }).source !== "paddie-studio-template") return
-      if ((event.data as { type?: string }).type === "ready") {
-        sync()
-        return
-      }
       if ((event.data as { type?: string }).type === "cancel") {
         setPick(false)
+        setDoc("")
+        setWait(false)
         return
       }
       if ((event.data as { type?: string }).type !== "pick") return
@@ -407,12 +447,6 @@ export function TemplatePanel(props: {
 
     window.addEventListener("message", onMessage)
     onCleanup(() => window.removeEventListener("message", onMessage))
-  })
-
-  createEffect(() => {
-    tpl()?.id
-    pick()
-    queueMicrotask(sync)
   })
 
   createEffect(() => {
@@ -685,6 +719,14 @@ export function TemplatePanel(props: {
                     </div>
                     <div class="mt-2 text-18-medium text-text-base">{cur().name}</div>
                     <div class="mt-1 max-w-[820px] text-12-medium text-text-weak">{cur().description}</div>
+                    <Show when={templateIsReactProject(cur())}>
+                      <div class="mt-2 max-w-[820px] rounded-xl border border-border-weaker-base bg-background-stronger px-3 py-2 text-12-medium text-text-weak">
+                        This starter is a full React + Vite project. The canvas shows a server-rendered snapshot plus
+                        built styles (no client bundle in the iframe). After you create the project locally, run{" "}
+                        <span class="text-text-base font-medium">npm install</span> and{" "}
+                        <span class="text-text-base font-medium">npm run dev</span> for the interactive app.
+                      </div>
+                    </Show>
                   </div>
                 </div>
 
@@ -719,7 +761,16 @@ export function TemplatePanel(props: {
                       <Button
                         variant={pick() ? "secondary" : "ghost"}
                         class="h-7 px-2 text-11-medium"
-                        onClick={() => setPick((value) => !value)}
+                        disabled={wait()}
+                        onClick={() => {
+                          if (pick()) {
+                            setPick(false)
+                            setDoc("")
+                            setWait(false)
+                            return
+                          }
+                          void loadPick()
+                        }}
                       >
                         {pick() ? "Stop selecting" : "Select from preview"}
                       </Button>
@@ -742,7 +793,9 @@ export function TemplatePanel(props: {
                           <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-base px-3 flex items-center gap-2">
                             <div class={`size-2 rounded-full ${pick() ? "bg-icon-info-base" : "bg-icon-success-base"}`} />
                             <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
-                              {pick()
+                              {wait()
+                                ? "Loading the template picker..."
+                                : pick()
                                 ? "Selection mode is on. Click any highlighted element to add it to chat."
                                 : "Browsing in desktop mode by default. Switch sizes when you want to inspect the layout."}
                             </div>
@@ -809,18 +862,11 @@ export function TemplatePanel(props: {
                               </div>
                               <iframe
                                 ref={frame}
-                                srcdoc={cur().preview}
+                                src={pick() ? undefined : url() || undefined}
+                                srcdoc={pick() ? doc() : (!url() ? html() : undefined)}
                                 sandbox="allow-scripts allow-same-origin"
                                 class="block min-h-0 flex-1 w-full border-0 bg-white"
                                 title={`${cur().name} preview`}
-                                onLoad={() => {
-                                  const doc = frame?.contentDocument
-                                  if (!doc?.body?.hasAttribute("data-paddie-template")) {
-                                    reset()
-                                    return
-                                  }
-                                  sync()
-                                }}
                               />
                             </div>
                           </div>

@@ -74,10 +74,16 @@ export const createSessionTabs = (input: TabsInput) => {
   }
 }
 
-export const focusTerminalById = (id: string) => {
+export const terminalById = (id: string) => {
   const wrapper = document.getElementById(`terminal-wrapper-${id}`)
   const terminal = wrapper?.querySelector('[data-component="terminal"]')
-  if (!(terminal instanceof HTMLElement)) return false
+  if (!(terminal instanceof HTMLElement)) return
+  return terminal
+}
+
+export const focusTerminalById = (id: string) => {
+  const terminal = terminalById(id)
+  if (!terminal) return false
 
   const textarea = terminal.querySelector("textarea")
   if (textarea instanceof HTMLTextAreaElement) {
@@ -99,6 +105,84 @@ const skip = new Set(["Alt", "Control", "Meta", "Shift"])
 export const shouldFocusTerminalOnKeyDown = (event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">) => {
   if (skip.has(event.key)) return false
   return !(event.ctrlKey || event.metaKey || event.altKey)
+}
+
+export const focusTerminalOnKeyDown = (
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">,
+  input: {
+    opened: boolean
+    id: string | undefined
+    focus?: (id: string) => boolean
+  },
+) => {
+  if (!input.opened) return false
+  if (!input.id) return false
+  if (!shouldFocusTerminalOnKeyDown(event)) return false
+  return (input.focus ?? focusTerminalById)(input.id)
+}
+
+export const waitTerminalFocus = (
+  id: string,
+  input: {
+    opened?: () => boolean
+    active?: () => string | undefined
+    delays?: readonly number[]
+    focus?: (id: string) => boolean
+    frame?: (fn: FrameRequestCallback) => number
+    cancel?: (id: number) => void
+    timeout?: (fn: () => void, ms?: number) => number
+    clear?: (id: number) => void
+    probe?: {
+      focus: (count: number) => void
+      step: () => void
+    }
+  } = {},
+) => {
+  const focus = input.focus ?? focusTerminalById
+  const frame = input.frame ?? requestAnimationFrame
+  const cancel = input.cancel ?? cancelAnimationFrame
+  const timeout = input.timeout ?? window.setTimeout
+  const clear = input.clear ?? window.clearTimeout
+  const delays = input.delays ?? []
+  const probe = input.probe
+  let raf = 0
+  const timers: number[] = []
+
+  const stop = () => {
+    probe?.focus(0)
+    cancel(raf)
+    timers.forEach(clear)
+  }
+
+  const run = () => {
+    if (input.opened && !input.opened()) return false
+    if (input.active && input.active() !== id) return false
+    if (!terminalById(id)) return false
+    probe?.step()
+    return focus(id)
+  }
+
+  probe?.focus(delays.length + 1)
+  if (run()) {
+    probe?.focus(0)
+    return stop
+  }
+
+  raf = frame(() => {
+    if (!run()) return
+    stop()
+  })
+
+  delays.forEach((ms) =>
+    timers.push(
+      timeout(() => {
+        if (!run()) return
+        stop()
+      }, ms),
+    ),
+  )
+
+  return stop
 }
 
 export const createOpenReviewFile = (input: {

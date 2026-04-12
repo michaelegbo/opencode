@@ -48,8 +48,7 @@ import {
   createOpenReviewFile,
   createSessionTabs,
   createSizing,
-  focusTerminalById,
-  shouldFocusTerminalOnKeyDown,
+  focusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -1057,16 +1056,7 @@ export default function Page() {
       return
     }
 
-    // Prefer the open terminal over the composer when it can take focus
-    if (view().terminal.opened()) {
-      const id = terminal.active()
-      if (id && shouldFocusTerminalOnKeyDown(event)) {
-        if (focusTerminalById(id)) return
-        requestAnimationFrame(() => focusTerminalById(id))
-        window.setTimeout(() => focusTerminalById(id), 120)
-        return
-      }
-    }
+    if (focusTerminalOnKeyDown(event, { opened: view().terminal.opened(), id: terminal.active() })) return
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
     if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {

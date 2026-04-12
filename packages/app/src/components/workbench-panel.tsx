@@ -10,6 +10,12 @@ import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { showToast } from "@opencode-ai/ui/toast"
 import { TemplatePanel } from "@/components/template-panel"
 import { WorkbenchEditor } from "@/components/workbench-editor"
+import {
+  comment as problemComment,
+  label as problemLabel,
+  selection as problemSelection,
+  type Problem,
+} from "@/components/workbench-problem"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -340,6 +346,32 @@ export function WorkbenchPanel(props: {
     setState("mode", mode)
     if (mode === "preview" || state.files) return
     openFiles()
+  }
+  const focus = () => {
+    if (props.chatHidden) props.onChatToggle?.()
+    requestAnimationFrame(() => {
+      const node = document.querySelector('[data-component="prompt-input"]')
+      if (node instanceof HTMLElement) node.focus()
+    })
+  }
+  const seed = (text: string) => {
+    const cur = prompt.current()
+    if (cur.length !== 1 || cur[0].type !== "text" || cur[0].content.trim()) return
+    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+  }
+  const fix = (item: Problem) => {
+    prompt.context.add({
+      type: "file",
+      path: item.path,
+      selection: problemSelection(item),
+      comment: problemComment(item),
+    })
+    seed("Fix this problem in the workspace.")
+    focus()
+    showToast({
+      title: "Problem added to chat",
+      description: `${base(item.path)} · ${problemLabel(item)}`,
+    })
   }
   const stopPick = () => {
     setState("pick", false)
@@ -968,6 +1000,7 @@ export function WorkbenchPanel(props: {
                       path={item().path}
                       value={item().value}
                       onChange={(value) => change(item().path, value)}
+                      onProblem={fix}
                       onSave={() => void save()}
                     />
                   )}

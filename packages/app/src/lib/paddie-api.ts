@@ -42,7 +42,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (token) headers["Authorization"] = `Bearer ${token}`
 
-  const res = await platformFetch()(`${API_BASE}${path}`, { ...init, headers })
+  const res = await platformFetch()(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    // Avoid stale template payloads when the API updates Mongo (iframes were showing old placeholder HTML).
+    cache: init?.cache ?? "no-store",
+  })
 
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY)

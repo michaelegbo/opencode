@@ -5,9 +5,12 @@ import {
   createOpenReviewFile,
   createOpenSessionFileTab,
   createSessionTabs,
+  focusTerminalOnKeyDown,
   focusTerminalById,
   getTabReorderIndex,
   shouldFocusTerminalOnKeyDown,
+  terminalById,
+  waitTerminalFocus,
 } from "./helpers"
 
 describe("createOpenReviewFile", () => {
@@ -62,6 +65,11 @@ describe("createOpenSessionFileTab", () => {
 })
 
 describe("focusTerminalById", () => {
+  test("finds the terminal node by id", () => {
+    document.body.innerHTML = `<div id="terminal-wrapper-find"><div data-component="terminal" tabindex="0"></div></div>`
+    expect(terminalById("find")?.dataset.component).toBe("terminal")
+  })
+
   test("focuses textarea when present", () => {
     document.body.innerHTML = `<div id="terminal-wrapper-one"><div data-component="terminal"><textarea></textarea></div></div>`
 
@@ -104,6 +112,106 @@ describe("shouldFocusTerminalOnKeyDown", () => {
   test("keeps plain typing focused on terminal", () => {
     expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "a" }))).toBe(true)
     expect(shouldFocusTerminalOnKeyDown(new KeyboardEvent("keydown", { key: "A", shiftKey: true }))).toBe(true)
+  })
+})
+
+describe("focusTerminalOnKeyDown", () => {
+  test("only swallows typing when terminal focus succeeds", () => {
+    const event = new KeyboardEvent("keydown", { key: "a" })
+    expect(focusTerminalOnKeyDown(event, { opened: true, id: "one", focus: () => false })).toBe(false)
+    expect(focusTerminalOnKeyDown(event, { opened: true, id: "one", focus: () => true })).toBe(true)
+  })
+
+  test("ignores typing when terminal is closed or unavailable", () => {
+    const event = new KeyboardEvent("keydown", { key: "a" })
+    expect(focusTerminalOnKeyDown(event, { opened: false, id: "one", focus: () => true })).toBe(false)
+    expect(focusTerminalOnKeyDown(event, { opened: true, id: undefined, focus: () => true })).toBe(false)
+  })
+})
+
+describe("waitTerminalFocus", () => {
+  test("waits for the terminal DOM before focusing", () => {
+    const steps: number[] = []
+    const timers: Array<() => void> = []
+    const calls: string[] = []
+
+    const stop = waitTerminalFocus("later", {
+      delays: [10, 20],
+      focus: (id) => {
+        calls.push(id)
+        return true
+      },
+      frame: (fn) => {
+        timers.push(() => fn(0))
+        return timers.length
+      },
+      cancel: () => {},
+      timeout: (fn) => {
+        timers.push(fn)
+        return timers.length
+      },
+      clear: () => {},
+      probe: {
+        focus: (count) => steps.push(count),
+        step: () => steps.push(-1),
+      },
+    })
+
+    expect(calls).toEqual([])
+
+    document.body.innerHTML = `<div id="terminal-wrapper-later"><div data-component="terminal" tabindex="0"></div></div>`
+    timers[0]?.()
+
+    expect(calls).toEqual(["later"])
+    expect(steps[0]).toBe(3)
+    expect(steps.includes(-1)).toBe(true)
+
+    stop()
+  })
+
+  test("stops when the terminal is no longer active", () => {
+    const timers: Array<() => void> = []
+    const calls: string[] = []
+    let active = "two"
+
+    document.body.innerHTML = `<div id="terminal-wrapper-one"><div data-component="terminal" tabindex="0"></div></div>`
+
+    const stop = waitTerminalFocus("one", {
+      active: () => active,
+      delays: [10],
+      focus: (id) => {
+        calls.push(id)
+        return true
+      },
+      frame: (fn) => {
+        timers.push(() => fn(0))
+        return timers.length
+      },
+      cancel: () => {},
+      timeout: (fn) => {
+        timers.push(fn)
+        return timers.length
+      },
+      clear: () => {},
+    })
+
+    timers.forEach((run) => run())
+
+    expect(calls).toEqual([])
+
+    active = "one"
+    const again = waitTerminalFocus("one", {
+      active: () => active,
+      focus: (id) => {
+        calls.push(id)
+        return true
+      },
+    })
+
+    expect(calls).toEqual(["one"])
+
+    stop()
+    again()
   })
 })
 

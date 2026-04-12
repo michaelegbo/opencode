@@ -65,6 +65,7 @@ export type UITemplate = {
   stack: string
   tier: string
   thumb_url?: string | null
+  preview_url?: string | null
   preview: string
   files: TemplateFile[]
   assets: TemplateAsset[]
@@ -75,6 +76,155 @@ export type UITemplate = {
 }
 
 export const part = (tpl: UITemplate, id?: string) => tpl.parts.find((item) => item.id === (id || "full"))
+
+/** Templates imported as full Vite + React trees (API may tag with `paddie:react-package`). */
+export const templateIsReactProject = (tpl: UITemplate) =>
+  Boolean(tpl.tags?.includes("paddie:react-package"))
+
+const url = (value: string) => /^https?:\/\//i.test(value)
+
+const esc = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+
+export const previewUrl = (tpl: UITemplate) => {
+  const next = tpl.preview_url?.trim()
+  if (next) return next
+  const value = tpl.preview.trim()
+  if (!url(value)) return ""
+  return value
+}
+
+export const previewHtml = (tpl: UITemplate) => {
+  const link = previewUrl(tpl)
+  if (link && tpl.preview.trim() === link) return ""
+  return tpl.preview
+}
+
+export const previewDoc = (link: string, html: string, parts: TemplatePart[]) => {
+  const head = [
+    link ? `<base href="${esc(link)}">` : "",
+    `<style>
+html.__paddie_pick, html.__paddie_pick * { cursor: crosshair !important; }
+.__paddie_pick_target { outline: 2px solid #60a5fa !important; outline-offset: 2px !important; }
+</style>`,
+    `<script>
+(() => {
+  const parts = ${JSON.stringify(parts.map((item) => ({ id: item.id, selectors: item.selectors })))}
+  const esc = window.CSS && CSS.escape ? CSS.escape.bind(CSS) : (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&")
+  const ok = (el) => el instanceof Element && !["HTML", "BODY", "SCRIPT", "STYLE", "LINK", "META"].includes(el.tagName)
+  const nth = (el) => {
+    const parent = el.parentElement
+    if (!parent) return ""
+    const kids = Array.from(parent.children).filter((item) => item.tagName === el.tagName)
+    if (kids.length <= 1) return ""
+    return ":nth-of-type(" + (kids.indexOf(el) + 1) + ")"
+  }
+  const cls = (el) => {
+    const list = Array.from(el.classList).slice(0, 2)
+    if (list.length === 0) return ""
+    return list.map((item) => "." + esc(item)).join("")
+  }
+  const line = (el) => {
+    let out = el.tagName.toLowerCase()
+    if (el.id) out += "#" + el.id
+    const list = Array.from(el.classList).slice(0, 2)
+    if (list.length) out += "." + list.join(".")
+    return out
+  }
+  const path = (el) => {
+    const out = []
+    let cur = el
+    while (ok(cur)) {
+      let item = cur.tagName.toLowerCase()
+      if (cur.id) {
+        out.unshift(item + "#" + esc(cur.id))
+        break
+      }
+      item += cls(cur) + nth(cur)
+      out.unshift(item)
+      cur = cur.parentElement
+    }
+    return out.join(" > ")
+  }
+  const text = (el) => (el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 240)
+  const find = (target) => {
+    if (!(target instanceof Element)) return
+    const hit = target.closest("*")
+    if (!ok(hit)) return
+    return hit
+  }
+  const match = (el) => {
+    let cur = el
+    while (ok(cur)) {
+      const hit = parts.find((item) =>
+        item.id !== "full" &&
+        item.selectors.some((selector) => {
+          try {
+            return cur.matches(selector)
+          } catch {
+            return false
+          }
+        }),
+      )
+      if (hit) return hit.id
+      cur = cur.parentElement
+    }
+    return "full"
+  }
+  let last
+  const mark = (el) => {
+    if (last === el) return
+    if (last) last.classList.remove("__paddie_pick_target")
+    last = el
+    if (el) el.classList.add("__paddie_pick_target")
+  }
+  const post = (type, payload = {}) => parent.postMessage({ source: "paddie-studio-template", type, payload }, "*")
+  document.documentElement.classList.add("__paddie_pick")
+  document.body?.setAttribute("data-paddie-template", "")
+  document.addEventListener("mousemove", (event) => {
+    const hit = find(event.target)
+    if (!hit) return
+    mark(hit)
+  }, true)
+  document.addEventListener("click", (event) => {
+    const hit = find(event.target)
+    if (!hit) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    post("pick", {
+      id: match(hit),
+      selector: path(hit),
+      label: line(hit),
+      text: text(hit) || undefined,
+      html: (hit.outerHTML || "").replace(/\\s+/g, " ").trim().slice(0, 4000),
+    })
+  }, true)
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return
+    event.preventDefault()
+    event.stopPropagation()
+    post("cancel")
+  }, true)
+})()
+</script>`,
+  ].join("")
+
+  if (/<body[\s>]/i.test(html)) {
+    const next = html.replace(/<body([^>]*)>/i, '<body$1 data-paddie-template="">')
+    if (/<head[\s>]/i.test(next)) return next.replace(/<head([^>]*)>/i, `<head$1>${head}`)
+    if (/<html[\s>]/i.test(next)) return next.replace(/<html([^>]*)>/i, `<html$1><head>${head}</head>`)
+    return `<!doctype html><html><head>${head}</head>${next}</html>`
+  }
+
+  if (/<head[\s>]/i.test(html)) return html.replace(/<head([^>]*)>/i, `<head$1>${head}`)
+  if (/<html[\s>]/i.test(html)) return html.replace(/<html([^>]*)>/i, `<html$1><head>${head}</head><body data-paddie-template="">`)
+  return `<!doctype html><html><head>${head}</head><body data-paddie-template="">${html}</body></html>`
+}
 
 export const filesFor = (tpl: UITemplate, item?: TemplatePart) => {
   const pick = new Set((item?.files.length ? item.files : tpl.files.map((file) => file.path)).map((path) => path))
