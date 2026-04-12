@@ -244,7 +244,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const openTerminal = () => {
-    if (terminal.all().length > 0) terminal.new()
+    if (terminal.all().length === 0) terminal.new()
     view().terminal.open()
   }
 

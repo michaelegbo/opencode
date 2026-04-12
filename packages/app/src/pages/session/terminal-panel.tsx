@@ -22,7 +22,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { terminalProbe } from "@/testing/terminal"
 
 export function TerminalPanel() {
-  const delays = [120, 240]
+  const delays = [120, 240, 480, 720]
   const layout = useLayout()
   const terminal = useTerminal()
   const language = useLanguage()
@@ -70,6 +70,10 @@ export function TerminalPanel() {
     on(
       () => terminal.all().length,
       (count, prevCount) => {
+        if (prevCount !== undefined && count > prevCount && count > 0 && !opened()) {
+          view().terminal.open()
+          return
+        }
         if (prevCount === undefined || prevCount <= 0 || count !== 0) return
         if (!opened()) return
         close()
@@ -251,7 +255,10 @@ export function TerminalPanel() {
               <Tabs
                 variant="alt"
                 value={terminal.active()}
-                onChange={(id) => terminal.open(id)}
+                onChange={(id) => {
+                  terminal.open(id)
+                  focus(id)
+                }}
                 class="!h-auto !flex-none"
               >
                 <Tabs.List class="h-10 border-b border-border-weaker-base">

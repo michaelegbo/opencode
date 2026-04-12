@@ -515,6 +515,10 @@ createMenu((id) => {
 })
 void listenForDeepLinks()
 
+// Expose Tauri's fetch globally so paddie-api.ts and auth.tsx can bypass CORS
+;(window as any).__paddie_fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  input instanceof Request ? tauriFetch(input) : tauriFetch(input, init)
+
 render(() => {
   const platform = createPlatform()
   const loadLocale = async () => {

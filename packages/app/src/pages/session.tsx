@@ -1060,7 +1060,12 @@ export default function Page() {
     // Prefer the open terminal over the composer when it can take focus
     if (view().terminal.opened()) {
       const id = terminal.active()
-      if (id && shouldFocusTerminalOnKeyDown(event) && focusTerminalById(id)) return
+      if (id && shouldFocusTerminalOnKeyDown(event)) {
+        if (focusTerminalById(id)) return
+        requestAnimationFrame(() => focusTerminalById(id))
+        window.setTimeout(() => focusTerminalById(id), 120)
+        return
+      }
     }
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.

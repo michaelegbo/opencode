@@ -204,7 +204,11 @@ export function SessionHeader() {
 
     const id = terminal.active()
     if (!id) return
-    focusTerminalById(id)
+    requestAnimationFrame(() => {
+      if (!view().terminal.opened()) return
+      focusTerminalById(id)
+      window.setTimeout(() => focusTerminalById(id), 120)
+    })
   }
 
   const [prefs, setPrefs] = persisted(Persist.global("open.app"), createStore({ app: "finder" as OpenApp }))

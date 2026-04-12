@@ -14,7 +14,10 @@ import { DialogSelectServer } from "@/components/dialog-select-server"
 import { useServer } from "@/context/server"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
-import { materialize, templates } from "@/template/library"
+import { materialize } from "@/template/helpers"
+import type { UITemplate } from "@/template/helpers"
+import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
+import { useAuth } from "@/context/auth"
 
 const slug = (value: string) =>
   value
@@ -31,6 +34,7 @@ export default function Home() {
   const navigate = useNavigate()
   const server = useServer()
   const language = useLanguage()
+  const auth = useAuth()
   const homedir = createMemo(() => sync.data.path.home)
   const recent = createMemo(() => {
     return sync.data.project
@@ -53,13 +57,34 @@ export default function Home() {
   }
 
   async function createProject() {
-    const tpl = templates()[0]
     const fs = platform.workbench
-    if (!tpl || !fs || !platform.openDirectoryPickerDialog || !server.isLocal()) {
+    if (!fs || !platform.openDirectoryPickerDialog || !server.isLocal()) {
       showToast({
         variant: "error",
         title: "Template starters need the desktop app",
       })
+      return
+    }
+
+    if (!auth.isAuthenticated()) {
+      showToast({ variant: "error", title: "Sign in to access templates" })
+      return
+    }
+
+    let tpl: UITemplate
+    try {
+      const listing = await paddieApi.get<{ id: string }[]>("/studio/ui-templates")
+      if (!listing.length) {
+        showToast({ variant: "error", title: "No templates available" })
+        return
+      }
+      tpl = await paddieApi.get<UITemplate>(`/studio/ui-templates/${listing[0].id}`)
+    } catch (err) {
+      if (err instanceof UpgradeRequiredError) {
+        showToast({ variant: "error", title: "Upgrade required", description: `This template requires the ${err.required_tier} plan.` })
+        return
+      }
+      showToast({ variant: "error", title: "Failed to load template" })
       return
     }
 

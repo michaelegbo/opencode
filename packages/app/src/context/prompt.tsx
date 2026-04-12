@@ -4,7 +4,7 @@ import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
-import type { File as TemplateFile } from "@/template/library"
+import type { TemplateFile } from "@/template/helpers"
 import { Persist, persisted } from "@/utils/persist"
 
 interface PartBase {

@@ -9,7 +9,10 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useServer } from "@/context/server"
-import { filesFor, materialize, part, template, templates } from "@/template/library"
+import { useAuth } from "@/context/auth"
+import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
+import { filesFor, materialize, part } from "@/template/helpers"
+import type { UITemplateMeta, UITemplate } from "@/template/helpers"
 
 const slug = (value: string) =>
   value
@@ -17,6 +20,45 @@ const slug = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "landing-page"
+
+const STUDIO_REDIRECT = encodeURIComponent("paddiestudio://auth")
+const STUDIO_LOGIN_URL = `https://app.paddie.io/login?redirect=${STUDIO_REDIRECT}`
+const STUDIO_SIGNUP_URL = `https://app.paddie.io/signup?redirect=${STUDIO_REDIRECT}`
+
+function LoginCard(props: { openLink: (url: string) => void }) {
+  return (
+    <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6">
+      <div class="mx-auto max-w-sm text-center">
+        <div class="mx-auto mb-3 size-10 rounded-xl border border-border-weaker-base bg-background-stronger flex items-center justify-center shadow-xs-border">
+          <Mark class="size-5 text-icon-info-base" />
+        </div>
+        <div class="text-16-medium text-text-base">Sign in to Paddie</div>
+        <div class="mt-1 text-13-medium text-text-weak">
+          Use your Paddie account to access templates
+        </div>
+        <Button
+          class="mt-5 h-10 w-full justify-center text-13-medium"
+          onClick={() => props.openLink(STUDIO_LOGIN_URL)}
+        >
+          Sign in with browser
+        </Button>
+        <div class="mt-4 text-11-medium text-text-weak">
+          A browser window will open. After signing in, click the button in the browser to return to Studio.
+        </div>
+        <div class="mt-3 text-11-medium text-text-weak">
+          No account?{" "}
+          <button
+            type="button"
+            class="text-text-base underline underline-offset-2 hover:text-text-strong"
+            onClick={() => props.openLink(STUDIO_SIGNUP_URL)}
+          >
+            Create account
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -49,8 +91,16 @@ export function TemplatePanel(props: {
   const platform = usePlatform()
   const prompt = usePrompt()
   const server = useServer()
-  const list = templates()
-  const [id, setID] = createSignal(list[0]?.id ?? "")
+  const auth = useAuth()
+
+  const [list, setList] = createSignal<UITemplateMeta[]>([])
+  const [listLoading, setListLoading] = createSignal(false)
+  const [listError, setListError] = createSignal<string>()
+
+  const [detailCache, setDetailCache] = createSignal<Record<string, UITemplate>>({})
+  const [detailLoading, setDetailLoading] = createSignal(false)
+
+  const [id, setID] = createSignal("")
   const [pid, setPID] = createSignal("full")
   const [pick, setPick] = createSignal(false)
   const [view, setView] = createSignal<"library" | "detail">("library")
@@ -60,11 +110,92 @@ export function TemplatePanel(props: {
   const [zoom, setZoom] = createSignal(100)
   const [w, setW] = createSignal(0)
   const [h, setH] = createSignal(0)
+  const [showUpgrade, setShowUpgrade] = createSignal(false)
+  const [upgradeInfo, setUpgradeInfo] = createSignal<{ required_tier: string; current_tier: string }>()
   let frame: HTMLIFrameElement | undefined
   let stage: HTMLDivElement | undefined
 
-  const tpl = createMemo(() => template(id()) ?? list[0])
-  const hit = createMemo(() => part(tpl(), pid()) ?? tpl()?.parts[0])
+  const tpl = createMemo(() => detailCache()[id()])
+  const hit = createMemo(() => {
+    const t = tpl()
+    if (!t) return undefined
+    return part(t, pid()) ?? t.parts[0]
+  })
+
+  const userTier = createMemo(() => auth.subscription()?.plan_slug ?? "free")
+  const tierOrder: Record<string, number> = { free: 0, basic: 1, pro: 2, custom: 3 }
+  const canAccess = (tier: string) => (tierOrder[userTier()] ?? 0) >= (tierOrder[tier] ?? 0)
+
+  let fetchInFlight = false
+  const fetchList = async (opts?: { force?: boolean }): Promise<boolean> => {
+    if (!auth.isAuthenticated()) return false
+    if (fetchInFlight && !opts?.force) return false
+    fetchInFlight = true
+    setListLoading(true)
+    setListError(undefined)
+    try {
+      const data = await paddieApi.get<UITemplateMeta[]>("/studio/ui-templates")
+      setList(data)
+      setListError(undefined)
+      if (data.length > 0 && !id()) setID(data[0].id)
+      return true
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : "Failed to load templates")
+      return false
+    } finally {
+      setListLoading(false)
+      fetchInFlight = false
+    }
+  }
+
+  const fetchDetail = async (templateId: string, opts?: { force?: boolean }): Promise<boolean> => {
+    if (!opts?.force && detailCache()[templateId]) return true
+    try {
+      setDetailLoading(true)
+      const data = await paddieApi.get<UITemplate>(`/studio/ui-templates/${templateId}`)
+      setDetailCache((prev) => ({ ...prev, [templateId]: data }))
+      return true
+    } catch (err) {
+      if (err instanceof UpgradeRequiredError) {
+        setUpgradeInfo({ required_tier: err.required_tier, current_tier: err.current_tier })
+        setShowUpgrade(true)
+        setView("library")
+        return false
+      }
+      showToast({ variant: "error", title: "Failed to load template", description: err instanceof Error ? err.message : String(err) })
+      setView("library")
+      return false
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const refreshTemplates = async () => {
+    const cur = id()
+    const onDetail = view() === "detail"
+    const listOk = await fetchList({ force: true })
+    if (!listOk) {
+      showToast({
+        variant: "error",
+        title: "Could not refresh templates",
+        description: "Check your connection and try again.",
+      })
+      return
+    }
+    if (onDetail && cur) {
+      setDetailCache((prev) => (prev[cur] ? { [cur]: prev[cur] } : {}))
+      const detailOk = await fetchDetail(cur, { force: true })
+      if (!detailOk) return
+    } else {
+      setDetailCache({})
+    }
+    showToast({ title: "Templates refreshed", description: "Loaded the latest list from Paddie." })
+  }
+
+  createEffect(() => {
+    const authenticated = auth.isAuthenticated()
+    if (authenticated) void fetchList()
+  })
   const preset = createMemo(() => {
     const next = device()
     if (next === "desktop") return views[desk()]
@@ -120,7 +251,7 @@ export function TemplatePanel(props: {
     })
   }
 
-  const open = (next: string) => {
+  const open = async (next: string) => {
     setID(next)
     setPID("full")
     setPick(false)
@@ -128,7 +259,8 @@ export function TemplatePanel(props: {
     setDevice("desktop")
     setDesk("1920")
     setZoom(100)
-    setView("detail")
+    await fetchDetail(next)
+    if (detailCache()[next]) setView("detail")
   }
 
   const back = () => {
@@ -326,20 +458,75 @@ export function TemplatePanel(props: {
   return (
     <div class="size-full overflow-hidden p-3">
       <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)]">
+        <Show when={showUpgrade()}>
+          <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="w-full max-w-md rounded-[20px] border border-border-weaker-base bg-surface-base p-6 shadow-[var(--shadow-lg-border-base)]">
+              <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Upgrade required</div>
+              <div class="mt-2 text-18-medium text-text-base">This template requires a higher plan</div>
+              <div class="mt-2 text-13-medium text-text-weak">
+                Your current plan is <span class="font-semibold text-text-base capitalize">{upgradeInfo()?.current_tier ?? "free"}</span>.
+                This template requires the <span class="font-semibold text-text-base capitalize">{upgradeInfo()?.required_tier ?? "pro"}</span> plan or above.
+              </div>
+              <div class="mt-6 flex gap-3">
+                <Button class="flex-1" onClick={() => platform.openLink("https://paddie.io/pricing")}>
+                  View plans
+                </Button>
+                <Button variant="ghost" onClick={() => setShowUpgrade(false)}>
+                  Maybe later
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Show>
+
         <Show
           when={view() === "detail" && tpl()}
           fallback={
             <div class="size-full overflow-auto bg-background-base p-3">
               <div class="mx-auto flex max-w-[1200px] flex-col gap-4">
                 <div class="rounded-[20px] border border-border-weaker-base bg-surface-base px-4 py-4">
-                  <div class="flex items-center gap-3">
-                    <div class="size-10 rounded-xl border border-border-weaker-base bg-background-stronger flex items-center justify-center shadow-xs-border">
-                      <Mark class="size-5 text-icon-info-base" />
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                      <div class="size-10 rounded-xl border border-border-weaker-base bg-background-stronger flex items-center justify-center shadow-xs-border">
+                        <Mark class="size-5 text-icon-info-base" />
+                      </div>
+                      <div class="min-w-0">
+                        <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Templates</div>
+                        <div class="text-15-medium text-text-base">Reference library</div>
+                      </div>
                     </div>
-                    <div class="min-w-0">
-                      <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Templates</div>
-                      <div class="text-15-medium text-text-base">Reference library</div>
-                    </div>
+                    <Show when={auth.isAuthenticated()}>
+                      <div class="flex items-center gap-2 shrink-0">
+                        <Button
+                          variant="ghost"
+                          class="h-8 px-2 text-11-medium text-text-weak"
+                          onClick={() => void refreshTemplates()}
+                          title="Reload templates from Paddie"
+                        >
+                          Refresh
+                        </Button>
+                        <div class="flex items-center gap-2 rounded-xl border border-border-weaker-base bg-background-stronger px-3 py-1.5">
+                          <div class="size-2 rounded-full bg-icon-success-base" />
+                          <span class="text-11-medium text-text-weak truncate max-w-[160px]">{auth.user()?.email ?? "Signed in"}</span>
+                          <Show when={auth.subscription()}>
+                            <span class="rounded-full border border-border-weaker-base px-1.5 py-0.5 text-10-medium text-text-weak capitalize">
+                              {auth.subscription()!.plan_slug}
+                            </span>
+                          </Show>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          class="h-8 px-2 text-11-medium text-text-weak"
+                          onClick={() => {
+                            auth.logout()
+                            setList([])
+                            setListError(undefined)
+                          }}
+                        >
+                          Sign out
+                        </Button>
+                      </div>
+                    </Show>
                   </div>
                   <div class="mt-3 max-w-[780px] text-13-medium text-text-weak">
                     Browse a starter first, then open it in a desktop canvas. Curated parts stay hidden until you
@@ -347,83 +534,139 @@ export function TemplatePanel(props: {
                   </div>
                 </div>
 
-                <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <For each={list}>
-                    {(item) => (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        class="rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors hover:bg-surface-base-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-weak-base"
-                        onClick={() => open(item.id)}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter" && event.key !== " ") return
-                          event.preventDefault()
-                          open(item.id)
-                        }}
-                      >
-                        <div
-                          class="relative overflow-hidden rounded-[16px] border border-border-weaker-base bg-[#111218]"
-                          style={{ height: `${miniH + 16}px` }}
-                        >
-                          <div class="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-[#111218] via-[rgba(17,18,24,0.78)] to-transparent" />
-                          <div class="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_48%)]" />
-                          <div class="absolute inset-0 overflow-hidden p-2 flex items-start justify-center">
-                            <div class="relative shrink-0" style={{ width: `${miniW}px`, height: `${miniH}px` }}>
-                              <div
-                                class="absolute left-0 top-0 origin-top-left overflow-hidden rounded-[12px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]"
-                                style={{
-                                  width: `${mini.w}px`,
-                                  height: `${mini.h}px`,
-                                  transform: `scale(${mini.scale})`,
-                                }}
-                              >
-                                <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
-                                  <div class="size-2 rounded-full bg-[#f87171]" />
-                                  <div class="size-2 rounded-full bg-[#fbbf24]" />
-                                  <div class="size-2 rounded-full bg-[#34d399]" />
-                                  <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
-                                    {item.name}
+                <Show when={!auth.isAuthenticated()}>
+                  <LoginCard openLink={(url) => platform.openLink(url)} />
+                </Show>
+
+                <Show when={auth.isAuthenticated() && listLoading()}>
+                  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <For each={[1, 2, 3]}>{() => (
+                      <div class="animate-pulse rounded-[20px] border border-border-weaker-base bg-background-stronger p-4">
+                        <div class="rounded-[16px] bg-[#111218]" style={{ height: `${miniH + 16}px` }} />
+                        <div class="mt-4 h-5 w-3/4 rounded bg-background-base" />
+                        <div class="mt-2 h-4 w-full rounded bg-background-base" />
+                        <div class="mt-4 h-4 w-1/3 rounded bg-background-base" />
+                      </div>
+                    )}</For>
+                  </div>
+                </Show>
+
+                <Show when={auth.isAuthenticated() && !listLoading() && listError()}>
+                  <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6 text-center">
+                    <div class="text-14-medium text-text-weak">{listError()}</div>
+                    <Button class="mt-3" variant="ghost" onClick={() => void fetchList({ force: true })}>Retry</Button>
+                  </div>
+                </Show>
+
+                <Show when={auth.isAuthenticated() && !listLoading() && !listError()}>
+                  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <For each={list()}>
+                      {(item) => {
+                        const locked = () => !canAccess(item.tier)
+                        return (
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            classList={{
+                              "rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-weak-base": true,
+                              "hover:bg-surface-base-hover": !locked(),
+                              "opacity-75": locked(),
+                            }}
+                            onClick={() => void open(item.id)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return
+                              event.preventDefault()
+                              void open(item.id)
+                            }}
+                          >
+                            <div
+                              class="relative overflow-hidden rounded-[16px] border border-border-weaker-base bg-[#111218]"
+                              style={{ height: `${miniH + 16}px` }}
+                            >
+                              <div class="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-[#111218] via-[rgba(17,18,24,0.78)] to-transparent" />
+                              <div class="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_48%)]" />
+                              <div class="absolute inset-0 overflow-hidden p-2 flex items-start justify-center">
+                                <div class="relative shrink-0" style={{ width: `${miniW}px`, height: `${miniH}px` }}>
+                                  <div
+                                    class="absolute left-0 top-0 origin-top-left overflow-hidden rounded-[12px] border border-border-weaker-base bg-[#14151d] shadow-[var(--shadow-lg-border-base)]"
+                                    style={{
+                                      width: `${mini.w}px`,
+                                      height: `${mini.h}px`,
+                                      transform: `scale(${mini.scale})`,
+                                    }}
+                                  >
+                                    <div class="h-10 shrink-0 border-b border-border-weaker-base bg-[#111218] flex items-center gap-2 px-4">
+                                      <div class="size-2 rounded-full bg-[#f87171]" />
+                                      <div class="size-2 rounded-full bg-[#fbbf24]" />
+                                      <div class="size-2 rounded-full bg-[#34d399]" />
+                                      <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
+                                        {item.name}
+                                      </div>
+                                    </div>
+                                    <Show when={item.thumb_url}>
+                                      <img src={item.thumb_url!} class="block h-[calc(100%-40px)] w-full object-cover" alt={`${item.name} thumbnail`} />
+                                    </Show>
+                                    <Show when={!item.thumb_url}>
+                                      <div class="flex h-[calc(100%-40px)] w-full items-center justify-center bg-[#14151d]">
+                                        <div class="text-11-medium text-text-weak">Preview available on open</div>
+                                      </div>
+                                    </Show>
                                   </div>
                                 </div>
-                                <iframe
-                                  srcdoc={item.preview}
-                                  sandbox=""
-                                  loading="lazy"
-                                  tabIndex={-1}
-                                  aria-hidden="true"
-                                  class="pointer-events-none block h-[calc(100%-40px)] w-full border-0 bg-white"
-                                  title={`${item.name} preview`}
-                                />
+                              </div>
+                              <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111218] via-[rgba(17,18,24,0.88)] to-transparent" />
+                              <div class="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5">
+                                <Show when={item.tier !== "free"}>
+                                  <div classList={{
+                                    "rounded-full px-2 py-0.5 text-10-medium backdrop-blur-sm border": true,
+                                    "border-yellow-500/30 bg-yellow-500/15 text-yellow-400": item.tier === "basic",
+                                    "border-purple-500/30 bg-purple-500/15 text-purple-400": item.tier === "pro",
+                                    "border-sky-500/30 bg-sky-500/15 text-sky-400": item.tier === "custom",
+                                  }}>
+                                    {item.tier.charAt(0).toUpperCase() + item.tier.slice(1)}
+                                  </div>
+                                </Show>
+                                <div class="rounded-full border border-border-weaker-base bg-background-base/85 px-2 py-0.5 text-10-medium text-text-weak backdrop-blur-sm">
+                                  {item.stack}
+                                </div>
+                              </div>
+                              <Show when={locked()}>
+                                <div class="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                                  <div class="rounded-full border border-border-weaker-base bg-background-base/90 px-3 py-1.5 text-11-medium text-text-base shadow-lg backdrop-blur-sm">
+                                    Upgrade to {item.tier}
+                                  </div>
+                                </div>
+                              </Show>
+                            </div>
+                            <div class="mt-4 flex items-start justify-between gap-3">
+                              <div class="min-w-0">
+                                <div class="text-16-medium text-text-base">{item.name}</div>
+                                <div class="mt-2 text-13-medium text-text-weak">{item.description}</div>
+                              </div>
+                            </div>
+                            <div class="mt-4 flex items-center justify-between gap-3">
+                              <div class="text-11-medium text-text-weak">{item.parts_count} curated parts</div>
+                              <div class="rounded-full border border-border-weaker-base px-3 py-1 text-11-medium text-text-base">
+                                {locked() ? "Locked" : "Open template"}
                               </div>
                             </div>
                           </div>
-                          <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#111218] via-[rgba(17,18,24,0.88)] to-transparent" />
-                          <div class="pointer-events-none absolute right-3 top-3 rounded-full border border-border-weaker-base bg-background-base/85 px-2 py-0.5 text-10-medium text-text-weak backdrop-blur-sm">
-                            {item.stack}
-                          </div>
-                        </div>
-                        <div class="mt-4 flex items-start justify-between gap-3">
-                          <div class="min-w-0">
-                            <div class="text-16-medium text-text-base">{item.name}</div>
-                            <div class="mt-2 text-13-medium text-text-weak">{item.description}</div>
-                          </div>
-                        </div>
-                        <div class="mt-4 flex items-center justify-between gap-3">
-                          <div class="text-11-medium text-text-weak">{item.parts.length} curated parts</div>
-                          <div class="rounded-full border border-border-weaker-base px-3 py-1 text-11-medium text-text-base">
-                            Open template
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </For>
-                </div>
+                        )
+                      }}
+                    </For>
+                  </div>
+                </Show>
               </div>
             </div>
           }
         >
           {(cur) => (
             <div class="size-full overflow-auto bg-background-base p-3">
+              <Show when={detailLoading()}>
+                <div class="flex items-center justify-center py-12">
+                  <div class="text-13-medium text-text-weak animate-pulse">Loading template...</div>
+                </div>
+              </Show>
               <div class="min-h-full min-w-0 flex flex-col gap-3">
                 <div class="rounded-[18px] border border-border-weaker-base bg-surface-base px-4 py-3">
                   <div class="min-w-0">
@@ -485,6 +728,14 @@ export function TemplatePanel(props: {
                         <div class="min-w-0 flex flex-1 flex-wrap items-center gap-2">
                           <Button variant="ghost" class="h-8 px-3 text-11-medium" onClick={back}>
                             Back to library
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            class="h-8 px-3 text-11-medium"
+                            onClick={() => void refreshTemplates()}
+                            title="Reload template list and this template from Paddie"
+                          >
+                            Refresh
                           </Button>
                           <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-base px-3 flex items-center gap-2">
                             <div class={`size-2 rounded-full ${pick() ? "bg-icon-info-base" : "bg-icon-success-base"}`} />

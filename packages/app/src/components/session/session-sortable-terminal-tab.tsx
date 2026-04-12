@@ -53,7 +53,10 @@ export function SortableTerminalTab(props: { terminal: LocalPTY; onClose?: () =>
   const focus = () => {
     if (store.editing) return
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
-    focusTerminalById(props.terminal.id)
+    requestAnimationFrame(() => {
+      focusTerminalById(props.terminal.id)
+      window.setTimeout(() => focusTerminalById(props.terminal.id), 120)
+    })
   }
 
   const edit = (e?: Event) => {
