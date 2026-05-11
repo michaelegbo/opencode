@@ -289,28 +289,6 @@ export function Titlebar() {
                     />
                   </TooltipKeybind>
                 </div>
-                <div
-                  class="transition-opacity"
-                  classList={{
-                    "opacity-100 duration-120 ease-out": !layout.sidebar.opened(),
-                    "opacity-0 duration-120 ease-in delay-0 pointer-events-none": layout.sidebar.opened(),
-                  }}
-                >
-                  <Tooltip placement="bottom" value="Studio" openDelay={2000}>
-                    <Button
-                      variant="ghost"
-                      class="titlebar-icon h-6 px-2 gap-1.5 box-border inline-flex items-center"
-                      disabled={layout.sidebar.opened()}
-                      tabIndex={layout.sidebar.opened() ? -1 : undefined}
-                      onClick={openStudio}
-                      aria-label="Studio"
-                      aria-current={workbench() || studio() ? "page" : undefined}
-                    >
-                      <Icon size="small" name="code" />
-                      <span class="text-xs font-medium leading-none">Studio</span>
-                    </Button>
-                  </Tooltip>
-                </div>
               </div>
             </Show>
             <Show when={hasProjects()}>
@@ -362,6 +340,20 @@ export function Titlebar() {
         data-tauri-drag-region
         onMouseDown={drag}
       >
+        <Show when={params.dir}>
+          <Tooltip placement="bottom" value="Studio" openDelay={2000}>
+            <Button
+              variant="ghost"
+              class="hidden xl:inline-flex titlebar-icon h-6 px-2 gap-1.5 box-border items-center shrink-0 mr-2"
+              onClick={openStudio}
+              aria-label="Studio"
+              aria-current={workbench() || studio() ? "page" : undefined}
+            >
+              <Icon size="small" name="code" />
+              <span class="text-xs font-medium leading-none">Studio</span>
+            </Button>
+          </Tooltip>
+        </Show>
         <div id="opencode-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
         <Show when={windows()}>
           {!tauriApi() && <div class="w-36 shrink-0" />}
