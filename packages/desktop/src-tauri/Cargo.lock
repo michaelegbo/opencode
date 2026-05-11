@@ -3195,7 +3195,7 @@ dependencies = [
 
 [[package]]
 name = "opencode-desktop"
-version = "0.0.0"
+version = "1.4.60"
 dependencies = [
  "chrono",
  "comrak",

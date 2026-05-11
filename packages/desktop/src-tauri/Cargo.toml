@@ -1,6 +1,6 @@
 [package]
 name = "opencode-desktop"
-version = "0.0.0"
+version = "1.4.60"
 description = "Paddie Studio desktop app, forked from OpenCode"
 authors = ["Michael Egbo"]
 edition = "2024"
