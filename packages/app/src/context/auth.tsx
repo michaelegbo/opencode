@@ -23,6 +23,7 @@ export type AuthState = {
 }
 
 export const TOKEN_KEY = "paddie_studio_token"
+const RMN_TOKEN_KEY = "rmn_token"
 const API_BASE =
   typeof window !== "undefined" && (window as any).__PADDIE_API_URL
     ? (window as any).__PADDIE_API_URL
@@ -112,6 +113,7 @@ export const { use: useAuth, provider: AuthProvider } = createSimpleContext({
 
         const jwt = body.data.token
         localStorage.setItem(TOKEN_KEY, jwt)
+        localStorage.setItem(RMN_TOKEN_KEY, jwt)
         setToken(jwt)
 
         if (body.data.user) {
@@ -134,6 +136,7 @@ export const { use: useAuth, provider: AuthProvider } = createSimpleContext({
 
     const logout = () => {
       localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(RMN_TOKEN_KEY)
       setToken(undefined)
       setUser(undefined)
       setSubscription(undefined)
@@ -142,6 +145,7 @@ export const { use: useAuth, provider: AuthProvider } = createSimpleContext({
     onMount(() => {
       const stored = token()
       if (stored) {
+        localStorage.setItem(RMN_TOKEN_KEY, stored)
         void hydrate(stored)
       }
 
@@ -158,6 +162,7 @@ export const { use: useAuth, provider: AuthProvider } = createSimpleContext({
               const jwt = u.searchParams.get("token")
               if (jwt) {
                 localStorage.setItem(TOKEN_KEY, jwt)
+                localStorage.setItem(RMN_TOKEN_KEY, jwt)
                 setToken(jwt)
                 void hydrate(jwt)
               }

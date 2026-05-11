@@ -11,6 +11,8 @@ import { usePrompt } from "@/context/prompt"
 import { useServer } from "@/context/server"
 import { useAuth } from "@/context/auth"
 import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
+import { STUDIO_LOGIN_URL, STUDIO_SIGNUP_URL } from "@/lib/paddie-links"
+import { WorkflowBuilder } from "@/components/workflow-builder"
 import {
   DEFAULT_TEMPLATE_THUMB_DATA_URL,
   filesFor,
@@ -31,11 +33,7 @@ const slug = (value: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "landing-page"
 
-const STUDIO_REDIRECT = encodeURIComponent("paddiestudio://auth")
-const STUDIO_LOGIN_URL = `https://app.paddie.io/login?redirect=${STUDIO_REDIRECT}`
-const STUDIO_SIGNUP_URL = `https://app.paddie.io/signup?redirect=${STUDIO_REDIRECT}`
-
-function LoginCard(props: { openLink: (url: string) => void }) {
+function LoginCard(props: { desc?: string; openLink: (url: string) => void }) {
   return (
     <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6">
       <div class="mx-auto max-w-sm text-center">
@@ -44,7 +42,7 @@ function LoginCard(props: { openLink: (url: string) => void }) {
         </div>
         <div class="text-16-medium text-text-base">Sign in to Paddie</div>
         <div class="mt-1 text-13-medium text-text-weak">
-          Use your Paddie account to access templates
+          {props.desc ?? "Use your Paddie account to access templates"}
         </div>
         <Button
           class="mt-5 h-10 w-full justify-center text-13-medium"
@@ -114,6 +112,7 @@ export function TemplatePanel(props: {
   const [pid, setPID] = createSignal("full")
   const [pick, setPick] = createSignal(false)
   const [view, setView] = createSignal<"library" | "detail">("library")
+  const [section, setSection] = createSignal<"templates" | "workflow">("templates")
   const [parts, setParts] = createSignal(false)
   const [device, setDevice] = createSignal<Device>("desktop")
   const [desk, setDesk] = createSignal<Desk>("1920")
@@ -495,6 +494,20 @@ export function TemplatePanel(props: {
     </button>
   )
 
+  const tab = (value: "templates" | "workflow", label: string) => (
+    <button
+      type="button"
+      classList={{
+        "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-colors": true,
+        "bg-background-stronger text-text-strong shadow-xs-border": section() === value,
+        "text-text-weak hover:text-text-base hover:bg-surface-base-hover": section() !== value,
+      }}
+      onClick={() => setSection(value)}
+    >
+      {label}
+    </button>
+  )
+
   return (
     <div class="size-full overflow-hidden p-3">
       <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)]">
@@ -535,90 +548,115 @@ export function TemplatePanel(props: {
                         <div class="text-15-medium text-text-base">Reference library</div>
                       </div>
                     </div>
-                    <Show when={auth.isAuthenticated()}>
-                      <div class="flex items-center gap-2 shrink-0">
-                        <Button
-                          variant="ghost"
-                          class="h-8 px-2 text-11-medium text-text-weak"
-                          onClick={() => void refreshTemplates()}
-                          title="Reload templates from Paddie"
-                        >
-                          Refresh
-                        </Button>
-                        <div class="flex items-center gap-2 rounded-xl border border-border-weaker-base bg-background-stronger px-3 py-1.5">
-                          <div class="size-2 rounded-full bg-icon-success-base" />
-                          <span class="text-11-medium text-text-weak truncate max-w-[160px]">{auth.user()?.email ?? "Signed in"}</span>
-                          <Show when={auth.subscription()}>
-                            <span class="rounded-full border border-border-weaker-base px-1.5 py-0.5 text-10-medium text-text-weak capitalize">
-                              {auth.subscription()!.plan_slug}
-                            </span>
-                          </Show>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          class="h-8 px-2 text-11-medium text-text-weak"
-                          onClick={() => {
-                            auth.logout()
-                            setList([])
-                            setListError(undefined)
-                          }}
-                        >
-                          Sign out
-                        </Button>
+                    <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                      <div class="rounded-xl border border-border-weaker-base bg-background-base p-1 flex items-center gap-1">
+                        {tab("templates", "Templates")}
+                        {tab("workflow", "Workflow Builder")}
                       </div>
-                    </Show>
+                      <Show when={auth.isAuthenticated()}>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <Show when={section() === "templates"}>
+                            <Button
+                              variant="ghost"
+                              class="h-8 px-2 text-11-medium text-text-weak"
+                              onClick={() => void refreshTemplates()}
+                              title="Reload templates from Paddie"
+                            >
+                              Refresh
+                            </Button>
+                          </Show>
+                          <div class="flex items-center gap-2 rounded-xl border border-border-weaker-base bg-background-stronger px-3 py-1.5">
+                            <div class="size-2 rounded-full bg-icon-success-base" />
+                            <span class="text-11-medium text-text-weak truncate max-w-[160px]">{auth.user()?.email ?? "Signed in"}</span>
+                            <Show when={auth.subscription()}>
+                              <span class="rounded-full border border-border-weaker-base px-1.5 py-0.5 text-10-medium text-text-weak capitalize">
+                                {auth.subscription()!.plan_slug}
+                              </span>
+                            </Show>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            class="h-8 px-2 text-11-medium text-text-weak"
+                            onClick={() => {
+                              auth.logout()
+                              setList([])
+                              setListError(undefined)
+                            }}
+                          >
+                            Sign out
+                          </Button>
+                        </div>
+                      </Show>
+                    </div>
                   </div>
                   <div class="mt-3 max-w-[780px] text-13-medium text-text-weak">
-                    Browse a starter first, then open it in a desktop canvas. Curated parts stay hidden until you
-                    select one or open them yourself.
+                    {section() === "workflow"
+                      ? "Build and manage Paddie workflows with the same account used for Studio templates."
+                      : "Browse a starter first, then open it in a desktop canvas. Curated parts stay hidden until you select one or open them yourself."}
                   </div>
                 </div>
 
-                <Show when={!auth.isAuthenticated()}>
-                  <LoginCard openLink={(url) => platform.openLink(url)} />
-                </Show>
+                <Show
+                  when={section() === "templates"}
+                  fallback={
+                    <Show
+                      when={auth.isAuthenticated()}
+                      fallback={
+                        <LoginCard
+                          desc="Use your Paddie account to access Workflow Builder"
+                          openLink={(url) => platform.openLink(url)}
+                        />
+                      }
+                    >
+                      <WorkflowBuilder />
+                    </Show>
+                  }
+                >
+                  <Show when={!auth.isAuthenticated()}>
+                    <LoginCard openLink={(url) => platform.openLink(url)} />
+                  </Show>
 
-                <Show when={auth.isAuthenticated() && listLoading()}>
-                  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <For each={[1, 2, 3]}>{() => (
-                      <div class="animate-pulse rounded-[20px] border border-border-weaker-base bg-background-stronger p-4">
-                        <div class="rounded-[16px] bg-[#111218]" style={{ height: `${miniH + 16}px` }} />
-                        <div class="mt-4 h-5 w-3/4 rounded bg-background-base" />
-                        <div class="mt-2 h-4 w-full rounded bg-background-base" />
-                        <div class="mt-4 h-4 w-1/3 rounded bg-background-base" />
-                      </div>
-                    )}</For>
-                  </div>
-                </Show>
+                  <Show when={auth.isAuthenticated() && listLoading()}>
+                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <For each={[1, 2, 3]}>{() => (
+                        <div class="animate-pulse rounded-[20px] border border-border-weaker-base bg-background-stronger p-4">
+                          <div class="rounded-[16px] bg-[#111218]" style={{ height: `${miniH + 16}px` }} />
+                          <div class="mt-4 h-5 w-3/4 rounded bg-background-base" />
+                          <div class="mt-2 h-4 w-full rounded bg-background-base" />
+                          <div class="mt-4 h-4 w-1/3 rounded bg-background-base" />
+                        </div>
+                      )}</For>
+                    </div>
+                  </Show>
 
-                <Show when={auth.isAuthenticated() && !listLoading() && listError()}>
-                  <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6 text-center">
-                    <div class="text-14-medium text-text-weak">{listError()}</div>
-                    <Button class="mt-3" variant="ghost" onClick={() => void fetchList({ force: true })}>Retry</Button>
-                  </div>
-                </Show>
+                  <Show when={auth.isAuthenticated() && !listLoading() && listError()}>
+                    <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6 text-center">
+                      <div class="text-14-medium text-text-weak">{listError()}</div>
+                      <Button class="mt-3" variant="ghost" onClick={() => void fetchList({ force: true })}>Retry</Button>
+                    </div>
+                  </Show>
 
-                <Show when={auth.isAuthenticated() && !listLoading() && !listError()}>
-                  <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <For each={list()}>
-                      {(item) => {
-                        const locked = () => !canAccess(item.tier)
-                        return (
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            classList={{
-                              "rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-weak-base": true,
-                              "hover:bg-surface-base-hover": !locked(),
-                              "opacity-75": locked(),
-                            }}
-                            onClick={() => void open(item.id)}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return
-                              event.preventDefault()
-                              void open(item.id)
-                            }}
-                          >
+                  <Show when={auth.isAuthenticated() && !listLoading() && !listError()}>
+                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <For each={list()}>
+                        {(item) => {
+                          const locked = () => !canAccess(item.tier)
+                          return (
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              classList={{
+                                "rounded-[20px] border border-border-weaker-base bg-background-stronger p-4 text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-weak-base": true,
+                                "hover:bg-surface-base-hover": !locked(),
+                                "opacity-75": locked(),
+                              }}
+                              onClick={() => void open(item.id)}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ") return
+                                event.preventDefault()
+                                void open(item.id)
+                              }}
+                            >
                             <div
                               class="relative overflow-hidden rounded-[16px] border border-border-weaker-base bg-[#111218]"
                               style={{ height: `${miniH + 16}px` }}
@@ -702,6 +740,7 @@ export function TemplatePanel(props: {
                       }}
                     </For>
                   </div>
+                </Show>
                 </Show>
               </div>
             </div>
