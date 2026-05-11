@@ -168,6 +168,7 @@ ${patched.map((js) => `<script type="module">${esc(js)}</script>`).join("\n")}
 export function WorkflowBuilder() {
   const auth = useAuth()
   const platform = usePlatform()
+  let box: HTMLDivElement | undefined
   let frame: HTMLIFrameElement | undefined
 
   const [doc, api] = createResource(
@@ -182,6 +183,7 @@ export function WorkflowBuilder() {
     (input) => source(input.fetcher, input.token, input.user),
   )
   const [fail, setFail] = createSignal<string>()
+  const [wide, setWide] = createSignal(false)
   const open = () => platform.openLink(WORKFLOW_BUILDER_URL)
   const refresh = () => {
     setFail()
@@ -190,6 +192,21 @@ export function WorkflowBuilder() {
       return
     }
     if (frame) frame.src = WORKFLOW_BUILDER_URL
+  }
+  const collapse = () => {
+    setWide(false)
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
+  }
+  const expand = () => {
+    setWide(true)
+    if (box?.requestFullscreen) void box.requestFullscreen().catch(() => undefined)
+  }
+  const toggle = () => {
+    if (wide()) {
+      collapse()
+      return
+    }
+    expand()
   }
 
   onMount(() => {
@@ -200,12 +217,29 @@ export function WorkflowBuilder() {
       if (data.type !== "error") return
       setFail(data.message || "Workflow Builder failed to render")
     }
+    const sync = () => setWide(document.fullscreenElement === box)
+    const press = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && wide() && document.fullscreenElement !== box) setWide(false)
+    }
     window.addEventListener("message", listen)
-    onCleanup(() => window.removeEventListener("message", listen))
+    document.addEventListener("fullscreenchange", sync)
+    window.addEventListener("keydown", press)
+    onCleanup(() => {
+      window.removeEventListener("message", listen)
+      document.removeEventListener("fullscreenchange", sync)
+      window.removeEventListener("keydown", press)
+    })
   })
 
   return (
-    <div class="min-h-[720px] overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
+    <div
+      ref={box}
+      class={`overflow-hidden border border-border-weaker-base bg-surface-base flex flex-col ${
+        wide()
+          ? "fixed inset-0 z-[9999] min-h-0 rounded-none shadow-none"
+          : "min-h-[720px] rounded-[20px] shadow-[var(--shadow-lg-border-base)]"
+      }`}
+    >
       <div class="min-h-11 shrink-0 border-b border-border-weaker-base bg-[#111218] flex flex-wrap items-center gap-2 px-4 py-2">
         <div class="size-2 rounded-full bg-[#f87171]" />
         <div class="size-2 rounded-full bg-[#fbbf24]" />
@@ -213,6 +247,9 @@ export function WorkflowBuilder() {
         <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">Workflow Builder</div>
         <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={refresh}>
           Refresh
+        </Button>
+        <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={toggle}>
+          {wide() ? "Exit fullscreen" : "Fullscreen"}
         </Button>
         <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={open}>
           Open in browser
