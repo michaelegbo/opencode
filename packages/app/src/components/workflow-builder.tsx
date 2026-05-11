@@ -318,13 +318,18 @@ export function WorkflowBuilder() {
             />
             <Show when={fail()}>
               {(msg) => (
-                <div class="absolute inset-0 flex items-center justify-center bg-surface-base/95 p-4 text-center">
-                  <div class="max-w-md">
-                    <div class="text-14-medium text-text-base">Workflow Builder could not load</div>
-                    <div class="mt-2 text-12-medium text-text-weak">{msg()}</div>
-                    <Button class="mt-4 h-9 px-3 text-12-medium" onClick={refresh}>
-                      Retry
-                    </Button>
+                <div class="pointer-events-none absolute right-3 bottom-3 z-10 max-w-[min(420px,calc(100%-1.5rem))]">
+                  <div class="pointer-events-auto rounded-lg border border-border-weaker-base bg-surface-raised-base/95 p-3 text-left shadow-[var(--shadow-lg-border-base)] backdrop-blur">
+                    <div class="text-12-medium text-text-base">Workflow Builder notice</div>
+                    <div class="mt-1 line-clamp-3 text-11-medium text-text-weak">{msg()}</div>
+                    <div class="mt-3 flex items-center justify-end gap-2">
+                      <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={() => setFail()}>
+                        Dismiss
+                      </Button>
+                      <Button class="h-7 px-2 text-11-medium" onClick={refresh}>
+                        Retry
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
