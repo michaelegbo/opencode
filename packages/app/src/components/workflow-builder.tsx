@@ -214,7 +214,9 @@ function WorkflowBuilderFrame() {
   )
   const [fail, setFail] = createSignal<string>()
   const [wide, setWide] = createSignal(false)
-  const [zoom, setZoom] = createSignal(50)
+  const [ready, setReady] = createSignal(false)
+  const [rev, setRev] = createSignal(0)
+  const [zoom, setZoom] = createSignal(70)
   const scale = createMemo(() => zoom() / 100)
   const size = createMemo(() => `${100 / scale()}%`)
   const pct = createMemo(() => `${zoom()}%`)
@@ -238,7 +240,9 @@ function WorkflowBuilderFrame() {
   }
   const refresh = () => {
     setFail()
+    setReady(false)
     if (platform.fetch) {
+      setRev((value) => value + 1)
       void api.refetch()
       pulse()
       return
@@ -269,7 +273,11 @@ function WorkflowBuilderFrame() {
   }
   const out = () => apply(zoom() - 10)
   const zin = () => apply(zoom() + 10)
-  const reset = () => apply(50)
+  const reset = () => apply(70)
+  const loaded = () => {
+    setReady(true)
+    pulse()
+  }
 
   onMount(() => {
     const listen = (event: MessageEvent) => {
@@ -327,8 +335,8 @@ function WorkflowBuilderFrame() {
             variant="ghost"
             class="h-7 min-w-12 px-2 text-11-medium"
             onClick={reset}
-            aria-label="Reset Workflow Builder zoom to 50%"
-            title="Reset Workflow Builder zoom to 50%"
+            aria-label="Reset Workflow Builder zoom to 70%"
+            title="Reset Workflow Builder zoom to 70%"
           >
             {pct()}
           </Button>
@@ -377,9 +385,9 @@ function WorkflowBuilderFrame() {
           <div class="relative min-h-0 flex-1 overflow-hidden bg-[#09090b]">
             <iframe
               ref={frame}
-              onLoad={pulse}
+              onLoad={loaded}
               src={platform.fetch ? undefined : WORKFLOW_BUILDER_URL}
-              srcdoc={platform.fetch ? doc() : undefined}
+              srcdoc={platform.fetch ? `${doc()}\n<!-- paddie:${rev()} -->` : undefined}
               class="absolute left-0 top-0 block border-0 bg-[#09090b]"
               style={{
                 width: size(),
@@ -390,6 +398,14 @@ function WorkflowBuilderFrame() {
               title="Workflow Builder"
               allow="clipboard-read; clipboard-write; fullscreen"
             />
+            <Show when={!ready()}>
+              <div class="absolute inset-0 z-10 flex items-center justify-center bg-background-base">
+                <div class="rounded-xl border border-border-weaker-base bg-surface-base px-4 py-3 text-center shadow-[var(--shadow-lg-border-base)]">
+                  <div class="text-13-medium text-text-base">Loading Workflow Builder...</div>
+                  <div class="mt-1 text-11-medium text-text-weak">Starting the embedded studio</div>
+                </div>
+              </div>
+            </Show>
             <Show when={fail()}>
               {(msg) => (
                 <div class="pointer-events-none absolute right-3 bottom-3 z-10 max-w-[min(420px,calc(100%-1.5rem))]">

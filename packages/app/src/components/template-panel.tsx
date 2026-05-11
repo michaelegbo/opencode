@@ -509,7 +509,7 @@ export function TemplatePanel(props: {
   )
 
   return (
-    <div class="size-full overflow-hidden p-3">
+    <div class="size-full overflow-hidden">
       <div class="size-full overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)]">
         <Show when={showUpgrade()}>
           <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -535,8 +535,8 @@ export function TemplatePanel(props: {
         <Show
           when={view() === "detail" && tpl()}
           fallback={
-            <div class="size-full overflow-auto bg-background-base p-3">
-              <div class="mx-auto flex max-w-[1200px] flex-col gap-4">
+            <div class="size-full overflow-auto bg-background-base">
+              <div class="flex min-h-full w-full flex-col gap-3">
                 <div class="rounded-[20px] border border-border-weaker-base bg-surface-base px-4 py-4">
                   <div class="flex items-center justify-between gap-3">
                     <div class="flex items-center gap-3">
@@ -747,7 +747,7 @@ export function TemplatePanel(props: {
           }
         >
           {(cur) => (
-            <div class="size-full overflow-auto bg-background-base p-3">
+            <div class="size-full overflow-auto bg-background-base">
               <Show when={detailLoading()}>
                 <div class="flex items-center justify-center py-12">
                   <div class="text-13-medium text-text-weak animate-pulse">Loading template...</div>

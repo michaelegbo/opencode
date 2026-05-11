@@ -35,6 +35,12 @@ Today, the core experience centers on:
 
 Paddie Studio is being shaped toward a broader visual development workflow that combines interface building, reusable templates and components, richer project memory, and more automation over time.
 
+## Download
+
+Windows installer:
+
+- [Download Paddie Studio 1.4.68 for Windows](https://github.com/michaelegbo/paddie-studio-ui-coder/releases/download/v1.4.68/PaddieStudio_1.4.68_x64-setup.exe)
+
 ## Screenshots
 
 <table>
