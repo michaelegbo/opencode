@@ -482,7 +482,7 @@ const createPlatform = (): Platform => {
       watch: async (path, cb) => {
         const stop = await watch(await host(path), (event) => {
           void guest(event.paths).then((paths) => cb({ paths }))
-        }, { recursive: true, delayMs: 150 })
+        }, { recursive: false, delayMs: 150 })
         return () => stop()
       },
       create: async (input) => {
