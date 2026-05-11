@@ -1,9 +1,10 @@
 import { Button } from "@opencode-ai/ui/button"
-import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { type AuthUser, useAuth } from "@/context/auth"
 import { usePlatform } from "@/context/platform"
 import { PADDIE_APP_ORIGIN, WORKFLOW_BUILDER_URL } from "@/lib/paddie-links"
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const esc = (value: string) => value.replace(/<\/(script|style)/gi, "<\\/$1")
 const full =
   /([A-Za-z_$][\w$]*)\.jsx\(([A-Za-z_$][\w$]*),\{path:"\/studio\/fullscreen",element:\1\.jsx\(([A-Za-z_$][\w$]*),\{children:\1\.jsx\(([A-Za-z_$][\w$]*),\{autoFullscreen:!0\}\)\}\)\}\)/
@@ -193,6 +194,10 @@ export function WorkflowBuilder() {
   )
   const [fail, setFail] = createSignal<string>()
   const [wide, setWide] = createSignal(false)
+  const [zoom, setZoom] = createSignal(50)
+  const scale = createMemo(() => zoom() / 100)
+  const size = createMemo(() => `${100 / scale()}%`)
+  const pct = createMemo(() => `${zoom()}%`)
   const open = () => platform.openLink(WORKFLOW_BUILDER_URL)
   const fit = () => {
     const win = frame?.contentWindow
@@ -231,6 +236,15 @@ export function WorkflowBuilder() {
     }
     expand()
   }
+  const set = (value: number) => setZoom(clamp(value, 25, 200))
+  const out = () => set(zoom() - 10)
+  const zin = () => set(zoom() + 10)
+  const reset = () => set(50)
+
+  createEffect(() => {
+    zoom()
+    pulse()
+  })
 
   onMount(() => {
     const listen = (event: MessageEvent) => {
@@ -274,6 +288,35 @@ export function WorkflowBuilder() {
         <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={refresh}>
           Refresh
         </Button>
+        <div class="rounded-lg border border-border-weaker-base bg-background-base p-0.5 flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            class="h-7 w-7 px-0 text-11-medium"
+            icon="dash"
+            onClick={out}
+            disabled={zoom() <= 25}
+            aria-label="Zoom out Workflow Builder"
+            title="Zoom out Workflow Builder"
+          />
+          <Button
+            variant="ghost"
+            class="h-7 min-w-12 px-2 text-11-medium"
+            onClick={reset}
+            aria-label="Reset Workflow Builder zoom to 50%"
+            title="Reset Workflow Builder zoom to 50%"
+          >
+            {pct()}
+          </Button>
+          <Button
+            variant="ghost"
+            class="h-7 w-7 px-0 text-11-medium"
+            icon="plus-small"
+            onClick={zin}
+            disabled={zoom() >= 200}
+            aria-label="Zoom in Workflow Builder"
+            title="Zoom in Workflow Builder"
+          />
+        </div>
         <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={toggle}>
           {wide() ? "Exit fullscreen" : "Fullscreen"}
         </Button>
@@ -312,7 +355,13 @@ export function WorkflowBuilder() {
               onLoad={pulse}
               src={platform.fetch ? undefined : WORKFLOW_BUILDER_URL}
               srcdoc={platform.fetch ? doc() : undefined}
-              class="block h-full w-full border-0 bg-[#09090b]"
+              class="absolute left-0 top-0 block border-0 bg-[#09090b]"
+              style={{
+                width: size(),
+                height: size(),
+                transform: `scale(${scale()})`,
+                "transform-origin": "top left",
+              }}
               title="Workflow Builder"
               allow="clipboard-read; clipboard-write; fullscreen"
             />
