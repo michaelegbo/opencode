@@ -25,7 +25,7 @@ function route(value: string) {
   return value.replace(
     full,
     (match, jsx, tag, gate, studio) =>
-      `${match},${jsx}.jsx(${tag},{path:"*",element:${jsx}.jsx(${gate},{children:${jsx}.jsx(${studio},{autoFullscreen:!0})})})`,
+      `${match},${jsx}.jsx(${tag},{path:"*",element:${jsx}.jsx(${gate},{children:${jsx}.jsx(${studio},{})})})`,
   )
 }
 
@@ -65,7 +65,7 @@ const boot = (token: string, user: AuthUser) => `<script>
   localStorage.setItem("paddie_studio_token", token)
   window.__paddie_app_origin = app
 
-  const loc = new URL("/studio/fullscreen", app)
+  const loc = new URL("/studio/embed", app)
   const move = (url) => {
     if (!url) return
     loc.href = new URL(String(url), loc.href).href
@@ -91,6 +91,15 @@ const boot = (token: string, user: AuthUser) => `<script>
     addEventListener: window.addEventListener.bind(window),
     removeEventListener: window.removeEventListener.bind(window),
   }
+
+  const css = document.createElement("style")
+  css.textContent = "html,body,#root{height:100%;min-height:100%;width:100%;}body{margin:0;background:#09090b;}#root{background:#09090b;}"
+  document.head.appendChild(css)
+
+  const size = () => window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")))
+  window.addEventListener("load", size)
+  window.setTimeout(size, 250)
+  window.setTimeout(size, 1000)
 
   try {
     const host = window.parent && window.parent.__paddie_fetch
@@ -185,21 +194,35 @@ export function WorkflowBuilder() {
   const [fail, setFail] = createSignal<string>()
   const [wide, setWide] = createSignal(false)
   const open = () => platform.openLink(WORKFLOW_BUILDER_URL)
+  const fit = () => {
+    const win = frame?.contentWindow
+    if (!win) return
+    window.requestAnimationFrame(() => win.dispatchEvent(new Event("resize")))
+  }
+  const pulse = () => {
+    fit()
+    window.setTimeout(fit, 150)
+    window.setTimeout(fit, 500)
+  }
   const refresh = () => {
     setFail()
     if (platform.fetch) {
       void api.refetch()
+      pulse()
       return
     }
     if (frame) frame.src = WORKFLOW_BUILDER_URL
+    pulse()
   }
   const collapse = () => {
     setWide(false)
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined)
+    pulse()
   }
   const expand = () => {
     setWide(true)
     if (box?.requestFullscreen) void box.requestFullscreen().catch(() => undefined)
+    pulse()
   }
   const toggle = () => {
     if (wide()) {
@@ -217,7 +240,10 @@ export function WorkflowBuilder() {
       if (data.type !== "error") return
       setFail(data.message || "Workflow Builder failed to render")
     }
-    const sync = () => setWide(document.fullscreenElement === box)
+    const sync = () => {
+      setWide(document.fullscreenElement === box)
+      pulse()
+    }
     const press = (event: KeyboardEvent) => {
       if (event.key === "Escape" && wide() && document.fullscreenElement !== box) setWide(false)
     }
@@ -237,7 +263,7 @@ export function WorkflowBuilder() {
       class={`overflow-hidden border border-border-weaker-base bg-surface-base flex flex-col ${
         wide()
           ? "fixed inset-0 z-[9999] min-h-0 rounded-none shadow-none"
-          : "min-h-[720px] rounded-[20px] shadow-[var(--shadow-lg-border-base)]"
+          : "h-[calc(100vh-12rem)] min-h-[760px] max-h-[1120px] rounded-[20px] shadow-[var(--shadow-lg-border-base)]"
       }`}
     >
       <div class="min-h-11 shrink-0 border-b border-border-weaker-base bg-[#111218] flex flex-wrap items-center gap-2 px-4 py-2">
@@ -280,12 +306,13 @@ export function WorkflowBuilder() {
             </div>
           }
         >
-          <div class="relative min-h-0 flex-1">
+          <div class="relative min-h-0 flex-1 overflow-hidden bg-[#09090b]">
             <iframe
               ref={frame}
+              onLoad={pulse}
               src={platform.fetch ? undefined : WORKFLOW_BUILDER_URL}
               srcdoc={platform.fetch ? doc() : undefined}
-              class="block h-full w-full border-0 bg-white"
+              class="block h-full w-full border-0 bg-[#09090b]"
               title="Workflow Builder"
               allow="clipboard-read; clipboard-write; fullscreen"
             />
