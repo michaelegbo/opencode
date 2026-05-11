@@ -544,8 +544,8 @@ export function TemplatePanel(props: {
                         <Mark class="size-5 text-icon-info-base" />
                       </div>
                       <div class="min-w-0">
-                        <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Templates</div>
-                        <div class="text-15-medium text-text-base">Reference library</div>
+                        <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Studio</div>
+                        <div class="text-15-medium text-text-base">Templates & workflows</div>
                       </div>
                     </div>
                     <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">

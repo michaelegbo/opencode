@@ -611,7 +611,7 @@ export function WorkbenchPanel(props: {
       },
       {
         id: "workbench.surface.templates",
-        title: "Show Templates",
+        title: "Show Studio",
         category: "Workbench",
         disabled: state.surface === "templates",
         onSelect: () => setState("surface", "templates"),
@@ -824,7 +824,7 @@ export function WorkbenchPanel(props: {
 
             <div class={seg}>
               {surfaceButton("studio", "dot-grid", "Workspace")}
-              {surfaceButton("templates", "layout-right-full", "Templates")}
+              {surfaceButton("templates", "layout-right-full", "Studio")}
             </div>
 
             <Show when={state.surface === "studio"}>
