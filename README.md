@@ -161,22 +161,6 @@ Or:
 2. Choose a destination folder.
 3. Open the new project in Studio and continue from there.
 
-## Open Source and Upstream
-
-Paddie Studio is an official public fork of OpenCode:
-
-- fork: [michaelegbo/opencode](https://github.com/michaelegbo/opencode)
-- upstream: [anomalyco/opencode](https://github.com/anomalyco/opencode)
-
-That relationship matters for maintenance, but it is not the product story.
-The fork stays structurally close to upstream so new OpenCode changes can still be pulled in, while Paddie Studio focuses the product layer around:
-
-- desktop-first usage
-- visual UI building
-- richer preview workflows
-- templates and reusable product patterns
-- branded packaging and app identity
-
 ## Development
 
 ### Prerequisites
@@ -233,7 +217,7 @@ Windows artifacts are written to:
 
 - `packages/app` - main UI, Studio shell, templates, preview, and editor integration
 - `packages/desktop` - Tauri desktop wrapper, packaging, app identity, native filesystem and process hooks
-- `packages/opencode` - agent runtime and server core inherited from OpenCode
+- `packages/opencode` - agent runtime and server core
 - `packages/ui` - shared UI primitives, icons, logo, and theme surfaces
 
 ## Contribution Flow
@@ -244,29 +228,15 @@ This repo uses a protected-branch workflow:
 - `main` is protected
 - changes should land through pull requests
 
-If you are contributing to the fork:
+If you are contributing to the repo:
 
 1. branch from `dev`
 2. open a PR back into `dev`
 3. merge into `main` only when the work is approved
 
-## Upstream Sync
-
-This project is a maintained fork, not a plugin layer. That means product features live in real app files, but the repo still tracks upstream OpenCode.
-
-A typical sync flow is:
-
-```bash
-git remote add upstream https://github.com/anomalyco/opencode.git
-git fetch upstream
-git merge upstream/dev
-```
-
-Because Paddie Studio changes core UI surfaces, some upstream syncs may need manual conflict resolution.
-
 ## Current Product Areas
 
-Active product work in this fork includes:
+Active product work in Paddie Studio includes:
 
 - Studio layout and responsive resizing
 - preview viewport controls
@@ -278,5 +248,3 @@ Active product work in this fork includes:
 ## License
 
 MIT.
-
-See upstream notices and commit history for provenance where this fork builds on OpenCode.
