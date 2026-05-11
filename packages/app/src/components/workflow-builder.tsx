@@ -1,10 +1,127 @@
 import { Button } from "@opencode-ai/ui/button"
-import { createResource, Show } from "solid-js"
-import { useAuth } from "@/context/auth"
+import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { type AuthUser, useAuth } from "@/context/auth"
 import { usePlatform } from "@/context/platform"
 import { PADDIE_APP_ORIGIN, WORKFLOW_BUILDER_URL } from "@/lib/paddie-links"
 
 const esc = (value: string) => value.replace(/<\/(script|style)/gi, "<\\/$1")
+const full =
+  /([A-Za-z_$][\w$]*)\.jsx\(([A-Za-z_$][\w$]*),\{path:"\/studio\/fullscreen",element:\1\.jsx\(([A-Za-z_$][\w$]*),\{children:\1\.jsx\(([A-Za-z_$][\w$]*),\{autoFullscreen:!0\}\)\}\)\}\)/
+const api = /([A-Za-z_$][\w$]*)="\/api",([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.create\(\{baseURL:\1/
+
+function origin(value: string) {
+  return value.replace(
+    api,
+    (match, base, client, axios) =>
+      `${base}=${JSON.stringify(`${PADDIE_APP_ORIGIN}/api`)},${client}=${axios}.create({baseURL:${base}`,
+  )
+}
+
+function host(value: string) {
+  return value.split("window.location.origin").join("(window.__paddie_app_origin||window.location.origin)")
+}
+
+function route(value: string) {
+  return value.replace(
+    full,
+    (match, jsx, tag, gate, studio) =>
+      `${match},${jsx}.jsx(${tag},{path:"*",element:${jsx}.jsx(${gate},{children:${jsx}.jsx(${studio},{autoFullscreen:!0})})})`,
+  )
+}
+
+function router(value: string) {
+  return value.replace(
+    /return ([A-Za-z_$][\w$]*)\.jsx\(([A-Za-z_$][\w$]*),\{children:\1\.jsx\(([A-Za-z_$][\w$]*),\{defaultTheme:"system",storageKey:"rmn-ui-theme"/,
+    (match, jsx, tag, theme) =>
+      `return ${jsx}.jsx(${tag},{window:window.__paddie_router_window,children:${jsx}.jsx(${theme},{defaultTheme:"system",storageKey:"rmn-ui-theme"`,
+  )
+}
+
+function patch(value: string) {
+  return router(route(origin(host(value))))
+}
+
+const boot = (token: string, user: AuthUser) => `<script>
+(() => {
+  const app = ${JSON.stringify(PADDIE_APP_ORIGIN)}
+  const token = ${JSON.stringify(token)}
+  const user = ${JSON.stringify(
+    JSON.stringify({
+      id: user.userId,
+      email: user.email,
+      name: user.email,
+      tenant_id: user.tenantId,
+    }),
+  )}
+  const report = (err) => {
+    const msg = err && err.message ? err.message : err
+    try {
+      window.parent.postMessage({ source: "paddie-workflow", type: "error", message: String(msg) }, "*")
+    } catch (_) {}
+  }
+
+  localStorage.setItem("rmn_token", token)
+  localStorage.setItem("rmn_user", user)
+  localStorage.setItem("paddie_studio_token", token)
+  window.__paddie_app_origin = app
+
+  const loc = new URL("/studio/fullscreen", app)
+  const move = (url) => {
+    if (!url) return
+    loc.href = new URL(String(url), loc.href).href
+  }
+  const hist = {
+    state: { idx: 0 },
+    pushState(state, _, url) {
+      this.state = state
+      move(url)
+    },
+    replaceState(state, _, url) {
+      this.state = state
+      move(url)
+    },
+    go() {},
+    back() {},
+    forward() {},
+  }
+  window.__paddie_router_window = {
+    document,
+    history: hist,
+    location: loc,
+    addEventListener: window.addEventListener.bind(window),
+    removeEventListener: window.removeEventListener.bind(window),
+  }
+
+  try {
+    const host = window.parent && window.parent.__paddie_fetch
+    if (host) {
+      const native = window.fetch.bind(window)
+      window.XMLHttpRequest = undefined
+      window.fetch = async (input, init) => {
+        const req = input instanceof Request ? input : undefined
+        const raw = req ? req.url : String(input)
+        const url = new URL(raw, app)
+        if (url.pathname.startsWith("/api")) {
+          const opts = init ? { ...init } : {}
+          if (req) {
+            opts.method = opts.method || req.method
+            opts.headers = opts.headers || Array.from(req.headers.entries())
+            if (!opts.body && req.method !== "GET" && req.method !== "HEAD") opts.body = await req.clone().arrayBuffer()
+          }
+          opts.credentials = "include"
+          return host(new URL(url.pathname + url.search + url.hash, app).href, opts)
+        }
+        return native(input, init)
+      }
+    }
+  } catch (err) {
+    report(err)
+  }
+
+  window.addEventListener("error", (event) => report(event.message || "Workflow Builder script error"))
+  window.addEventListener("unhandledrejection", (event) => report(event.reason || "Workflow Builder promise rejection"))
+})()
+</script>`
 
 async function text(fetcher: typeof fetch, url: string) {
   const res = await fetcher(url, { cache: "no-store" })
@@ -12,7 +129,7 @@ async function text(fetcher: typeof fetch, url: string) {
   return res.text()
 }
 
-async function source(fetcher: typeof fetch, token: string) {
+async function source(fetcher: typeof fetch, token: string, user: AuthUser) {
   const html = await text(fetcher, WORKFLOW_BUILDER_URL)
   const doc = new DOMParser().parseFromString(html, "text/html")
   const styles = await Promise.all(
@@ -25,23 +142,26 @@ async function source(fetcher: typeof fetch, token: string) {
       text(fetcher, new URL(el.getAttribute("src") ?? "", PADDIE_APP_ORIGIN).href),
     ),
   )
+  const patched = scripts.map(patch)
+  if (!patched.some((value) => value.includes("__paddie_router_window"))) {
+    throw new Error("Workflow Builder router not found")
+  }
+  if (!patched.some((value) => value.includes(`${PADDIE_APP_ORIGIN}/api`))) {
+    throw new Error("Workflow Builder API base not found")
+  }
 
   doc.querySelectorAll('link[rel="stylesheet"][href], script[src]').forEach((el) => el.remove())
 
   return `<!doctype html>
 <html>
 <head>
-<script>
-history.replaceState(null, "", "/studio/fullscreen");
-localStorage.setItem("rmn_token", ${JSON.stringify(token)});
-localStorage.setItem("paddie_studio_token", ${JSON.stringify(token)});
-</script>
+${boot(token, user)}
 <base href="${PADDIE_APP_ORIGIN}/">
 ${doc.head.innerHTML}
 ${styles.map((css) => `<style>${esc(css)}</style>`).join("\n")}
 </head>
 ${doc.body.outerHTML}
-${scripts.map((js) => `<script type="module">${esc(js)}</script>`).join("\n")}
+${patched.map((js) => `<script type="module">${esc(js)}</script>`).join("\n")}
 </html>`
 }
 
@@ -53,20 +173,36 @@ export function WorkflowBuilder() {
   const [doc, api] = createResource(
     () => {
       const token = auth.token()
+      const user = auth.user()
       if (!token) return
+      if (!user) return
       if (!platform.fetch) return
-      return { token, fetcher: platform.fetch }
+      return { token, user, fetcher: platform.fetch }
     },
-    (input) => source(input.fetcher, input.token),
+    (input) => source(input.fetcher, input.token, input.user),
   )
+  const [fail, setFail] = createSignal<string>()
   const open = () => platform.openLink(WORKFLOW_BUILDER_URL)
   const refresh = () => {
+    setFail()
     if (platform.fetch) {
       void api.refetch()
       return
     }
     if (frame) frame.src = WORKFLOW_BUILDER_URL
   }
+
+  onMount(() => {
+    const listen = (event: MessageEvent) => {
+      if (frame && event.source !== frame.contentWindow) return
+      const data = event.data as { source?: string; type?: string; message?: string }
+      if (data.source !== "paddie-workflow") return
+      if (data.type !== "error") return
+      setFail(data.message || "Workflow Builder failed to render")
+    }
+    window.addEventListener("message", listen)
+    onCleanup(() => window.removeEventListener("message", listen))
+  })
 
   return (
     <div class="min-h-[720px] overflow-hidden rounded-[20px] border border-border-weaker-base bg-surface-base shadow-[var(--shadow-lg-border-base)] flex flex-col">
@@ -107,14 +243,29 @@ export function WorkflowBuilder() {
             </div>
           }
         >
-          <iframe
-            ref={frame}
-            src={platform.fetch ? undefined : WORKFLOW_BUILDER_URL}
-            srcdoc={platform.fetch ? doc() : undefined}
-            class="block min-h-0 flex-1 w-full border-0 bg-white"
-            title="Workflow Builder"
-            allow="clipboard-read; clipboard-write; fullscreen"
-          />
+          <div class="relative min-h-0 flex-1">
+            <iframe
+              ref={frame}
+              src={platform.fetch ? undefined : WORKFLOW_BUILDER_URL}
+              srcdoc={platform.fetch ? doc() : undefined}
+              class="block h-full w-full border-0 bg-white"
+              title="Workflow Builder"
+              allow="clipboard-read; clipboard-write; fullscreen"
+            />
+            <Show when={fail()}>
+              {(msg) => (
+                <div class="absolute inset-0 flex items-center justify-center bg-surface-base/95 p-4 text-center">
+                  <div class="max-w-md">
+                    <div class="text-14-medium text-text-base">Workflow Builder could not load</div>
+                    <div class="mt-2 text-12-medium text-text-weak">{msg()}</div>
+                    <Button class="mt-4 h-9 px-3 text-12-medium" onClick={refresh}>
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Show>
+          </div>
         </Show>
       </Show>
     </div>
