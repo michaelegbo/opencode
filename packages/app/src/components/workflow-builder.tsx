@@ -1,5 +1,5 @@
 import { Button } from "@opencode-ai/ui/button"
-import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createResource, createSignal, ErrorBoundary, onCleanup, onMount, Show } from "solid-js"
 import { type AuthUser, useAuth } from "@/context/auth"
 import { usePlatform } from "@/context/platform"
 import { PADDIE_APP_ORIGIN, WORKFLOW_BUILDER_URL } from "@/lib/paddie-links"
@@ -176,6 +176,26 @@ ${patched.map((js) => `<script type="module">${esc(js)}</script>`).join("\n")}
 }
 
 export function WorkflowBuilder() {
+  return (
+    <ErrorBoundary
+      fallback={(err, reset) => (
+        <div class="rounded-[20px] border border-border-weaker-base bg-surface-base p-6 text-center shadow-[var(--shadow-lg-border-base)]">
+          <div class="text-14-medium text-text-base">Workflow Builder could not render</div>
+          <div class="mx-auto mt-2 max-w-lg text-12-medium text-text-weak">
+            {err instanceof Error ? err.message : "The embedded studio hit a rendering error."}
+          </div>
+          <Button class="mt-4 h-9 px-3 text-12-medium" onClick={reset}>
+            Retry
+          </Button>
+        </div>
+      )}
+    >
+      <WorkflowBuilderFrame />
+    </ErrorBoundary>
+  )
+}
+
+function WorkflowBuilderFrame() {
   const auth = useAuth()
   const platform = usePlatform()
   let box: HTMLDivElement | undefined
@@ -202,7 +222,14 @@ export function WorkflowBuilder() {
   const fit = () => {
     const win = frame?.contentWindow
     if (!win) return
-    window.requestAnimationFrame(() => win.dispatchEvent(new Event("resize")))
+    if (!platform.fetch) return
+    window.requestAnimationFrame(() => {
+      try {
+        win.dispatchEvent(new Event("resize"))
+      } catch {
+        // The fallback browser iframe is cross-origin, so resize dispatch can be blocked.
+      }
+    })
   }
   const pulse = () => {
     fit()
@@ -236,15 +263,13 @@ export function WorkflowBuilder() {
     }
     expand()
   }
-  const set = (value: number) => setZoom(clamp(value, 25, 200))
-  const out = () => set(zoom() - 10)
-  const zin = () => set(zoom() + 10)
-  const reset = () => set(50)
-
-  createEffect(() => {
-    zoom()
-    pulse()
-  })
+  const apply = (value: number) => {
+    setZoom(clamp(value, 25, 200))
+    window.requestAnimationFrame(pulse)
+  }
+  const out = () => apply(zoom() - 10)
+  const zin = () => apply(zoom() + 10)
+  const reset = () => apply(50)
 
   onMount(() => {
     const listen = (event: MessageEvent) => {
