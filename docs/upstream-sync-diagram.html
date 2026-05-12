@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paddie Upstream Sync Map</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --panel: #14171c;
+        --panel-2: #191d23;
+        --text: #eef2f7;
+        --muted: #a8b0bd;
+        --line: #2a3038;
+        --green: #27d980;
+        --blue: #5aa7ff;
+        --amber: #ffcb5a;
+        --red: #ff6b6b;
+        --purple: #9b6cff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        min-height: 100vh;
+        padding: 32px;
+      }
+
+      header {
+        display: grid;
+        gap: 12px;
+        margin: 0 auto 24px;
+        max-width: 1280px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+        line-height: 1.1;
+      }
+
+      .lede {
+        color: var(--muted);
+        font-size: 16px;
+        max-width: 960px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        padding: 7px 10px;
+        font-size: 13px;
+        background: #101319;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 16px;
+        margin: 0 auto;
+        max-width: 1280px;
+      }
+
+      .column {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        min-height: 420px;
+      }
+
+      .column header {
+        border-bottom: 1px solid var(--line);
+        margin: 0;
+        padding: 18px;
+      }
+
+      .column h2 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 20px;
+      }
+
+      .dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+
+      .safe {
+        background: var(--green);
+      }
+
+      .selective {
+        background: var(--amber);
+      }
+
+      .protect {
+        background: var(--red);
+      }
+
+      .items {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+      }
+
+      .item {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+      }
+
+      .item h3 {
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+
+      .item p {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .count {
+        color: var(--blue);
+        font-weight: 700;
+      }
+
+      .flow {
+        margin: 20px auto 0;
+        max-width: 1280px;
+        background: #101319;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px;
+      }
+
+      .flow h2 {
+        margin-bottom: 14px;
+        font-size: 20px;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+
+      .step {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        min-height: 112px;
+        padding: 14px;
+        background: var(--panel);
+        position: relative;
+      }
+
+      .step::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -11px;
+        width: 10px;
+        height: 2px;
+        background: var(--line);
+      }
+
+      .step:last-child::after {
+        display: none;
+      }
+
+      .step strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .step span {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .tests {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .test {
+        border: 1px solid rgba(39, 217, 128, 0.45);
+        background: rgba(39, 217, 128, 0.08);
+        border-radius: 10px;
+        padding: 12px;
+      }
+
+      .test strong {
+        color: var(--green);
+      }
+
+      @media (max-width: 980px) {
+        .grid,
+        .steps,
+        .tests {
+          grid-template-columns: 1fr;
+        }
+
+        .step::after {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Paddie Upstream Sync Map</h1>
+        <p class="lede">
+          The sync branch imports upstream safely where it does not remove Paddie product work. The Paddie app,
+          desktop installer, Studio templates, Workflow Builder, and runtime contract stay protected.
+        </p>
+        <div class="meta">
+          <span class="chip">Branch: codex/upstream-sync-dev</span>
+          <span class="chip">Upstream: 59e6967b8</span>
+          <span class="chip">Merge: 705e4e8b8</span>
+          <span class="chip">Status: typechecks pass</span>
+        </div>
+      </header>
+
+      <section class="grid" aria-label="Import decision columns">
+        <article class="column">
+          <header>
+            <h2><span class="dot safe"></span>Imported / Keep</h2>
+          </header>
+          <div class="items">
+            <div class="item">
+              <h3>New packages</h3>
+              <p><span class="count">196 files</span> across packages/core, packages/llm, and packages/http-recorder.</p>
+            </div>
+            <div class="item">
+              <h3>Docs, specs, web, console</h3>
+              <p>Low direct risk to desktop Paddie. Keep unless branding or deployment ownership says otherwise.</p>
+            </div>
+            <div class="item">
+              <h3>Root dependency fixes</h3>
+              <p>Catalog and lockfile changes needed for install and typechecking on the sync branch.</p>
+            </div>
+            <div class="item">
+              <h3>CI and patches</h3>
+              <p>Useful, but release workflows should be reviewed before being trusted for installer publishing.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="column">
+          <header>
+            <h2><span class="dot selective"></span>Selective Import</h2>
+          </header>
+          <div class="items">
+            <div class="item">
+              <h3>packages/opencode</h3>
+              <p><span class="count">879 upstream-changed files</span>. Cherry-pick provider, storage, session, and tool fixes.</p>
+            </div>
+            <div class="item">
+              <h3>packages/app</h3>
+              <p><span class="count">207 upstream-changed files</span>. Cherry-pick terminal, sync, prompt, and session fixes.</p>
+            </div>
+            <div class="item">
+              <h3>packages/desktop</h3>
+              <p><span class="count">422 upstream-changed files</span>. Use only Tauri-compatible fixes.</p>
+            </div>
+            <div class="item">
+              <h3>SDK, UI, plugin, util</h3>
+              <p>Move only with the app/runtime contract. These packages are coupled to the Paddie UI.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="column">
+          <header>
+            <h2><span class="dot protect"></span>Do Not Overwrite</h2>
+          </header>
+          <div class="items">
+            <div class="item">
+              <h3>Studio templates</h3>
+              <p>Upstream does not carry the Paddie template library product surface.</p>
+            </div>
+            <div class="item">
+              <h3>Workflow Builder</h3>
+              <p>The iframe, zoom, loader, fullscreen, and logged-in Studio flow are Paddie-owned.</p>
+            </div>
+            <div class="item">
+              <h3>Tauri exe build</h3>
+              <p>Upstream desktop changes risk replacing the current installer and Windows artifact path.</p>
+            </div>
+            <div class="item">
+              <h3>Paddie auth and API bridge</h3>
+              <p>Required for templates and Workflow Builder to use the same logged-in Paddie account.</p>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="flow">
+        <h2>Recommended import path</h2>
+        <div class="steps">
+          <div class="step">
+            <strong>1. Keep branch</strong>
+            <span>Use codex/upstream-sync-dev as the reference merge branch.</span>
+          </div>
+          <div class="step">
+            <strong>2. Split imports</strong>
+            <span>Make smaller branches for core packages, CI, docs, and runtime fixes.</span>
+          </div>
+          <div class="step">
+            <strong>3. Cherry-pick</strong>
+            <span>Pull individual fixes, not whole app or desktop rewrites.</span>
+          </div>
+          <div class="step">
+            <strong>4. Protect Paddie</strong>
+            <span>Keep Studio, templates, Workflow Builder, auth, and exe packaging intact.</span>
+          </div>
+          <div class="step">
+            <strong>5. Test each branch</strong>
+            <span>Run package typechecks after each smaller import.</span>
+          </div>
+        </div>
+        <div class="tests">
+          <div class="test"><strong>PASS</strong> packages/app bun typecheck</div>
+          <div class="test"><strong>PASS</strong> packages/desktop bun typecheck</div>
+          <div class="test"><strong>PASS</strong> packages/opencode bun typecheck</div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
