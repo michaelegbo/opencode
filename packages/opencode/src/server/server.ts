@@ -55,6 +55,8 @@ export namespace Server {
     handler?: PtyHandler
   }
 
+  const decoder = new TextDecoder()
+
   function verifyWsAuth(req: Request): boolean {
     const password = Flag.OPENCODE_SERVER_PASSWORD
     if (!password) return true
@@ -420,7 +422,7 @@ export namespace Server {
             ws.close(1011, "Unknown WebSocket route")
           },
           message(ws, message) {
-            ws.data.handler?.onMessage(typeof message === "string" ? message : String(message))
+            ws.data.handler?.onMessage(typeof message === "string" ? message : decoder.decode(message))
           },
           close(ws) {
             ws.data.handler?.onClose()

@@ -15,6 +15,18 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
+const ALLOWED_MODELS = new Set([
+  "gpt-5.1-codex",
+  "gpt-5.1-codex-max",
+  "gpt-5.1-codex-mini",
+  "gpt-5.2",
+  "gpt-5.2-codex",
+  "gpt-5.3-codex",
+  "gpt-5.3-codex-spark",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.5",
+])
 
 interface PkceCodes {
   verifier: string
@@ -365,20 +377,13 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}
 
-        // Filter models to only allowed Codex models for OAuth
-        const allowedModels = new Set([
-          "gpt-5.1-codex",
-          "gpt-5.1-codex-max",
-          "gpt-5.1-codex-mini",
-          "gpt-5.2",
-          "gpt-5.2-codex",
-          "gpt-5.3-codex",
-          "gpt-5.4",
-          "gpt-5.4-mini",
-        ])
         for (const modelId of Object.keys(provider.models)) {
-          if (modelId.includes("codex")) continue
-          if (allowedModels.has(modelId)) continue
+          const model = provider.models[modelId]
+          const id = model.api.id
+          if (modelId.includes("codex") || id.includes("codex")) continue
+          if (ALLOWED_MODELS.has(modelId) || ALLOWED_MODELS.has(id)) continue
+          const match = id.match(/^gpt-(\d+\.\d+)/) ?? modelId.match(/^gpt-(\d+\.\d+)/)
+          if (match && Number.parseFloat(match[1]) > 5.4) continue
           delete provider.models[modelId]
         }
 
@@ -388,6 +393,13 @@ export async function CodexAuthPlugin(input: PluginInput): Promise<Hooks> {
             input: 0,
             output: 0,
             cache: { read: 0, write: 0 },
+          }
+          if (model.id.includes("gpt-5.5") || model.api.id.includes("gpt-5.5")) {
+            Object.assign(model.limit, {
+              context: 400_000,
+              input: 272_000,
+              output: 128_000,
+            })
           }
         }
 
