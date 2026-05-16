@@ -9,8 +9,7 @@ import z from "zod"
 import { Auth } from "../auth"
 import { Flag } from "../flag/flag"
 import { ProviderID } from "../provider/schema"
-import { createAdaptorServer, type ServerType } from "@hono/node-server"
-import { createNodeWebSocket } from "@hono/node-ws"
+import { upgradeWebSocket } from "hono/bun"
 import { WorkspaceRouterMiddleware } from "./router"
 import { errors } from "./error"
 import { GlobalRoutes } from "./routes/global"
@@ -43,6 +42,43 @@ export namespace Server {
   }
 
   export const Default = lazy(() => create({}).app)
+
+  function verifyWsAuth(req: Request): boolean {
+    const password = Flag.OPENCODE_SERVER_PASSWORD
+    if (!password) return true
+    const username = Flag.OPENCODE_SERVER_USERNAME ?? "opencode"
+    const expected = `${username}:${password}`
+
+    // Check Authorization header (Basic auth)
+    const authHeader = req.headers.get("authorization")
+    if (authHeader) {
+      const match = authHeader.match(/^Basic\s+(.+)$/i)
+      if (match) {
+        try {
+          const decoded = atob(match[1])
+          if (decoded === expected) return true
+        } catch {}
+      }
+    }
+
+    // Check ?auth= query parameter (base64-encoded credentials)
+    const url = new URL(req.url)
+    const authParam = url.searchParams.get("auth")
+    if (authParam) {
+      try {
+        const decoded = atob(authParam)
+        if (decoded === expected) return true
+      } catch {}
+    }
+
+    // Check URL credentials (username:password in URL)
+    if (url.username && url.password) {
+      const urlCreds = `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`
+      if (urlCreds === expected) return true
+    }
+
+    return false
+  }
 
   export function ControlPlaneRoutes(upgrade: UpgradeWebSocket, app = new Hono(), opts?: { cors?: string[] }): Hono {
     return app
@@ -237,10 +273,8 @@ export namespace Server {
 
   function create(opts: { cors?: string[] }) {
     const app = new Hono()
-    const ws = createNodeWebSocket({ app })
     return {
-      app: ControlPlaneRoutes(ws.upgradeWebSocket, app, opts),
-      ws,
+      app: ControlPlaneRoutes(upgradeWebSocket, app, opts),
     }
   }
 
@@ -253,8 +287,8 @@ export namespace Server {
     // hono-openapi can see describeRoute metadata (`.route()` wraps
     // handlers when the sub-app has a custom errorHandler, which
     // strips the metadata symbol).
-    const { app, ws } = create({})
-    InstanceRoutes(ws.upgradeWebSocket, app)
+    const { app } = create({})
+    InstanceRoutes(upgradeWebSocket, app)
     const result = await generateSpecs(app, {
       documentation: {
         info: {
@@ -278,46 +312,134 @@ export namespace Server {
     cors?: string[]
   }): Promise<Listener> {
     const built = create(opts)
-    const start = (port: number) =>
-      new Promise<ServerType>((resolve, reject) => {
-        const server = createAdaptorServer({ fetch: built.app.fetch })
-        built.ws.injectWebSocket(server)
-        const fail = (err: Error) => {
-          cleanup()
-          reject(err)
-        }
-        const ready = () => {
-          cleanup()
-          resolve(server)
-        }
-        const cleanup = () => {
-          server.off("error", fail)
-          server.off("listening", ready)
-        }
-        server.once("error", fail)
-        server.once("listening", ready)
-        server.listen(port, opts.hostname)
-      })
 
-    const server = opts.port === 0 ? await start(4096).catch(() => start(0)) : await start(opts.port)
-    const addr = server.address()
-    if (!addr || typeof addr === "string") {
-      throw new Error(`Failed to resolve server address for port ${opts.port}`)
+    // PTY WebSocket connection handler — uses dynamic imports to avoid
+    // circular dependencies in the compiled binary.
+    async function handlePtyWebSocket(
+      ws: { data: any; close: (code?: number, reason?: string) => void; readyState: number; send: (data: string | Uint8Array | ArrayBuffer) => void },
+      ptyID: string,
+      directory: string,
+      cursorParam: string | null,
+    ) {
+      try {
+        const { Instance } = await import("../project/instance")
+        const { InstanceBootstrap } = await import("../project/bootstrap")
+        const { Pty } = await import("../pty")
+        const { PtyID } = await import("../pty/schema")
+        const { Filesystem } = await import("../util/filesystem")
+
+        const id = PtyID.zod.parse(ptyID)
+        const dir = Filesystem.resolve(
+          (() => {
+            try {
+              return decodeURIComponent(directory)
+            } catch {
+              return directory
+            }
+          })(),
+        )
+        const cursor = (() => {
+          if (cursorParam == null) return undefined
+          const parsed = Number(cursorParam)
+          if (!Number.isSafeInteger(parsed) || parsed < -1) return undefined
+          return parsed
+        })()
+
+        await Instance.provide({
+          directory: dir,
+          init: InstanceBootstrap,
+          async fn() {
+            const session = await Pty.get(id)
+            if (!session) {
+              ws.close(1011, "Session not found")
+              return
+            }
+            const handler = await Pty.connect(id, ws, cursor)
+            if (handler) {
+              ws.data.handler = handler
+            }
+          },
+        })
+      } catch (err) {
+        log.error("PTY WebSocket open failed", { error: String(err) })
+        try {
+          ws.close(1011, "Internal error")
+        } catch {}
+      }
+    }
+
+    const start = (port: number) => {
+      const server = Bun.serve({
+        port,
+        hostname: opts.hostname,
+        fetch(req, server) {
+          // WebSocket upgrades must happen at the top level of Bun.serve's
+          // fetch handler — NOT inside Hono's async middleware chain.
+          // See: https://github.com/honojs/hono/issues/2696
+          if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+            if (!verifyWsAuth(req)) {
+              return new Response("Unauthorized", { status: 401 })
+            }
+            const reqUrl = new URL(req.url)
+            const success = server.upgrade(req, {
+              data: {
+                url: reqUrl.toString(),
+                pathname: reqUrl.pathname,
+                directory: reqUrl.searchParams.get("directory") || process.cwd(),
+                cursor: reqUrl.searchParams.get("cursor"),
+                handler: null as any,
+              },
+            })
+            if (success) return undefined as unknown as Response
+            return new Response("WebSocket upgrade failed", { status: 500 })
+          }
+          return built.app.fetch(req, server)
+        },
+        websocket: {
+          async open(ws) {
+            const { pathname, directory, cursor } = ws.data
+
+            // Match PTY connect route: /pty/:ptyID/connect
+            const ptyMatch = pathname.match(/^\/pty\/([^/]+)\/connect$/)
+            if (ptyMatch) {
+              await handlePtyWebSocket(ws, ptyMatch[1], directory, cursor)
+              return
+            }
+
+            // Unknown WebSocket route — close
+            ws.close(1011, "Unknown WebSocket route")
+          },
+          message(ws, message) {
+            ws.data.handler?.onMessage(typeof message === "string" ? message : String(message))
+          },
+          close(ws) {
+            ws.data.handler?.onClose()
+          },
+        },
+      })
+      return server
+    }
+
+    let server: ReturnType<typeof Bun.serve>
+    try {
+      server = opts.port === 0 ? start(4096) : start(opts.port)
+    } catch {
+      server = opts.port === 0 ? start(0) : start(opts.port)
     }
 
     const next = new URL("http://localhost")
     next.hostname = opts.hostname
-    next.port = String(addr.port)
+    next.port = String(server.port)
     url = next
 
     const mdns =
       opts.mdns &&
-      addr.port &&
+      server.port &&
       opts.hostname !== "127.0.0.1" &&
       opts.hostname !== "localhost" &&
       opts.hostname !== "::1"
     if (mdns) {
-      MDNS.publish(addr.port, opts.mdnsDomain)
+      MDNS.publish(server.port, opts.mdnsDomain)
     } else if (opts.mdns) {
       log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
     }
@@ -325,26 +447,13 @@ export namespace Server {
     let closing: Promise<void> | undefined
     return {
       hostname: opts.hostname,
-      port: addr.port,
+      port: server.port,
       url: next,
-      stop(close?: boolean) {
-        closing ??= new Promise((resolve, reject) => {
+      stop(_close?: boolean) {
+        closing ??= new Promise<void>((resolve) => {
           if (mdns) MDNS.unpublish()
-          server.close((err) => {
-            if (err) {
-              reject(err)
-              return
-            }
-            resolve()
-          })
-          if (close) {
-            if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
-              server.closeAllConnections()
-            }
-            if ("closeIdleConnections" in server && typeof server.closeIdleConnections === "function") {
-              server.closeIdleConnections()
-            }
-          }
+          server.stop(true)
+          resolve()
         })
         return closing
       },
