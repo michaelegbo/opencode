@@ -31,6 +31,28 @@ describe("pty shell args", () => {
     )
   }
 
+  if (Bun.which("npm")) {
+    test(
+      "starts PATH command shims",
+      async () => {
+        await using dir = await tmpdir()
+        await Instance.provide({
+          directory: dir.path,
+          fn: async () => {
+            const info = await Pty.create({ command: "npm", args: ["--version"], title: "npm" })
+            try {
+              expect(info.command).toBe("npm")
+              expect(info.args).toEqual(["--version"])
+            } finally {
+              await Pty.remove(info.id)
+            }
+          },
+        })
+      },
+      { timeout: 30000 },
+    )
+  }
+
   const bash = (() => {
     const shell = Shell.preferred()
     if (Shell.name(shell) === "bash") return shell

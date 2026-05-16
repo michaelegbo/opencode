@@ -308,7 +308,7 @@ export function WorkbenchPanel(props: {
   const left = createMemo(() => (showFiles() ? Math.max(0, Math.min(state.left, leftMax())) : 0))
   const right = createMemo(() => (state.mode === "preview" ? box() : 0))
   const edit = createMemo(() => Math.max(0, box() - left() - right()))
-  const previewW = createMemo(() => Math.max(0, (state.previewW || right()) - 32))
+  const previewW = createMemo(() => Math.max(0, state.previewW - 32))
   const previewH = createMemo(() => Math.max(0, state.previewH - 32))
   const chrome = 40
   const preset = createMemo(() => {
@@ -323,8 +323,10 @@ export function WorkbenchPanel(props: {
   const shellH = createMemo(() => (preset()?.h ?? 900) + chrome)
   const fit = createMemo(() => {
     const w = previewW()
+    if (!w) return 1
+    if (state.device === "desktop") return Math.min(1, w / frameW())
     const h = previewH()
-    if (!w || !h) return 1
+    if (!h) return Math.min(1, w / frameW())
     return Math.min(1, w / frameW(), h / shellH())
   })
   const scale = createMemo(() => fit() * (state.zoom / 100))
@@ -556,26 +558,46 @@ export function WorkbenchPanel(props: {
     void load(root(), true)
   }
 
+  const fitPreview = () => {
+    const nextW = Math.ceil(stage?.clientWidth ?? 0)
+    const nextH = Math.ceil(stage?.clientHeight ?? 0)
+    if (!nextW || !nextH) return
+    if (nextW === state.previewW && nextH === state.previewH) return
+    setState("previewW", nextW)
+    setState("previewH", nextH)
+  }
+
+  const fitBody = () => {
+    if (!body) return
+    const style = getComputedStyle(body)
+    const next = Math.ceil(
+      body.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+    )
+    if (!next || next === state.box) return
+    setState("box", next)
+  }
+
   createResizeObserver(
     () => body,
-    ({ width }) => {
-      const next = Math.ceil(width)
-      if (!next || next === state.box) return
-      setState("box", next)
-    },
+    fitBody,
   )
 
   createResizeObserver(
     () => stage,
-    () => {
-      const nextW = Math.ceil(stage?.clientWidth ?? 0)
-      const nextH = Math.ceil(stage?.clientHeight ?? 0)
-      if (!nextW || !nextH) return
-      if (nextW === state.previewW && nextH === state.previewH) return
-      setState("previewW", nextW)
-      setState("previewH", nextH)
-    },
+    fitPreview,
   )
+
+  createEffect(() => {
+    state.mode
+    state.surface
+    state.device
+    state.desk
+    props.chatHidden
+    queueMicrotask(fitBody)
+    queueMicrotask(fitPreview)
+    requestAnimationFrame(fitBody)
+    requestAnimationFrame(fitPreview)
+  })
 
   createEffect(() => {
     const dir = root()
@@ -790,8 +812,10 @@ export function WorkbenchPanel(props: {
       type="button"
       classList={{
         "h-8 shrink-0 px-3 rounded-xl text-11-medium transition-all duration-150 flex items-center justify-center border min-w-max": true,
-        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border": state.desk === value,
-        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base": state.desk !== value,
+        "border-border-weak-base bg-background-stronger text-text-strong shadow-xs-border":
+          state.desk === value && state.device === "desktop",
+        "border-transparent text-text-weak hover:bg-surface-base-hover hover:text-text-base":
+          state.desk !== value || state.device !== "desktop",
       }}
       onClick={() => {
         setState("device", "desktop")
@@ -1140,7 +1164,7 @@ export function WorkbenchPanel(props: {
                       }
                     >
                       {(url) => (
-                        <div class="min-h-full min-w-full flex items-start justify-center p-4">
+                        <div class="box-border min-h-full min-w-full overflow-hidden flex items-start justify-center p-4">
                           <div
                             class="relative shrink-0"
                             style={{ width: `${scaledW()}px`, height: `${scaledH()}px` }}

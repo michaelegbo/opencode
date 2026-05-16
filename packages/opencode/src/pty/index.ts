@@ -8,16 +8,34 @@ import z from "zod"
 import { Log } from "../util/log"
 import { lazy } from "@opencode-ai/util/lazy"
 import { Shell } from "@/shell/shell"
+import { which } from "@/util/which"
 import { Plugin } from "@/plugin"
 import { PtyID } from "./schema"
 import { Effect, Layer, ServiceMap } from "effect"
+import path from "path"
 
 export namespace Pty {
   const log = Log.create({ service: "pty" })
 
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const BUFFER_CHUNK = 64 * 1024
+  const WINDOWS_SCRIPT = new Set([".bat", ".cmd"])
   const encoder = new TextEncoder()
+
+  function spawnCommand(command: string, args: string[], env: NodeJS.ProcessEnv) {
+    if (process.platform !== "win32") return { command, args }
+    const resolved =
+      path.isAbsolute(command) || command.includes("\\") || command.includes("/")
+        ? command
+        : which(command, env) || command
+    if (WINDOWS_SCRIPT.has(path.extname(resolved).toLowerCase())) {
+      return {
+        command: env.COMSPEC || env.ComSpec || process.env.COMSPEC || "cmd.exe",
+        args: ["/d", "/c", resolved, ...args],
+      }
+    }
+    return { command: resolved, args }
+  }
 
   type Socket = {
     readyState: number
@@ -175,7 +193,7 @@ export namespace Pty {
         const s = yield* InstanceState.get(state)
         const id = PtyID.ascending()
         const command = input.command || Shell.preferred()
-        const args = input.args || []
+        const args = [...(input.args || [])]
         if (Shell.login(command)) {
           args.push("-l")
         }
@@ -198,8 +216,9 @@ export namespace Pty {
         log.info("creating session", { id, cmd: command, args, cwd })
 
         const { spawn } = yield* Effect.promise(() => pty())
+        const run = spawnCommand(command, args, env)
         const proc = yield* Effect.sync(() =>
-          spawn(command, args, {
+          spawn(run.command, run.args, {
             name: "xterm-256color",
             cwd,
             env,
