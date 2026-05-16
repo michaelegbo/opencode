@@ -200,8 +200,54 @@ describe("buildRequestParts", () => {
       expect(part.text).toContain("main > section.hero > h1")
       expect(part.text).toContain("<h1>Launch a sharper landing page without rebuilding your stack.</h1>")
       expect(part.text).toContain("React + Tailwind")
+      expect(part.text).toContain("Apply the selected template faithfully")
       expect(part.text).toContain("--- src/App.tsx ---")
       expect(part.text).toContain("Adapt this to the current hero.")
+    }
+  })
+
+  test("keeps template references focused by omitting generated files", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "apply this template", start: 0, end: 19 }],
+      context: [
+        {
+          key: "ctx:template-focused",
+          type: "template",
+          templateID: "landing",
+          templateName: "Landing Page Starter",
+          description: "A polished landing page starter.",
+          stack: "React + Tailwind",
+          files: [
+            {
+              path: "src/App.tsx",
+              content: "export default function App() { return <main /> }",
+            },
+            {
+              path: "package-lock.json",
+              content: "{".repeat(1000),
+            },
+            {
+              path: "public/logo.png",
+              content: "binary",
+              encoding: "base64",
+            },
+          ],
+        },
+      ],
+      images: [],
+      text: "apply this template",
+      messageID: "msg_template_focused",
+      sessionID: "ses_template_focused",
+      sessionDirectory: "/repo",
+    })
+
+    const part = result.requestParts.find((item) => item.type === "text" && item.synthetic)
+    expect(part?.type).toBe("text")
+    if (part?.type === "text") {
+      expect(part.text).toContain("--- src/App.tsx ---")
+      expect(part.text).not.toContain("--- package-lock.json ---")
+      expect(part.text).not.toContain("--- public/logo.png ---")
+      expect(part.text).toContain("generated, binary, lock, or overflow")
     }
   })
 

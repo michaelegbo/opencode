@@ -850,6 +850,9 @@ export const SessionRoutes = lazy(() =>
           const body = c.req.valid("json")
           SessionPrompt.prompt({ ...body, sessionID }).catch((err) => {
             log.error("prompt_async failed", { sessionID, error: err })
+            SessionStatus.set(sessionID, { type: "idle" }).catch((idleErr) => {
+              log.error("prompt_async idle status failed", { sessionID, error: idleErr })
+            })
             Bus.publish(Session.Event.Error, {
               sessionID,
               error: new NamedError.Unknown({ message: err instanceof Error ? err.message : String(err) }).toObject(),

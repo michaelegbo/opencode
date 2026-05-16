@@ -120,6 +120,7 @@ export function TemplatePanel(props: {
   const [w, setW] = createSignal(0)
   const [h, setH] = createSignal(0)
   const [doc, setDoc] = createSignal("")
+  const [docCache, setDocCache] = createSignal<Record<string, string>>({})
   const [wait, setWait] = createSignal(false)
   const [showUpgrade, setShowUpgrade] = createSignal(false)
   const [upgradeInfo, setUpgradeInfo] = createSignal<{ required_tier: string; current_tier: string }>()
@@ -207,10 +208,16 @@ export function TemplatePanel(props: {
     }
     if (onDetail && cur) {
       setDetailCache((prev) => (prev[cur] ? { [cur]: prev[cur] } : {}))
+      setDocCache((prev) => {
+        const next = { ...prev }
+        delete next[cur]
+        return next
+      })
       const detailOk = await fetchDetail(cur, { force: true })
       if (!detailOk) return
     } else {
       setDetailCache({})
+      setDocCache({})
     }
     showToast({ title: "Templates refreshed", description: "Loaded the latest list from Paddie." })
   }
@@ -374,16 +381,25 @@ export function TemplatePanel(props: {
   const loadPick = async () => {
     const cur = tpl()
     if (!cur) return
+    const cached = docCache()[cur.id]
+    if (cached) {
+      setDoc(cached)
+      setPick(true)
+      return
+    }
     const link = previewUrl(cur)
     const text = html()
+    const hasPreviewHtml = text.trim() && templateGalleryPreviewReady(text)
     setWait(true)
     try {
       const next =
-        link
-          ? await (platform.fetch ?? fetch)(link)
-              .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
-              .catch(() => text)
-          : text
+        hasPreviewHtml
+          ? text
+          : link
+            ? await (platform.fetch ?? fetch)(link)
+                .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
+                .catch(() => text)
+            : text
       if (!next.trim()) {
         showToast({
           variant: "error",
@@ -392,7 +408,9 @@ export function TemplatePanel(props: {
         })
         return
       }
-      setDoc(previewDoc(link, next, cur.parts))
+      const value = previewDoc(link, next, cur.parts)
+      setDocCache((prev) => ({ ...prev, [cur.id]: value }))
+      setDoc(value)
       setPick(true)
     } catch (err) {
       showToast({

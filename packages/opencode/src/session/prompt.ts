@@ -65,6 +65,22 @@ const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested struc
 export namespace SessionPrompt {
   const log = Log.create({ service: "session.prompt" })
 
+  /** @internal */
+  export function needsToolFollowup(parts: MessageV2.Part[] | undefined) {
+    const list = parts ?? []
+    const lastToolIndex = list.findLastIndex((part) => part.type === "tool")
+    if (lastToolIndex < 0) return false
+    const lastTool = list[lastToolIndex]
+    if (lastTool?.type !== "tool") return false
+    if (lastTool.state.status === "pending" || lastTool.state.status === "running") return true
+    const toolEnd = lastTool.state.time.end
+    return !list.slice(lastToolIndex + 1).some((part) => {
+      if (part.type !== "text" || !part.text.trim()) return false
+      const start = part.time?.start ?? part.time?.end
+      return start === undefined || start >= toolEnd
+    })
+  }
+
   export interface Interface {
     readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
     readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
@@ -1386,13 +1402,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
             )
             // Some providers return "stop" even when the assistant message contains tool calls.
-            // Keep the loop running so tool results can be sent back to the model.
-            const hasToolCalls = lastAssistantMsg?.parts.some((part) => part.type === "tool") ?? false
-
+            // Keep the loop running only when there is no text after the last tool call.
             if (
               lastAssistant?.finish &&
               !["tool-calls"].includes(lastAssistant.finish) &&
-              !hasToolCalls &&
+              !needsToolFollowup(lastAssistantMsg?.parts) &&
               lastUser.id < lastAssistant.id
             ) {
               log.info("exiting loop", { sessionID: input.sessionID, until: input.until })

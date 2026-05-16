@@ -1673,12 +1673,14 @@ export namespace Provider {
     return runPromise((svc) => svc.defaultModel())
   }
 
-  const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+  const priority = ["gpt-5.5", "gpt-5.4", "gpt-5.3", "gpt-5.2", "gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+  const small = /(^|[-/.])(mini|nano)([-/.]|$)/
   export function sort<T extends { id: string }>(models: T[]) {
     return sortBy(
       models,
       [(model) => priority.findIndex((filter) => model.id.includes(filter)), "desc"],
       [(model) => (model.id.includes("latest") ? 0 : 1), "asc"],
+      [(model) => (small.test(model.id) ? 1 : 0), "asc"],
       [(model) => model.id, "desc"],
     )
   }
