@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, mock, test } from "bun:test"
 let getWorkspaceTerminalCacheKey: (dir: string) => string
 let getLegacyTerminalStorageKeys: (dir: string, legacySessionID?: string) => string[]
 let migrateTerminalState: (value: unknown) => unknown
+let shouldRevealTerminal: (title: string) => boolean
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -19,6 +20,7 @@ beforeAll(async () => {
   getWorkspaceTerminalCacheKey = mod.getWorkspaceTerminalCacheKey
   getLegacyTerminalStorageKeys = mod.getLegacyTerminalStorageKeys
   migrateTerminalState = mod.migrateTerminalState
+  shouldRevealTerminal = mod.shouldRevealTerminal
 })
 
 describe("getWorkspaceTerminalCacheKey", () => {
@@ -78,5 +80,17 @@ describe("migrateTerminalState", () => {
         { id: "two", title: "shell", titleNumber: 7 },
       ],
     })
+  })
+})
+
+describe("shouldRevealTerminal", () => {
+  test("does not reveal default user terminal tabs", () => {
+    expect(shouldRevealTerminal("Terminal 1")).toBe(false)
+    expect(shouldRevealTerminal("Terminal 12")).toBe(false)
+  })
+
+  test("reveals tool-created command terminals", () => {
+    expect(shouldRevealTerminal("Preview")).toBe(true)
+    expect(shouldRevealTerminal("ng serve")).toBe(true)
   })
 })

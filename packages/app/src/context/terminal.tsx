@@ -2,6 +2,7 @@ import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { batch, createEffect, createMemo, createRoot, createSignal, on, onCleanup } from "solid-js"
 import { useParams } from "@solidjs/router"
+import type { Pty as ServerPTY } from "@opencode-ai/sdk/v2"
 import { useSDK } from "./sdk"
 import type { Platform } from "./platform"
 import { defaultTitle, titleNumber } from "./terminal-title"
@@ -36,6 +37,10 @@ function num(value: unknown) {
 
 function numberFromTitle(title: string) {
   return titleNumber(title, MAX_TERMINAL_SESSIONS)
+}
+
+export function shouldRevealTerminal(title: string) {
+  return numberFromTitle(title) === undefined
 }
 
 function key(path: string) {
@@ -148,6 +153,7 @@ export function clearWorkspaceTerminals(dir: string, sessionIDs?: string[], plat
 function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: string, legacySessionID?: string) {
   const legacy = getLegacyTerminalStorageKeys(dir, legacySessionID)
   const [url, setUrl] = createSignal("")
+  const [reveal, setReveal] = createSignal(0)
 
   const [store, setStore, _, ready] = persisted(
     {
@@ -196,24 +202,34 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
     })
   }
 
+  const upsert = (info: Pick<ServerPTY, "id" | "title" | "cwd">) => {
+    if (!inside(dir, info.cwd)) return
+
+    const titleNumber = numberFromTitle(info.title) ?? 0
+    const revealTerminal = shouldRevealTerminal(info.title)
+    const index = store.all.findIndex((item) => item.id === info.id)
+
+    batch(() => {
+      if (index >= 0) {
+        setStore("all", index, (item) => ({ ...item, title: info.title, titleNumber }))
+      } else {
+        setStore("all", (all) => [...all, { id: info.id, title: info.title, titleNumber }])
+      }
+
+      if (!store.active || revealTerminal) setStore("active", info.id)
+      if (revealTerminal) setReveal((value) => value + 1)
+    })
+  }
+
   const unsub = sdk.event.on("pty.exited", (event: { properties: { id: string } }) => {
     removeExited(event.properties.id)
   })
   onCleanup(unsub)
-  const created = sdk.event.on("pty.created", (event: { properties: { info: { id: string; title: string; cwd: string } } }) => {
-    const info = event.properties.info
-    if (!inside(dir, info.cwd)) return
-    const titleNumber = numberFromTitle(info.title) ?? 0
-    const index = store.all.findIndex((item) => item.id === info.id)
-    if (index >= 0) {
-      setStore("all", index, (item) => ({ ...item, title: info.title, titleNumber }))
-      return
-    }
-    setStore("all", (all) => [...all, { id: info.id, title: info.title, titleNumber }])
-    if (!store.active) setStore("active", info.id)
+  const created = sdk.event.on("pty.created", (event: { properties: { info: ServerPTY } }) => {
+    upsert(event.properties.info)
   })
   onCleanup(created)
-  const updated = sdk.event.on("pty.updated", (event: { properties: { info: { id: string; title: string; cwd: string } } }) => {
+  const updated = sdk.event.on("pty.updated", (event: { properties: { info: ServerPTY } }) => {
     const info = event.properties.info
     if (!inside(dir, info.cwd)) return
     const index = store.all.findIndex((item) => item.id === info.id)
@@ -229,6 +245,22 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
     removeExited(event.properties.id)
   })
   onCleanup(deleted)
+
+  createEffect(
+    on(ready, (value) => {
+      if (!value) return
+      sdk.client.pty
+        .list()
+        .then((result: { data?: ServerPTY[] }) => {
+          for (const info of result.data ?? []) {
+            upsert(info)
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to sync terminals", error)
+        })
+    }),
+  )
 
   const update = (client: ReturnType<typeof useSDK>["client"], pty: Partial<LocalPTY> & { id: string }) => {
     const index = store.all.findIndex((x) => x.id === pty.id)
@@ -289,12 +321,14 @@ function createWorkspaceTerminalSession(sdk: ReturnType<typeof useSDK>, dir: str
     all: createMemo(() => store.all),
     active: createMemo(() => store.active),
     url,
+    reveal,
     clear() {
       batch(() => {
         setStore("active", undefined)
         setStore("all", [])
       })
       setUrl("")
+      setReveal(0)
     },
     note(text: string) {
       const next = previewUrl(text)
@@ -477,6 +511,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       all: () => workspace().all(),
       active: () => workspace().active(),
       url: () => workspace().url(),
+      reveal: () => workspace().reveal(),
       note: (text: string) => workspace().note(text),
       new: () => workspace().new(),
       update: (pty: Partial<LocalPTY> & { id: string }) => workspace().update(pty),

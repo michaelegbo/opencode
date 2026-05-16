@@ -81,6 +81,16 @@ export function TerminalPanel() {
     ),
   )
 
+  createEffect(
+    on(
+      () => terminal.reveal(),
+      (count, prevCount) => {
+        if (count <= 0 || count <= (prevCount ?? 0) || opened()) return
+        view().terminal.open()
+      },
+    ),
+  )
+
   const focus = (id: string) => {
     const probe = terminalProbe(id)
     return waitTerminalFocus(id, {
