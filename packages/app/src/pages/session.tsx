@@ -31,6 +31,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
+import { WorkbenchPanel } from "@/components/workbench-panel"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useGlobalSync } from "@/context/global-sync"
@@ -349,6 +350,7 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     reviewSnap: false,
+    split: 0,
     scrollGesture: 0,
     scroll: {
       overflow: false,
@@ -400,15 +402,30 @@ export default function Page() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
+  const desktopStudioOpen = createMemo(() => isDesktop() && settings.general.betaFeatures() && view().studio.opened())
+  const studioChatHidden = createMemo(() => desktopStudioOpen() && view().studio.chatHidden())
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
+  const desktopSidePanelOpen = createMemo(() => desktopStudioOpen() || desktopReviewOpen() || desktopFileTreeOpen())
+  const splitWidth = createMemo(() => ui.split || (typeof window === "undefined" ? 0 : window.innerWidth))
+  const studioMin = 360
+  const chatMin = 320
+  const studioMax = createMemo(() => {
+    const width = splitWidth()
+    if (!width) return 1200
+    return Math.max(studioMin, width - chatMin)
+  })
+  const studioWidth = createMemo(() => Math.max(studioMin, Math.min(layout.studio.width(), studioMax())))
   const sessionPanelWidth = createMemo(() => {
+    if (desktopStudioOpen()) {
+      if (studioChatHidden()) return "0px"
+      return `calc(100% - ${studioWidth()}px)`
+    }
     if (!desktopSidePanelOpen()) return "100%"
     if (desktopReviewOpen()) return `${layout.session.width()}px`
     return `calc(100% - ${layout.fileTree.width()}px)`
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+  const centered = createMemo(() => isDesktop() && !desktopReviewOpen() && !desktopStudioOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -1741,6 +1758,17 @@ export default function Page() {
     },
   )
 
+  let splitRef: HTMLDivElement | undefined
+
+  createResizeObserver(
+    () => splitRef,
+    ({ width }) => {
+      const next = Math.ceil(width)
+      if (!next || next === ui.split) return
+      setUi("split", next)
+    },
+  )
+
   const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
@@ -1791,7 +1819,7 @@ export default function Page() {
     <div class="relative bg-background-base size-full overflow-hidden flex flex-col">
       {sessionSync() ?? ""}
       <SessionHeader />
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row">
+      <div ref={splitRef} class="flex-1 min-h-0 flex flex-col md:flex-row">
         <Show when={!isDesktop() && !!params.id}>
           <Tabs value={store.mobileTab} class="h-auto">
             <Tabs.List>
@@ -1823,6 +1851,7 @@ export default function Page() {
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !size.active() && !ui.reviewSnap,
+            "pointer-events-none overflow-hidden": studioChatHidden(),
           }}
           style={{
             width: sessionPanelWidth(),
@@ -1930,8 +1959,8 @@ export default function Page() {
             }}
           />
 
-          <Show when={desktopReviewOpen()}>
-            <div onPointerDown={() => size.start()}>
+          <Show when={desktopReviewOpen() && !desktopStudioOpen()}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"
                 size={layout.session.width()}
@@ -1946,19 +1975,56 @@ export default function Page() {
           </Show>
         </div>
 
-        <SessionSidePanel
-          canReview={canReview}
-          diffs={reviewDiffs}
-          diffsReady={reviewReady}
-          empty={reviewEmptyText}
-          hasReview={hasReview}
-          reviewCount={reviewCount}
-          reviewPanel={reviewPanel}
-          activeDiff={tree.activeDiff}
-          focusReviewDiff={focusReviewDiff}
-          reviewSnap={ui.reviewSnap}
-          size={size}
-        />
+        <Show when={desktopStudioOpen()}>
+          <Show when={!studioChatHidden()}>
+            <div class="relative shrink-0" onPointerDown={() => size.start()}>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={studioWidth()}
+                min={studioMin}
+                max={studioMax()}
+                onResize={(width) => {
+                  size.touch()
+                  layout.studio.resize(width)
+                }}
+              />
+            </div>
+          </Show>
+          <aside
+            class="relative min-w-0 h-full border-l border-border-weaker-base bg-background-base transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none"
+            classList={{
+              "flex-1": studioChatHidden(),
+              "shrink-0": !studioChatHidden(),
+            }}
+            style={studioChatHidden() ? undefined : { width: `${studioWidth()}px` }}
+          >
+            <WorkbenchPanel
+              chatHidden={studioChatHidden()}
+              onChatToggle={view().studio.toggleChat}
+              onClose={() => {
+                view().studio.showChat()
+                view().studio.close()
+              }}
+            />
+          </aside>
+        </Show>
+
+        <Show when={!desktopStudioOpen()}>
+          <SessionSidePanel
+            canReview={canReview}
+            diffs={reviewDiffs}
+            diffsReady={reviewReady}
+            empty={reviewEmptyText}
+            hasReview={hasReview}
+            reviewCount={reviewCount}
+            reviewPanel={reviewPanel}
+            activeDiff={tree.activeDiff}
+            focusReviewDiff={focusReviewDiff}
+            reviewSnap={ui.reviewSnap}
+            size={size}
+          />
+        </Show>
       </div>
 
       <TerminalPanel />

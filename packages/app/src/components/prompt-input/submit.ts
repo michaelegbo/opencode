@@ -201,6 +201,11 @@ type CommentItem = {
   preview?: string
 }
 
+type TransientItem = Extract<ContextItem, { type: "element" | "template" }> & { key: string }
+
+const isTransientItem = (item: ContextItem | (ContextItem & { key: string })): item is TransientItem =>
+  item.type === "element" || item.type === "template"
+
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
   const sdk = useSDK()
@@ -260,7 +265,45 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
+  const restoreTransientItems = (items: TransientItem[]) => {
+    for (const item of items) {
+      if (item.type === "element") {
+        prompt.context.add({
+          type: "element",
+          url: item.url,
+          selector: item.selector,
+          label: item.label,
+          html: item.html,
+          text: item.text,
+        })
+        continue
+      }
+
+      prompt.context.add({
+        type: "template",
+        templateID: item.templateID,
+        templateName: item.templateName,
+        description: item.description,
+        stack: item.stack,
+        partID: item.partID,
+        partName: item.partName,
+        hint: item.hint,
+        selector: item.selector,
+        label: item.label,
+        html: item.html,
+        text: item.text,
+        files: item.files,
+      })
+    }
+  }
+
   const removeCommentItems = (items: { key: string }[]) => {
+    for (const item of items) {
+      prompt.context.remove(item.key)
+    }
+  }
+
+  const removeTransientItems = (items: { key: string }[]) => {
     for (const item of items) {
       prompt.context.remove(item.key)
     }
@@ -485,7 +528,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
 
-    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const commentKeys = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const transientKeys = context.filter(isTransientItem)
+    const commentItems: CommentItem[] = commentKeys.flatMap((item) => {
+      if (item.type !== "file") return []
+      return [
+        {
+          path: item.path,
+          selection: item.selection,
+          comment: item.comment,
+          commentID: item.commentID,
+          commentOrigin: item.commentOrigin,
+          preview: item.preview,
+        },
+      ]
+    })
     const messageID = Identifier.ascending("message")
 
     const removeOptimisticMessage = () => {
@@ -496,7 +553,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    removeCommentItems(commentItems)
+    removeCommentItems(commentKeys)
+    removeTransientItems(transientKeys)
     clearInput()
 
     const waitForWorktree = async () => {
@@ -514,6 +572,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
+        restoreTransientItems(transientKeys)
         restoreInput()
       }
 
@@ -573,6 +632,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
       removeOptimisticMessage()
       restoreCommentItems(commentItems)
+      restoreTransientItems(transientKeys)
       restoreInput()
     })
   }
