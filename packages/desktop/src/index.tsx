@@ -14,6 +14,7 @@ import {
   ServerConnection,
   useCommand,
 } from "@opencode-ai/app"
+import { convertFileSrc } from "@tauri-apps/api/core"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
@@ -479,6 +480,7 @@ const createPlatform = (): Platform => {
 
       read: async (path) => readTextFile(await host(path)),
       write: async (path, data) => writeTextFile(await host(path), data),
+      previewUrl: async (path) => convertFileSrc(await host(path)),
       watch: async (path, cb) => {
         const stop = await watch(await host(path), (event) => {
           void guest(event.paths).then((paths) => cb({ paths }))

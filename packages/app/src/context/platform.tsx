@@ -28,6 +28,7 @@ type Workbench = {
   stat(path: string): Promise<WorkbenchEntry | null>
   read(path: string): Promise<string>
   write(path: string, data: string): Promise<void>
+  previewUrl?(path: string): Promise<string | null>
   watch(path: string, cb: (event: WorkbenchEvent) => void): Promise<VoidFunction>
   create(input: { parent: string; name: string; files: WorkbenchSeed[] }): Promise<string>
 }
