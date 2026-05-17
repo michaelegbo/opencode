@@ -19,7 +19,11 @@
     ],
     "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**", "/**", "**/*", "/**/*", "**/.*", "/**/.*", "**/.*/*/**", "/**/.*/*/**"]
+      }
     },
     "macOSPrivateApi": true
   },
@@ -52,7 +56,8 @@
       "nsis": {
         "installerIcon": "icons/dev/icon.ico",
         "headerImage": "assets/nsis-header.bmp",
-        "sidebarImage": "assets/nsis-sidebar.bmp"
+        "sidebarImage": "assets/nsis-sidebar.bmp",
+        "installerHooks": "installer-hooks.nsh"
       }
     }
   },

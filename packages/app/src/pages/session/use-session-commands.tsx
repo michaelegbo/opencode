@@ -9,10 +9,11 @@ import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@opencode-ai/ui/toast"
-import { findLast } from "@opencode-ai/util/array"
+import { findLast } from "@opencode-ai/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
@@ -41,6 +42,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const permission = usePermission()
   const prompt = usePrompt()
   const sdk = useSDK()
+  const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
   const layout = useLayout()
@@ -66,9 +68,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   })
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
+  const shown = () => settings.general.showFileTree()
 
-  const idle = { type: "idle" as const }
-  const status = () => sync.data.session_status[params.id ?? ""] ?? idle
   const messages = () => {
     const id = params.id
     if (!id) return []
@@ -282,7 +283,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const sessionID = params.id
     if (!sessionID) return
 
-    if (status().type !== "idle") {
+    if (sync.data.session_working(params.id ?? "")) {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
     }
 
@@ -457,12 +458,16 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       keybind: "mod+shift+r",
       onSelect: () => view().reviewPanel.toggle(),
     }),
-    viewCommand({
-      id: "fileTree.toggle",
-      title: language.t("command.fileTree.toggle"),
-      keybind: "mod+\\",
-      onSelect: () => layout.fileTree.toggle(),
-    }),
+    ...(shown()
+      ? [
+          viewCommand({
+            id: "fileTree.toggle",
+            title: language.t("command.fileTree.toggle"),
+            keybind: "mod+\\",
+            onSelect: () => layout.fileTree.toggle(),
+          }),
+        ]
+      : []),
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
