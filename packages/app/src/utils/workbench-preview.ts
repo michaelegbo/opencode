@@ -22,7 +22,8 @@ type Hit = {
   names: string[]
 }
 
-export type PreviewTarget = {
+type PreviewCommandTarget = {
+  kind: "command"
   id: string
   cmd: string
   args: string[]
@@ -32,6 +33,19 @@ export type PreviewTarget = {
   rel: string
   score: number
 }
+
+type PreviewStaticTarget = {
+  kind: "static"
+  id: string
+  path: string
+  cwd: string
+  label: string
+  note: string
+  rel: string
+  score: number
+}
+
+export type PreviewTarget = PreviewCommandTarget | PreviewStaticTarget
 
 const SKIP = new Set([
   ".git",
@@ -106,6 +120,8 @@ const MARK = [
   "pages",
   "public",
 ]
+
+const BUNDLED_MARK = new Set(MARK.filter((item) => item !== "index.html" && item !== "public"))
 
 const rel = (root: string, dir: string) => {
   const a = root.replace(/[\\/]+$/, "")
@@ -229,6 +245,7 @@ const preview = (mgr: Mgr, script: string, dir: string, relpath: string, score: 
           : { cmd: "npm", args: ["run", script] }
 
   return {
+    kind: "command",
     id: `${dir}\n${label}`,
     ...cmd,
     cwd: dir,
@@ -242,6 +259,7 @@ const preview = (mgr: Mgr, script: string, dir: string, relpath: string, score: 
 const shell = (text: string, root: string, os?: Os) => {
   if (os === "windows") {
     return {
+      kind: "command",
       id: `${root}\n${text}`,
       cmd: "cmd.exe",
       args: ["/d", "/s", "/c", text],
@@ -254,6 +272,7 @@ const shell = (text: string, root: string, os?: Os) => {
   }
 
   return {
+    kind: "command",
     id: `${root}\n${text}`,
     cmd: "sh",
     args: ["-lc", text],
@@ -264,6 +283,35 @@ const shell = (text: string, root: string, os?: Os) => {
     score: Number.MAX_SAFE_INTEGER,
   } satisfies PreviewTarget
 }
+
+const hasBuildMarker = (names: string[]) => names.some((item) => BUNDLED_MARK.has(item))
+
+const hasBuildPackage = (pkg: Pkg | undefined) => {
+  if (!pkg) return false
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+  const keys = Object.keys(deps)
+  if (FRONT.some((item) => keys.includes(item))) return true
+  return Object.values(pkg.scripts ?? {}).some((value) =>
+    /(vite|next dev|nuxt dev|astro dev|solid-start|webpack serve|webpack-dev-server|react-scripts|rspack|parcel|remix dev|svelte-kit)/i.test(
+      value,
+    ),
+  )
+}
+
+const htmlNeedsBuild = (html: string) =>
+  /@vite\/client/i.test(html) || /\s(?:src|href)=["']\/?src\/[^"']+\.(tsx|ts|jsx)(?:\?[^"']*)?["']/i.test(html)
+
+const staticPreview = (dir: string, relpath: string, score: number, why: string[]) =>
+  ({
+    kind: "static",
+    id: `${dir}\nindex.html`,
+    path: join(dir, "index.html"),
+    cwd: dir,
+    label: relpath ? `${relpath}/index.html` : "index.html",
+    rel: relpath,
+    note: why.join(", "),
+    score,
+  }) satisfies PreviewTarget
 
 const score = (hit: Hit, script?: { key: string; value: string; score: number }) => {
   let out = 0
@@ -359,12 +407,12 @@ export async function detectPreview(input: {
   root: string
   start?: string
   os?: Os
-}) {
+}): Promise<PreviewTarget[]> {
   const start = input.start?.trim()
   if (start) return [shell(start, input.root, input.os)]
 
   const data = await scan(input.fs, input.root)
-  const out = Array.from(data.pkg.entries())
+  const commandTargets: PreviewTarget[] = Array.from(data.pkg.entries())
     .flatMap(([dir, pkg]) => {
       const names = data.list.get(dir)?.map((item) => item.name) ?? []
       const script = choose(pkg.scripts ?? {})
@@ -382,7 +430,37 @@ export async function detectPreview(input: {
       const mgr = manager(pkg, locks, data.pkg, input.root, dir)
       return [preview(mgr, script.key, dir, rel(input.root, dir), result.out, result.why)]
     })
-    .sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel))
+
+  const staticTargets: PreviewTarget[] = (
+    await Promise.all(
+      Array.from(data.list.entries()).map(async ([dir, entries]) => {
+        if (!entries.some((item) => item.file && item.name.toLowerCase() === "index.html")) return
+        const names = entries.map((item) => item.name)
+        const pkg = data.pkg.get(dir)
+        if (hasBuildMarker(names) || hasBuildPackage(pkg)) return
+
+        const html = await input.fs.read(join(dir, "index.html")).catch(() => "")
+        if (!html || htmlNeedsBuild(html)) return
+
+        const relpath = rel(input.root, dir)
+        const why = ["static HTML"]
+        let result = 45
+        if (!relpath) {
+          result += 25
+          why.push("workspace root")
+        }
+        if (/(web|frontend|client|site|landing|dashboard|admin|studio|app)/i.test(`${pkg?.name ?? ""} ${dir}`)) {
+          result += 15
+          why.push("frontend path")
+        }
+        if (!pkg) result += 10
+
+        return staticPreview(dir, relpath, result, why)
+      }),
+    )
+  ).filter((item): item is Extract<PreviewTarget, { kind: "static" }> => !!item)
+
+  const out = [...commandTargets, ...staticTargets].sort((a, b) => b.score - a.score || a.rel.localeCompare(b.rel))
 
   return out
 }

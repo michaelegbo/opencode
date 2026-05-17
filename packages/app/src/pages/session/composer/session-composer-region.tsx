@@ -2,6 +2,7 @@ import { Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { useLayout } from "@/context/layout"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
@@ -35,8 +36,6 @@ export function SessionComposerRegion(props: {
     onAbort: () => void
     onSend: (id: string) => void
     onEdit: (id: string) => void
-    onDelete: (id: string) => void
-    onReorder: (from: string, to: string) => void
     onEditLoaded: () => void
   }
   revert?: {
@@ -48,10 +47,12 @@ export function SessionComposerRegion(props: {
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const navigate = useNavigate()
+  const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
   const route = useSessionKey()
   const sync = useSync()
+  const view = layout.view(route.sessionKey)
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
@@ -209,6 +210,8 @@ export function SessionComposerRegion(props: {
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
+                    collapsed={view.todoCollapsed.get()}
+                    onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
                     collapseLabel={language.t("session.todo.collapse")}
                     expandLabel={language.t("session.todo.expand")}
                     dockProgress={value()}
@@ -246,8 +249,6 @@ export function SessionComposerRegion(props: {
                   sending={props.followup!.sending}
                   onSend={props.followup!.onSend}
                   onEdit={props.followup!.onEdit}
-                  onDelete={props.followup!.onDelete}
-                  onReorder={props.followup!.onReorder}
                 />
               </Show>
               <Show

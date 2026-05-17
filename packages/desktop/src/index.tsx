@@ -14,6 +14,7 @@ import {
   ServerConnection,
   useCommand,
 } from "@opencode-ai/app"
+import { convertFileSrc } from "@tauri-apps/api/core"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
@@ -328,7 +329,7 @@ const createPlatform = (): Platform => {
       return { updateAvailable: true, version: next.version }
     },
 
-    update: async () => {
+    updateAndRestart: async () => {
       if (!UPDATER_ENABLED || !update) return
       if (ostype() === "windows") await commands.killSidecar().catch(() => undefined)
       await update.install().catch(() => undefined)
@@ -479,10 +480,11 @@ const createPlatform = (): Platform => {
 
       read: async (path) => readTextFile(await host(path)),
       write: async (path, data) => writeTextFile(await host(path), data),
+      previewUrl: async (path) => convertFileSrc(await host(path)),
       watch: async (path, cb) => {
         const stop = await watch(await host(path), (event) => {
           void guest(event.paths).then((paths) => cb({ paths }))
-        }, { recursive: true, delayMs: 150 })
+        }, { recursive: false, delayMs: 150 })
         return () => stop()
       },
       create: async (input) => {
@@ -514,6 +516,10 @@ createMenu((id) => {
   menuTrigger?.(id)
 })
 void listenForDeepLinks()
+
+// Expose Tauri's fetch globally so paddie-api.ts and auth.tsx can bypass CORS
+;(window as any).__paddie_fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  input instanceof Request ? tauriFetch(input) : tauriFetch(input, init)
 
 render(() => {
   const platform = createPlatform()

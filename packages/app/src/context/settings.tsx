@@ -23,9 +23,16 @@ export interface Settings {
     autoSave: boolean
     releaseNotes: boolean
     followup: "queue" | "steer"
+    uiFeaturesUngated: boolean
+    showFileTree: boolean
+    showNavigation: boolean
+    showSearch: boolean
+    showStatus: boolean
+    showTerminal: boolean
     showReasoningSummaries: boolean
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
+    showSessionProgressBar: boolean
   }
   updates: {
     startup: boolean
@@ -34,6 +41,7 @@ export interface Settings {
     fontSize: number
     mono: string
     sans: string
+    terminal: string
   }
   keybinds: Record<string, string>
   permissions: {
@@ -45,13 +53,18 @@ export interface Settings {
 
 export const monoDefault = "System Mono"
 export const sansDefault = "System Sans"
+export const terminalDefault = "JetBrainsMono Nerd Font Mono"
 
 const monoFallback =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 const sansFallback = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+const terminalFallback =
+  '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 
 const monoBase = monoFallback
 const sansBase = sansFallback
+const terminalBase = terminalFallback
+const defaultUiFeaturesUngated = import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"
 
 function input(font: string | undefined) {
   return font ?? ""
@@ -84,14 +97,29 @@ export function sansFontFamily(font: string | undefined) {
   return stack(font, sansBase)
 }
 
+export function terminalInput(font: string | undefined) {
+  return input(font)
+}
+
+export function terminalFontFamily(font: string | undefined) {
+  return stack(font, terminalBase)
+}
+
 const defaultSettings: Settings = {
   general: {
     autoSave: true,
     releaseNotes: true,
-    followup: "queue",
+    followup: "steer",
+    uiFeaturesUngated: defaultUiFeaturesUngated,
+    showFileTree: true,
+    showNavigation: true,
+    showSearch: true,
+    showStatus: true,
+    showTerminal: true,
     showReasoningSummaries: false,
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
+    showSessionProgressBar: true,
   },
   updates: {
     startup: true,
@@ -100,6 +128,7 @@ const defaultSettings: Settings = {
     fontSize: 14,
     mono: "",
     sans: "",
+    terminal: "",
   },
   keybinds: {},
   permissions: {
@@ -127,7 +156,27 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
 export const { use: useSettings, provider: SettingsProvider } = createSimpleContext({
   name: "Settings",
   init: () => {
-    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
+    const [store, setStore, _, ready] = persisted(
+      {
+        key: "settings.v3",
+        migrate(value) {
+          if (typeof value !== "object" || value === null || Array.isArray(value)) return value
+
+          const general = (value as Record<string, unknown>).general
+          if (typeof general !== "object" || general === null || Array.isArray(general)) return value
+          if (typeof (general as Record<string, unknown>).uiFeaturesUngated === "boolean") return value
+
+          return {
+            ...value,
+            general: {
+              ...general,
+              uiFeaturesUngated: defaultSettings.general.uiFeaturesUngated,
+            },
+          }
+        },
+      },
+      createStore<Settings>(defaultSettings),
+    )
 
     createEffect(() => {
       if (typeof document === "undefined") return
@@ -154,6 +203,30 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setFollowup(value: "queue" | "steer") {
           setStore("general", "followup", value)
         },
+        betaFeatures: withFallback(() => store.general?.uiFeaturesUngated, defaultSettings.general.uiFeaturesUngated),
+        setBetaFeatures(value: boolean) {
+          setStore("general", "uiFeaturesUngated", value)
+        },
+        showFileTree: withFallback(() => store.general?.showFileTree, defaultSettings.general.showFileTree),
+        setShowFileTree(value: boolean) {
+          setStore("general", "showFileTree", value)
+        },
+        showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
+        setShowNavigation(value: boolean) {
+          setStore("general", "showNavigation", value)
+        },
+        showSearch: withFallback(() => store.general?.showSearch, defaultSettings.general.showSearch),
+        setShowSearch(value: boolean) {
+          setStore("general", "showSearch", value)
+        },
+        showStatus: withFallback(() => store.general?.showStatus, defaultSettings.general.showStatus),
+        setShowStatus(value: boolean) {
+          setStore("general", "showStatus", value)
+        },
+        showTerminal: withFallback(() => store.general?.showTerminal, defaultSettings.general.showTerminal),
+        setShowTerminal(value: boolean) {
+          setStore("general", "showTerminal", value)
+        },
         showReasoningSummaries: withFallback(
           () => store.general?.showReasoningSummaries,
           defaultSettings.general.showReasoningSummaries,
@@ -175,6 +248,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setEditToolPartsExpanded(value: boolean) {
           setStore("general", "editToolPartsExpanded", value)
         },
+        showSessionProgressBar: withFallback(
+          () => store.general?.showSessionProgressBar,
+          defaultSettings.general.showSessionProgressBar,
+        ),
+        setShowSessionProgressBar(value: boolean) {
+          setStore("general", "showSessionProgressBar", value)
+        },
       },
       updates: {
         startup: withFallback(() => store.updates?.startup, defaultSettings.updates.startup),
@@ -194,6 +274,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         uiFont: withFallback(() => store.appearance?.sans, defaultSettings.appearance.sans),
         setUIFont(value: string) {
           setStore("appearance", "sans", value.trim() ? value : "")
+        },
+        terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
+        setTerminalFont(value: string) {
+          setStore("appearance", "terminal", value.trim() ? value : "")
         },
       },
       keybinds: {

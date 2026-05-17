@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/util/path"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
@@ -54,6 +54,60 @@ const isTemplateContext = (
   item: BuildRequestPartsInput["context"][number],
 ): item is { key: string } & TemplateContextItem => item.type === "template"
 
+const TEMPLATE_REFERENCE_FILE_LIMIT = 48_000
+const TEMPLATE_REFERENCE_TOTAL_LIMIT = 140_000
+const TEMPLATE_REFERENCE_EXCLUDED =
+  /(^|\/)(node_modules|dist|build|coverage|\.next|\.turbo|\.vite)(\/|$)|(^|\/)(package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lock|bun\.lockb)$|\.(png|jpe?g|gif|webp|avif|ico|svg|woff2?|ttf|eot|mp4|webm|mov|zip|gz|br|pdf)$/i
+
+const templatePath = (value: string) => value.replaceAll("\\", "/")
+
+const isTemplateReferenceFile = (file: TemplateContextItem["files"][number]) => {
+  if (file.encoding === "base64") return false
+  return !TEMPLATE_REFERENCE_EXCLUDED.test(templatePath(file.path))
+}
+
+const trimTemplateReference = (content: string, limit: number) => {
+  if (content.length <= limit) return { content, truncated: false }
+  return {
+    content: `${content.slice(0, limit)}\n\n[Template file truncated after ${limit} characters.]`,
+    truncated: true,
+  }
+}
+
+const formatTemplateReferenceFiles = (files: TemplateContextItem["files"]) => {
+  const usable = files.filter(isTemplateReferenceFile)
+  const result = usable.reduce<{
+    blocks: string[]
+    used: number
+    omitted: number
+    truncated: number
+  }>(
+    (acc, file) => {
+      const remaining = TEMPLATE_REFERENCE_TOTAL_LIMIT - acc.used
+      if (remaining <= 0) return { ...acc, omitted: acc.omitted + 1 }
+      const trimmed = trimTemplateReference(file.content, Math.min(TEMPLATE_REFERENCE_FILE_LIMIT, remaining))
+      return {
+        blocks: [...acc.blocks, [`--- ${file.path} ---`, trimmed.content].join("\n")],
+        used: acc.used + trimmed.content.length,
+        omitted: acc.omitted,
+        truncated: acc.truncated + (trimmed.truncated ? 1 : 0),
+      }
+    },
+    { blocks: [], used: 0, omitted: files.length - usable.length, truncated: 0 },
+  )
+
+  const notes = [
+    result.omitted > 0
+      ? `${result.omitted} generated, binary, lock, or overflow file${result.omitted === 1 ? " was" : "s were"} omitted to keep the template reference focused.`
+      : "",
+    result.truncated > 0
+      ? `${result.truncated} large template file${result.truncated === 1 ? " was" : "s were"} truncated.`
+      : "",
+  ].filter(Boolean)
+
+  return { blocks: result.blocks, notes }
+}
+
 const formatElementNote = (item: ElementContextItem) => {
   const lines = [
     `The user selected the following preview element from ${item.url}.`,
@@ -67,8 +121,9 @@ const formatElementNote = (item: ElementContextItem) => {
 }
 
 const formatTemplateNote = (item: TemplateContextItem) => {
+  const references = formatTemplateReferenceFiles(item.files)
   const lines = [
-    "The user attached the following design template as implementation reference.",
+    "The user attached the following design template as a high-fidelity implementation reference.",
     `Template: ${item.templateName}`,
     `Description: ${item.description}`,
     `Stack: ${item.stack}`,
@@ -79,13 +134,13 @@ const formatTemplateNote = (item: TemplateContextItem) => {
   if (item.text?.trim()) lines.push(`Text: ${item.text.trim()}`)
   if (item.html?.trim()) lines.push(`Outer HTML:\n${item.html.trim()}`)
   if (item.hint?.trim()) lines.push(`Guidance: ${item.hint.trim()}`)
-  lines.push("Adapt this reference to the current codebase instead of copying it blindly.")
-  lines.push("Reference files:")
   lines.push(
-    ...item.files.map((file) => {
-      return [`--- ${file.path} ---`, file.content].join("\n")
-    }),
+    "Apply the selected template faithfully: preserve its visible layout, spacing, hierarchy, colors, and interaction intent while fitting the current codebase.",
   )
+  lines.push("Use the selected element, selector, and part guidance as the priority signal when they are present.")
+  if (references.notes.length) lines.push(...references.notes)
+  lines.push("Reference files:")
+  lines.push(...references.blocks)
   return lines.join("\n\n")
 }
 

@@ -142,8 +142,11 @@ describe("detectPreview", () => {
       os: "windows",
     })
 
-    expect(out[0]?.cmd).toBe("cmd.exe")
-    expect(out[0]?.args).toEqual(["/d", "/s", "/c", "pnpm --filter web dev"])
+    expect(out[0]?.kind).toBe("command")
+    if (out[0]?.kind === "command") {
+      expect(out[0].cmd).toBe("cmd.exe")
+      expect(out[0].args).toEqual(["/d", "/s", "/c", "pnpm --filter web dev"])
+    }
   })
 
   test("prefers npm when npm and pnpm lockfiles both exist", async () => {
@@ -205,5 +208,51 @@ describe("detectPreview", () => {
 
     expect(out[0]?.cwd).toBe("/repo/apps/web")
     expect(out.length).toBe(1)
+  })
+
+  test("detects a plain static html project", async () => {
+    const out = await detectPreview({
+      fs: fs({
+        "/repo": {
+          file: {
+            "index.html": "<!doctype html><html><head><link rel=\"stylesheet\" href=\"style.css\"></head></html>",
+            "style.css": "body { color: black }",
+          },
+        },
+      }),
+      root: "/repo",
+    })
+
+    expect(out[0]?.kind).toBe("static")
+    expect(out[0]?.label).toBe("index.html")
+    if (out[0]?.kind === "static") expect(out[0].path).toBe("/repo/index.html")
+  })
+
+  test("keeps bundled vite projects on the dev server path", async () => {
+    const out = await detectPreview({
+      fs: fs({
+        "/repo": {
+          dir: ["src"],
+          file: {
+            "index.html": "<div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script>",
+            "package.json": JSON.stringify({
+              scripts: { dev: "vite" },
+              dependencies: { "@vitejs/plugin-react": "latest", vite: "latest", react: "latest" },
+            }),
+            "vite.config.ts": "export default {}",
+          },
+        },
+        "/repo/src": {
+          file: {
+            "main.tsx": "console.log('ok')",
+          },
+        },
+      }),
+      root: "/repo",
+    })
+
+    expect(out[0]?.kind).toBe("command")
+    expect(out[0]?.label).toBe("npm run dev")
+    expect(out.some((item) => item.kind === "static")).toBe(false)
   })
 })

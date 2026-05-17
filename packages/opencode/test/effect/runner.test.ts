@@ -1,7 +1,12 @@
-import { describe, expect, test } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, Ref, Scope } from "effect"
-import { Runner } from "../../src/effect/runner"
+import { describe, expect } from "bun:test"
+import { Cause, Deferred, Effect, Exit, Fiber, Latch, Ref, Scope } from "effect"
+import { Runner } from "@/effect/runner"
 import { it } from "../lib/effect"
+
+const waitForState = <A, E>(runner: Runner.Runner<A, E>, tag: Runner.State<A, E>["_tag"]) =>
+  Effect.gen(function* () {
+    while (runner.state._tag !== tag) yield* Effect.yieldNow
+  }).pipe(Effect.timeout("1 second"))
 
 describe("Runner", () => {
   // --- ensureRunning semantics ---
@@ -115,8 +120,16 @@ describe("Runner", () => {
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
-      const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("never"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const started = yield* Deferred.make<void>()
+      const fiber = yield* runner
+        .ensureRunning(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, void 0)
+            return yield* Effect.never.pipe(Effect.as("never"))
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
       expect(runner.busy).toBe(true)
       expect(runner.state._tag).toBe("Running")
 
@@ -144,7 +157,7 @@ describe("Runner", () => {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s, { onInterrupt: Effect.succeed("fallback") })
       const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("never"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "Running")
 
       yield* runner.cancel
 
@@ -161,9 +174,9 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s, { onInterrupt: Effect.succeed("fallback") })
 
       const a = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-      const b = yield* runner.enqueueRunning(Effect.succeed("y")).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "Running")
+      const b = yield* runner.ensureRunning(Effect.succeed("y")).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
 
       yield* runner.cancel
 
@@ -176,60 +189,12 @@ describe("Runner", () => {
   )
 
   it.live(
-    "enqueueRunning runs pending work in order",
-    Effect.gen(function* () {
-      const s = yield* Scope.Scope
-      const runner = Runner.make<string>(s)
-      const gate = yield* Deferred.make<void>()
-      const hits = yield* Ref.make<string[]>([])
-
-      const a = yield* runner
-        .enqueueRunning(
-          Effect.gen(function* () {
-            yield* Ref.update(hits, (list) => [...list, "first"])
-            yield* Deferred.await(gate)
-            return "first"
-          }),
-        )
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-
-      const b = yield* runner
-        .enqueueRunning(
-          Effect.gen(function* () {
-            yield* Ref.update(hits, (list) => [...list, "second"])
-            return "second"
-          }),
-        )
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-
-      expect(runner.state._tag).toBe("Running")
-      if (runner.state._tag !== "Running") throw new Error("expected running")
-      expect(runner.state.queue).toHaveLength(1)
-      expect(runner.queued).toBe(1)
-      expect(yield* Ref.get(hits)).toEqual(["first"])
-
-      yield* Deferred.succeed(gate, undefined)
-
-      const [exitA, exitB] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
-      expect(Exit.isSuccess(exitA)).toBe(true)
-      expect(Exit.isSuccess(exitB)).toBe(true)
-      if (Exit.isSuccess(exitA)) expect(exitA.value).toBe("first")
-      if (Exit.isSuccess(exitB)) expect(exitB.value).toBe("second")
-      expect(yield* Ref.get(hits)).toEqual(["first", "second"])
-      expect(runner.busy).toBe(false)
-      expect(runner.queued).toBe(0)
-    }),
-  )
-
-  it.live(
     "work can be started after cancel",
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
       const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "Running")
       yield* runner.cancel
       yield* Fiber.await(fiber)
 
@@ -238,58 +203,52 @@ describe("Runner", () => {
     }),
   )
 
-  test("cancel does not deadlock when replacement work starts before interrupted run exits", async () => {
-    function defer() {
-      let resolve!: () => void
-      const promise = new Promise<void>((done) => {
-        resolve = done
-      })
-      return { promise, resolve }
-    }
+  it.live(
+    "cancel does not deadlock when replacement work starts before interrupted run exits",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const hit = yield* Deferred.make<void>()
+      const hold = yield* Deferred.make<void>()
+      const done = yield* Deferred.make<void>()
 
-    function fail(ms: number, msg: string) {
-      return new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error(msg)), ms)
-      })
-    }
+      yield* Effect.gen(function* () {
+        const runner = Runner.make<string>(s)
+        const first = Effect.never.pipe(
+          Effect.onInterrupt(() => Deferred.succeed(hit, undefined)),
+          Effect.ensuring(Deferred.await(hold)),
+          Effect.as("first"),
+        )
 
-    const s = await Effect.runPromise(Scope.make())
-    const hit = defer()
-    const hold = defer()
-    const done = defer()
-    try {
-      const runner = Runner.make<string>(s)
-      const first = Effect.never.pipe(
-        Effect.onInterrupt(() => Effect.sync(() => hit.resolve())),
-        Effect.ensuring(Effect.promise(() => hold.promise)),
-        Effect.as("first"),
+        const a = yield* runner.ensureRunning(first).pipe(Effect.exit, Effect.forkChild)
+        yield* waitForState(runner, "Running")
+
+        const stop = yield* runner.cancel.pipe(Effect.forkChild)
+        yield* Deferred.await(hit).pipe(Effect.timeout("250 millis"))
+
+        const b = yield* runner.ensureRunning(Deferred.await(done).pipe(Effect.as("second"))).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        expect(runner.busy).toBe(true)
+
+        yield* Deferred.succeed(hold, undefined)
+        const stopExit = yield* Fiber.await(stop).pipe(Effect.timeout("250 millis"))
+        expect(Exit.isSuccess(stopExit)).toBe(true)
+
+        expect(runner.busy).toBe(true)
+        yield* Deferred.succeed(done, undefined)
+        expect(yield* Fiber.join(b).pipe(Effect.timeout("250 millis"))).toBe("second")
+        expect(runner.busy).toBe(false)
+
+        const exit = yield* Fiber.join(a)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }).pipe(
+        Effect.ensuring(
+          Effect.all([Deferred.succeed(hold, undefined), Deferred.succeed(done, undefined)], { discard: true }).pipe(
+            Effect.ignore,
+          ),
+        ),
       )
-
-      const a = Effect.runPromiseExit(runner.ensureRunning(first))
-      await Bun.sleep(10)
-
-      const stop = Effect.runPromise(runner.cancel)
-      await Promise.race([hit.promise, fail(250, "cancel did not interrupt running work")])
-
-      const b = Effect.runPromise(runner.ensureRunning(Effect.promise(() => done.promise).pipe(Effect.as("second"))))
-      expect(runner.busy).toBe(true)
-
-      hold.resolve()
-      await Promise.race([stop, fail(250, "cancel deadlocked while replacement run was active")])
-
-      expect(runner.busy).toBe(true)
-      done.resolve()
-      expect(await b).toBe("second")
-      expect(runner.busy).toBe(false)
-
-      const exit = await a
-      expect(Exit.isFailure(exit)).toBe(true)
-    } finally {
-      hold.resolve()
-      done.resolve()
-      await Promise.race([Effect.runPromise(Scope.close(s, Exit.void)), fail(1000, "runner scope did not close")])
-    }
-  })
+    }),
+  )
 
   // --- shell semantics ---
 
@@ -298,7 +257,7 @@ describe("Runner", () => {
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
-      const result = yield* runner.startShell((_signal) => Effect.succeed("shell-done"))
+      const result = yield* runner.startShell(Effect.succeed("shell-done"))
       expect(result).toBe("shell-done")
       expect(runner.busy).toBe(false)
     }),
@@ -309,14 +268,25 @@ describe("Runner", () => {
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
-      const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const started = yield* Deferred.make<void>()
+      const fiber = yield* runner
+        .ensureRunning(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined)
+            return yield* Effect.never.pipe(Effect.as("x"))
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started).pipe(Effect.timeout("250 millis"))
+      yield* Effect.gen(function* () {
+        while (runner.state._tag !== "Running") yield* Effect.yieldNow
+      }).pipe(Effect.timeout("250 millis"))
 
-      const exit = yield* runner.startShell((_s) => Effect.succeed("nope")).pipe(Effect.exit)
+      const exit = yield* runner.startShell(Effect.succeed("nope")).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
 
       yield* runner.cancel
-      yield* Fiber.await(fiber)
+      yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
     }),
   )
 
@@ -327,13 +297,12 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s)
       const gate = yield* Deferred.make<void>()
 
-      const sh = yield* runner
-        .startShell((_signal) => Deferred.await(gate).pipe(Effect.as("first")))
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const sh = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("first"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
 
-      const exit = yield* runner.startShell((_s) => Effect.succeed("second")).pipe(Effect.exit)
+      const exit = yield* runner.startShell(Effect.succeed("second")).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Runner.Busy)
 
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.await(sh)
@@ -341,47 +310,14 @@ describe("Runner", () => {
   )
 
   it.live(
-    "shell rejects via busy callback and cancel still stops the first shell",
-    Effect.gen(function* () {
-      const s = yield* Scope.Scope
-      const runner = Runner.make<string>(s, {
-        busy: () => {
-          throw new Error("busy")
-        },
-      })
-
-      const sh = yield* runner
-        .startShell((signal) =>
-          Effect.promise(
-            () =>
-              new Promise<string>((resolve) => {
-                signal.addEventListener("abort", () => resolve("aborted"), { once: true })
-              }),
-          ),
-        )
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-
-      const exit = yield* runner.startShell((_s) => Effect.succeed("second")).pipe(Effect.exit)
-      expect(Exit.isFailure(exit)).toBe(true)
-
-      yield* runner.cancel
-      const done = yield* Fiber.await(sh)
-      expect(Exit.isSuccess(done)).toBe(true)
-    }),
-  )
-
-  it.live(
-    "cancel interrupts shell that ignores abort signal",
+    "cancel interrupts shell",
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
       const gate = yield* Deferred.make<void>()
 
-      const sh = yield* runner
-        .startShell((_signal) => Deferred.await(gate).pipe(Effect.as("ignored")))
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const sh = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("ignored"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
 
       const stop = yield* runner.cancel.pipe(Effect.forkChild)
       const stopExit = yield* Fiber.await(stop).pipe(Effect.timeout("250 millis"))
@@ -395,6 +331,29 @@ describe("Runner", () => {
     }),
   )
 
+  it.live(
+    "cancel does not mask shell defects",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s, { onInterrupt: Effect.succeed("interrupted") })
+      const ready = yield* Latch.make()
+
+      const sh = yield* runner
+        .startShell(
+          Effect.gen(function* () {
+            yield* ready.open
+            return yield* Effect.never.pipe(Effect.as("ignored"))
+          }).pipe(Effect.ensuring(Effect.die("boom"))),
+          ready,
+        )
+        .pipe(Effect.forkChild)
+      yield* ready.await.pipe(Effect.timeout("250 millis"))
+
+      yield* runner.cancel
+      expect(Exit.isFailure(yield* Fiber.await(sh))).toBe(true)
+    }),
+  )
+
   // --- shell→run handoff ---
 
   it.live(
@@ -404,17 +363,13 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s)
       const gate = yield* Deferred.make<void>()
 
-      const sh = yield* runner
-        .startShell((_signal) => Deferred.await(gate).pipe(Effect.as("shell-result")))
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const sh = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("shell-result"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
       expect(runner.state._tag).toBe("Shell")
 
       const run = yield* runner.ensureRunning(Effect.succeed("run-result")).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-      expect(runner.state._tag).toBe("Shell")
-      if (runner.state._tag !== "Shell") throw new Error("expected shell")
-      expect(runner.state.queue).toHaveLength(1)
+      yield* waitForState(runner, "ShellThenRun")
+      expect(runner.state._tag).toBe("ShellThenRun")
 
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.await(sh)
@@ -422,8 +377,7 @@ describe("Runner", () => {
       const exit = yield* Fiber.await(run)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) expect(exit.value).toBe("run-result")
-      const tag = String(runner.state._tag)
-      if (tag !== "Idle") throw new Error("expected idle")
+      expect(runner.state._tag).toBe("Idle")
     }),
   )
 
@@ -435,10 +389,8 @@ describe("Runner", () => {
       const calls = yield* Ref.make(0)
       const gate = yield* Deferred.make<void>()
 
-      const sh = yield* runner
-        .startShell((_signal) => Deferred.await(gate).pipe(Effect.as("shell")))
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const sh = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("shell"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
 
       const work = Effect.gen(function* () {
         yield* Ref.update(calls, (n) => n + 1)
@@ -446,7 +398,7 @@ describe("Runner", () => {
       })
       const a = yield* runner.ensureRunning(work).pipe(Effect.forkChild)
       const b = yield* runner.ensureRunning(work).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "ShellThenRun")
 
       yield* Deferred.succeed(gate, undefined)
       yield* Fiber.await(sh)
@@ -463,25 +415,13 @@ describe("Runner", () => {
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const runner = Runner.make<string>(s)
-      const gate = yield* Deferred.make<void>()
 
-      const sh = yield* runner
-        .startShell((signal) =>
-          Effect.promise(
-            () =>
-              new Promise<string>((resolve) => {
-                signal.addEventListener("abort", () => resolve("aborted"), { once: true })
-              }),
-          ),
-        )
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const sh = yield* runner.startShell(Effect.never.pipe(Effect.as("aborted"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
 
       const run = yield* runner.ensureRunning(Effect.succeed("y")).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
-      expect(runner.state._tag).toBe("Shell")
-      if (runner.state._tag !== "Shell") throw new Error("expected shell")
-      expect(runner.state.queue).toHaveLength(1)
+      yield* waitForState(runner, "ShellThenRun")
+      expect(runner.state._tag).toBe("ShellThenRun")
 
       yield* runner.cancel
       expect(runner.busy).toBe(false)
@@ -516,7 +456,7 @@ describe("Runner", () => {
         onIdle: Ref.update(count, (n) => n + 1),
       })
       const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "Running")
       yield* runner.cancel
       yield* Fiber.await(fiber)
       expect(yield* Ref.get(count)).toBeGreaterThanOrEqual(1)
@@ -531,7 +471,7 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s, {
         onBusy: Ref.update(count, (n) => n + 1),
       })
-      yield* runner.startShell((_signal) => Effect.succeed("done"))
+      yield* runner.startShell(Effect.succeed("done"))
       expect(yield* Ref.get(count)).toBe(1)
     }),
   )
@@ -546,7 +486,7 @@ describe("Runner", () => {
       const gate = yield* Deferred.make<void>()
 
       const fiber = yield* runner.ensureRunning(Deferred.await(gate).pipe(Effect.as("ok"))).pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      yield* waitForState(runner, "Running")
       expect(runner.busy).toBe(true)
 
       yield* Deferred.succeed(gate, undefined)
@@ -562,10 +502,8 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s)
       const gate = yield* Deferred.make<void>()
 
-      const fiber = yield* runner
-        .startShell((_signal) => Deferred.await(gate).pipe(Effect.as("ok")))
-        .pipe(Effect.forkChild)
-      yield* Effect.sleep("10 millis")
+      const fiber = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("ok"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
       expect(runner.busy).toBe(true)
 
       yield* Deferred.succeed(gate, undefined)
