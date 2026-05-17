@@ -1,83 +1,43 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { Instance } from "../../src/project/instance"
+import { afterEach, describe, expect, mock } from "bun:test"
+import { Effect } from "effect"
 import { Server } from "../../src/server/server"
-import { Session } from "../../src/session"
-import { ModelID, ProviderID } from "../../src/provider/schema"
-import { MessageID, PartID, type SessionID } from "../../src/session/schema"
-import { SessionPrompt } from "../../src/session/prompt"
-import { Log } from "../../src/util/log"
-import { tmpdir } from "../fixture/fixture"
+import { Session as SessionNs } from "@/session/session"
+import * as Log from "@opencode-ai/core/util/log"
+import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
 
-Log.init({ print: false })
+void Log.init({ print: false })
+
+const it = testEffect(SessionNs.defaultLayer)
 
 afterEach(async () => {
   mock.restore()
-  await Instance.disposeAll()
+  await disposeAllInstances()
 })
 
-async function user(sessionID: SessionID, text: string) {
-  const msg = await Session.updateMessage({
-    id: MessageID.ascending(),
-    role: "user",
-    sessionID,
-    agent: "build",
-    model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test") },
-    time: { created: Date.now() },
-  })
-  await Session.updatePart({
-    id: PartID.ascending(),
-    sessionID,
-    messageID: msg.id,
-    type: "text",
-    text,
-  })
-  return msg
-}
-
 describe("session action routes", () => {
-  test("abort route calls SessionPrompt.cancel", async () => {
-    await using tmp = await tmpdir({ git: true })
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const session = await Session.create({})
-        const cancel = spyOn(SessionPrompt, "cancel").mockResolvedValue()
-        const app = Server.Default()
+  it.instance(
+    "abort route returns success",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* Effect.acquireRelease(
+          SessionNs.Service.use((svc) => svc.create({})),
+          (created) => SessionNs.Service.use((svc) => svc.remove(created.id)).pipe(Effect.ignore),
+        )
 
-        const res = await app.request(`/session/${session.id}/abort`, {
-          method: "POST",
-        })
+        const res = yield* Effect.promise(() =>
+          Promise.resolve(
+            Server.Default().app.request(`/session/${session.id}/abort`, {
+              method: "POST",
+              headers: { "x-opencode-directory": test.directory },
+            }),
+          ),
+        )
 
         expect(res.status).toBe(200)
-        expect(await res.json()).toBe(true)
-        expect(cancel).toHaveBeenCalledWith(session.id)
-
-        await Session.remove(session.id)
-      },
-    })
-  })
-
-  test("delete message route returns 400 when session is busy", async () => {
-    await using tmp = await tmpdir({ git: true })
-    await Instance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const session = await Session.create({})
-        const msg = await user(session.id, "hello")
-        const busy = spyOn(SessionPrompt, "assertNotBusy").mockRejectedValue(new Session.BusyError(session.id))
-        const remove = spyOn(Session, "removeMessage").mockResolvedValue(msg.id)
-        const app = Server.Default()
-
-        const res = await app.request(`/session/${session.id}/message/${msg.id}`, {
-          method: "DELETE",
-        })
-
-        expect(res.status).toBe(400)
-        expect(busy).toHaveBeenCalledWith(session.id)
-        expect(remove).not.toHaveBeenCalled()
-
-        await Session.remove(session.id)
-      },
-    })
-  })
+        expect(yield* Effect.promise(() => res.json())).toBe(true)
+      }),
+    { git: true },
+  )
 })

@@ -1,10 +1,10 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { checksum } from "@opencode-ai/util/encode"
+import { checksum } from "@opencode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
-import type { File as TemplateFile } from "@/template/library"
+import type { TemplateFile } from "@/template/helpers"
 import { Persist, persisted } from "@/utils/persist"
 
 interface PartBase {
@@ -212,9 +212,9 @@ function createPromptSession(dir: string, id: string | undefined) {
 
   return {
     ready,
-    current: createMemo(() => store.prompt),
+    current: () => store.prompt,
     cursor: createMemo(() => store.cursor),
-    dirty: createMemo(() => !isPromptEqual(store.prompt, DEFAULT_PROMPT)),
+    dirty: () => !isPromptEqual(store.prompt, DEFAULT_PROMPT),
     context: {
       items: createMemo(() => store.context.items),
       add(item: ContextItem) {
@@ -304,7 +304,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {
-      ready: () => session().ready(),
+      ready: () => session().ready,
       current: () => session().current(),
       cursor: () => session().cursor(),
       dirty: () => session().dirty(),
