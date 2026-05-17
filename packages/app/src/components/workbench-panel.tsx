@@ -25,6 +25,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { createSizing } from "@/pages/session/helpers"
 import { previewFromSession, previewFromTerminals } from "@/utils/preview-url"
+import { detectPreview } from "@/utils/workbench-preview"
 
 type Node = {
   name: string
@@ -276,7 +277,10 @@ export function WorkbenchPanel(props: {
     open: {} as Record<string, boolean>,
     tabs: [] as Tab[],
     active: "",
-    url: "",
+    staticUrl: "",
+    staticPath: "",
+    staticLabel: "",
+    staticScan: false,
     pick: false,
     doc: "",
     waitPick: false,
@@ -287,6 +291,7 @@ export function WorkbenchPanel(props: {
   let stage: HTMLDivElement | undefined
   let stop: VoidFunction | undefined
   let tick: number | undefined
+  let scan = 0
   const delay = 500
   const saves = new Map<string, number>()
 
@@ -295,6 +300,9 @@ export function WorkbenchPanel(props: {
   const detected = createMemo(
     () => previewFromSession(messages(), sync.data.part) ?? terminal.url() ?? previewFromTerminals(terminal.all()) ?? "",
   )
+  const previewUrl = createMemo(() => detected() || state.staticUrl)
+  const previewLabel = createMemo(() => detected() || state.staticLabel)
+  const previewSource = createMemo(() => (detected() ? "live" : state.staticUrl ? "static" : "none"))
   const tree = () => state.tree
   const showFiles = createMemo(() => state.mode !== "preview" && state.files)
   const box = createMemo(() => state.box || 1200)
@@ -393,12 +401,12 @@ export function WorkbenchPanel(props: {
     setState("waitPick", false)
   }
   const pick = () => {
-    const url = state.url
+    const url = previewUrl()
     if (!url) {
       showToast({
         variant: "error",
         title: "No preview is running",
-        description: "Run the app first, then turn on element selection.",
+        description: "Run the app or open a workspace with an index.html file, then turn on element selection.",
       })
       return
     }
@@ -407,8 +415,11 @@ export function WorkbenchPanel(props: {
 
     setState("waitPick", true)
     const run = platform.fetch ?? fetch
-    void run(url)
-      .then((res) => res.text())
+    const html =
+      previewSource() === "static" && state.staticPath && api()
+        ? api()!.read(state.staticPath)
+        : run(url).then((res) => res.text())
+    void html
       .then((html) => {
         setState("doc", pickDoc(url, html))
         setState("pick", true)
@@ -425,7 +436,7 @@ export function WorkbenchPanel(props: {
   }
 
   const reload = () => {
-    const url = state.url
+    const url = previewUrl()
     if (!url || !frame) return
     stopPick()
     frame.src = "about:blank"
@@ -433,6 +444,16 @@ export function WorkbenchPanel(props: {
       if (!frame) return
       frame.src = url
     })
+  }
+
+  const openPreview = () => {
+    const url = previewUrl()
+    if (!url) return
+    if (previewSource() === "static" && state.staticPath && platform.openPath) {
+      void platform.openPath(state.staticPath)
+      return
+    }
+    platform.openLink(url)
   }
 
   const zoomOut = () => setState("zoom", (value) => clamp(value - 10, 50, 200))
@@ -560,7 +581,39 @@ export function WorkbenchPanel(props: {
           )
         }),
       )
+      void scanPreview()
     }, 180)
+  }
+
+  const scanPreview = async () => {
+    const fs = api()
+    const dir = root()
+    const id = ++scan
+    if (!fs || !dir) return
+
+    setState("staticScan", true)
+    const targets = await detectPreview({ fs, root: dir, os: platform.os }).catch(() => [])
+    if (id !== scan) return
+
+    const target = targets.find((item) => item.kind === "static")
+    if (!target || target.kind !== "static" || !fs.previewUrl) {
+      setState({
+        staticUrl: "",
+        staticPath: "",
+        staticLabel: "",
+        staticScan: false,
+      })
+      return
+    }
+
+    const url = await fs.previewUrl(target.path).catch(() => null)
+    if (id !== scan) return
+    setState({
+      staticUrl: url ?? "",
+      staticPath: url ? target.path : "",
+      staticLabel: url ? target.label : "",
+      staticScan: false,
+    })
   }
 
   const openFiles = () => {
@@ -618,6 +671,7 @@ export function WorkbenchPanel(props: {
     stop?.()
     setState("open", dir, true)
     void load(dir, true)
+    void scanPreview()
     void fs.watch(dir, (event) => refresh(event.paths)).then((fn) => {
       stop = fn
     })
@@ -705,19 +759,28 @@ export function WorkbenchPanel(props: {
     return list
   })
 
-  createEffect(() => {
-    const next = detected()
-    if (!next || next === state.url) return
-    stopPick()
-    setState("url", next)
-  })
+  createEffect(
+    on(
+      previewUrl,
+      (next, prev) => {
+        if (!next || next === prev) return
+        stopPick()
+      },
+      { defer: true },
+    ),
+  )
 
   createEffect(
     on(
       () => `${root()}\n${params.id ?? ""}`,
       () => {
         stopPick()
-        setState("url", "")
+        setState({
+          staticUrl: "",
+          staticPath: "",
+          staticLabel: "",
+          staticScan: false,
+        })
       },
       { defer: true },
     ),
@@ -738,7 +801,7 @@ export function WorkbenchPanel(props: {
       if (type !== "pick") return
       const data = (event.data as { payload?: Record<string, unknown> }).payload
       if (!data) return
-      const url = typeof data.url === "string" ? data.url : state.url
+      const url = typeof data.url === "string" ? data.url : previewUrl()
       const selector = typeof data.selector === "string" ? data.selector : ""
       const label = typeof data.label === "string" ? data.label : selector || "selected element"
       const html = typeof data.html === "string" ? data.html : ""
@@ -1097,7 +1160,7 @@ export function WorkbenchPanel(props: {
                       <div class="text-13-medium text-text-base">Live browser canvas</div>
                     </div>
                     <div class="min-w-0 shrink-0 flex items-center gap-2 self-start max-w-full overflow-x-auto">
-                      <Show when={state.url}>
+                      <Show when={previewUrl()}>
                         <Button
                           variant="ghost"
                           class="h-8 px-3 gap-2 text-11-medium"
@@ -1113,7 +1176,7 @@ export function WorkbenchPanel(props: {
                         <Button
                           variant="ghost"
                           class="h-8 px-2"
-                          onClick={() => platform.openLink(state.url)}
+                          onClick={openPreview}
                           aria-label="Open preview in browser"
                           title="Open preview in browser"
                         >
@@ -1123,7 +1186,7 @@ export function WorkbenchPanel(props: {
                       <Button
                         variant="ghost"
                         class={state.pick ? "h-8 px-2 bg-surface-base-active text-text-strong" : "h-8 px-2"}
-                        disabled={!state.url || state.waitPick}
+                        disabled={!previewUrl() || state.waitPick}
                         onClick={pick}
                         aria-label={state.pick ? "Stop selecting elements" : "Select an element from preview"}
                         title={state.pick ? "Stop selecting elements" : "Select an element from preview"}
@@ -1141,9 +1204,10 @@ export function WorkbenchPanel(props: {
                     }}
                   >
                     <div class="min-w-0 h-9 flex-1 rounded-xl border border-border-weaker-base bg-background-stronger px-3 flex items-center gap-2">
-                      <div class={`size-2 rounded-full ${state.url ? "bg-icon-success-base" : "bg-icon-disabled"}`} />
+                      <div class={`size-2 rounded-full ${previewUrl() ? "bg-icon-success-base" : "bg-icon-disabled"}`} />
                       <div class="min-w-0 flex-1 truncate text-11-medium text-text-weak">
-                        {state.url || "Waiting for a localhost app from chat or terminal"}
+                        {previewLabel() ||
+                          (state.staticScan ? "Scanning workspace preview targets..." : "Waiting for a preview target")}
                       </div>
                     </div>
                     <div class="min-w-0 shrink-0 max-w-full rounded-xl border border-border-weaker-base bg-background-stronger p-1 flex items-center gap-1 overflow-x-auto">
@@ -1186,22 +1250,28 @@ export function WorkbenchPanel(props: {
 
                   <div class="text-11-medium text-text-weak">
                     {state.waitPick
-                      ? "Loading the picker snapshot..."
-                      : state.pick
-                        ? "Click any element in the preview to add it to the chat box."
-                        : state.url
-                          ? "Following the latest localhost app from chat or terminal."
-                          : "Run the app in the main terminal or ask the assistant to run it, then the preview will appear here."}
+                        ? "Loading the picker snapshot..."
+                        : state.pick
+                          ? "Click any element in the preview to add it to the chat box."
+                          : previewSource() === "live"
+                            ? "Following the latest localhost app from chat or terminal."
+                            : previewSource() === "static"
+                              ? `Previewing ${state.staticLabel} directly from this workspace.`
+                              : state.staticScan
+                                ? "Looking for a dev server script or a plain index.html file in this workspace."
+                                : "Run the app in the main terminal, or open a workspace with a plain index.html file."}
                   </div>
                 </div>
 
                 <div class="min-h-0 flex-1 bg-background-stronger p-3">
                   <div ref={stage} class="size-full min-w-0 overflow-auto rounded-[22px] bg-[#181922]">
                     <Show
-                      when={state.url}
+                      when={previewUrl()}
                       fallback={
                         <div class="size-full flex items-center justify-center px-6 text-center text-13-medium text-text-weak">
-                          Preview will appear automatically when a localhost app is running in this workspace.
+                          {state.staticScan
+                            ? "Scanning this workspace for previewable HTML."
+                            : "Preview will appear automatically when a localhost app is running or a plain index.html file is found."}
                         </div>
                       }
                     >
@@ -1225,7 +1295,7 @@ export function WorkbenchPanel(props: {
                                 <div class="size-2 rounded-full bg-[#fbbf24]" />
                                 <div class="size-2 rounded-full bg-[#34d399]" />
                                 <div class="min-w-0 flex-1 text-center text-11-medium text-text-weak truncate">
-                                  {url()}
+                                  {previewLabel() || url()}
                                 </div>
                               </div>
                               <iframe
