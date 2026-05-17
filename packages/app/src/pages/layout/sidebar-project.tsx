@@ -1,6 +1,6 @@
 import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { base64Encode } from "@opencode-ai/util/encode"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Button } from "@opencode-ai/ui/button"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { HoverCard } from "@opencode-ai/ui/hover-card"
@@ -11,6 +11,7 @@ import { useLayout, type LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
+import { useSettings } from "@/context/settings"
 import { ProjectIcon, SessionItem, type SessionItemProps } from "./sidebar-items"
 import { displayName, sortedRootSessions } from "./helpers"
 
@@ -57,6 +58,7 @@ const ProjectTile = (props: {
   sidebarHovering: Accessor<boolean>
   selected: Accessor<boolean>
   active: Accessor<boolean>
+  isWorking: Accessor<boolean>
   overlay: Accessor<boolean>
   suppressHover: Accessor<boolean>
   dirs: Accessor<string[]>
@@ -75,6 +77,7 @@ const ProjectTile = (props: {
 }): JSX.Element => {
   const notification = useNotification()
   const layout = useLayout()
+  const settings = useSettings()
   const navigate = useNavigate()
   const unseenCount = createMemo(() =>
     props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
@@ -145,27 +148,29 @@ const ProjectTile = (props: {
         }}
         onBlur={() => props.setOpen(false)}
       >
-        <ProjectIcon project={props.project} notify />
+        <ProjectIcon project={props.project} notify working={props.isWorking()} />
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
-          <ContextMenu.Item
-            onSelect={() => {
-              const dir = base64Encode(props.project.worktree)
-              if (typeof window !== "undefined" && window.innerWidth < 768) {
-                navigate(`/${dir}/workbench`)
-                return
-              }
-              const view = layout.view(dir)
-              layout.fileTree.close()
-              view.reviewPanel.close()
-              view.studio.showChat()
-              view.studio.open()
-              navigate(`/${dir}/session`)
-            }}
-          >
-            <ContextMenu.ItemLabel>Open studio</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
+          <Show when={settings.general.betaFeatures()}>
+            <ContextMenu.Item
+              onSelect={() => {
+                const dir = base64Encode(props.project.worktree)
+                if (typeof window !== "undefined" && window.innerWidth < 768) {
+                  navigate(`/${dir}/workbench`)
+                  return
+                }
+                const view = layout.view(dir)
+                layout.fileTree.close()
+                view.reviewPanel.close()
+                view.studio.showChat()
+                view.studio.open()
+                navigate(`/${dir}/session`)
+              }}
+            >
+              <ContextMenu.ItemLabel>Open studio</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+          </Show>
           <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
             <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
@@ -320,6 +325,12 @@ export const SortableProject = (props: {
   }
 
   const projectStore = createMemo(() => globalSync.child(props.project.worktree, { bootstrap: false })[0])
+  const isWorking = createMemo(() =>
+    dirs().some((directory) => {
+      const [store] = globalSync.child(directory, { bootstrap: false })
+      return Object.keys(store.session_status).some((id) => store.session_working(id))
+    }),
+  )
   const projectSessions = createMemo(() => sortedRootSessions(projectStore(), props.sortNow()))
   const workspaceSessions = (directory: string) => {
     const [data] = globalSync.child(directory, { bootstrap: false })
@@ -332,6 +343,7 @@ export const SortableProject = (props: {
       sidebarHovering={props.ctx.sidebarHovering}
       selected={selected}
       active={active}
+      isWorking={isWorking}
       overlay={overlay}
       suppressHover={() => state.suppressHover}
       dirs={dirs}

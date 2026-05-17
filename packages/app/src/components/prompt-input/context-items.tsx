@@ -3,7 +3,7 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/util/path"
+import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/core/util/path"
 import type { ContextItem } from "@/context/prompt"
 
 type PromptContextItem = ContextItem & { key: string }
@@ -47,9 +47,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 <div class="flex max-w-[320px] flex-col gap-1">
                   <span class="truncate text-text-invert-base">{item.templateName}</span>
                   <span class="text-text-invert-base/80">{item.stack}</span>
-                  <Show when={item.partName}>
-                    {(value) => <span class="text-text-invert-base/70">{value()}</span>}
-                  </Show>
+                  <Show when={item.partName}>{(value) => <span class="text-text-invert-base/70">{value()}</span>}</Show>
                   <span class="text-text-invert-base/70">{item.files.length} reference files</span>
                 </div>
               )

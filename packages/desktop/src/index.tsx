@@ -328,7 +328,7 @@ const createPlatform = (): Platform => {
       return { updateAvailable: true, version: next.version }
     },
 
-    update: async () => {
+    updateAndRestart: async () => {
       if (!UPDATER_ENABLED || !update) return
       if (ostype() === "windows") await commands.killSidecar().catch(() => undefined)
       await update.install().catch(() => undefined)
@@ -482,7 +482,7 @@ const createPlatform = (): Platform => {
       watch: async (path, cb) => {
         const stop = await watch(await host(path), (event) => {
           void guest(event.paths).then((paths) => cb({ paths }))
-        }, { recursive: true, delayMs: 150 })
+        }, { recursive: false, delayMs: 150 })
         return () => stop()
       },
       create: async (input) => {
@@ -514,6 +514,10 @@ createMenu((id) => {
   menuTrigger?.(id)
 })
 void listenForDeepLinks()
+
+// Expose Tauri's fetch globally so paddie-api.ts and auth.tsx can bypass CORS
+;(window as any).__paddie_fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  input instanceof Request ? tauriFetch(input) : tauriFetch(input, init)
 
 render(() => {
   const platform = createPlatform()

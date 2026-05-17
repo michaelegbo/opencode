@@ -1,9 +1,9 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
-import { base64Encode } from "@opencode-ai/util/encode"
-import { Binary } from "@opencode-ai/util/binary"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
-import type { Accessor } from "solid-js"
+import { batch, type Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -13,7 +13,6 @@ import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { promptProbe } from "@/testing/prompt"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
@@ -139,13 +138,17 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       messageID,
     })
 
-  setBusy()
-  add()
+  batch(() => {
+    setBusy()
+    add()
+  })
 
   try {
     if (!(await wait())) {
-      setIdle()
-      remove()
+      batch(() => {
+        setIdle()
+        remove()
+      })
       return false
     }
 
@@ -159,8 +162,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     })
     return true
   } catch (err) {
-    setIdle()
-    remove()
+    batch(() => {
+      setIdle()
+      remove()
+    })
     throw err
   }
 }
@@ -195,6 +200,11 @@ type CommentItem = {
   commentOrigin?: "review" | "file"
   preview?: string
 }
+
+type TransientItem = Extract<ContextItem, { type: "element" | "template" }> & { key: string }
+
+const isTransientItem = (item: ContextItem | (ContextItem & { key: string })): item is TransientItem =>
+  item.type === "element" || item.type === "template"
 
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
@@ -255,7 +265,45 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
+  const restoreTransientItems = (items: TransientItem[]) => {
+    for (const item of items) {
+      if (item.type === "element") {
+        prompt.context.add({
+          type: "element",
+          url: item.url,
+          selector: item.selector,
+          label: item.label,
+          html: item.html,
+          text: item.text,
+        })
+        continue
+      }
+
+      prompt.context.add({
+        type: "template",
+        templateID: item.templateID,
+        templateName: item.templateName,
+        description: item.description,
+        stack: item.stack,
+        partID: item.partID,
+        partName: item.partName,
+        hint: item.hint,
+        selector: item.selector,
+        label: item.label,
+        html: item.html,
+        text: item.text,
+        files: item.files,
+      })
+    }
+  }
+
   const removeCommentItems = (items: { key: string }[]) => {
+    for (const item of items) {
+      prompt.context.remove(item.key)
+    }
+  }
+
+  const removeTransientItems = (items: { key: string }[]) => {
     for (const item of items) {
       prompt.context.remove(item.key)
     }
@@ -290,7 +338,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const mode = input.mode()
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
-      if (input.working()) abort()
+      if (input.working()) void abort()
       return
     }
 
@@ -307,7 +355,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
-    promptProbe.start()
 
     const projectDirectory = sdk.directory
     const isNewSession = !params.id
@@ -427,7 +474,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    promptProbe.submit({ sessionID: session.id, directory: sessionDirectory })
     input.onSubmit?.()
 
     if (mode === "shell") {
@@ -483,6 +529,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const commentKeys = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const transientKeys = context.filter(isTransientItem)
     const commentItems: CommentItem[] = commentKeys.flatMap((item) => {
       if (item.type !== "file") return []
       return [
@@ -507,6 +554,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     removeCommentItems(commentKeys)
+    removeTransientItems(transientKeys)
     clearInput()
 
     const waitForWorktree = async () => {
@@ -524,6 +572,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         }
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
+        restoreTransientItems(transientKeys)
         restoreInput()
       }
 
@@ -583,6 +632,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
       removeOptimisticMessage()
       restoreCommentItems(commentItems)
+      restoreTransientItems(transientKeys)
       restoreInput()
     })
   }
