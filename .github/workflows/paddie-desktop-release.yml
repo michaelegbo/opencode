@@ -77,13 +77,29 @@ jobs:
           cargo update -p opencode-desktop
           Pop-Location
 
+      - name: Reinstall dependencies for Bun compile
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath packages -Directory | ForEach-Object {
+            Remove-Item -Recurse -Force (Join-Path $_.FullName "node_modules") -ErrorAction SilentlyContinue
+          }
+          bun install
+
       - name: Build sidecar CLI
         shell: pwsh
         run: |
           bun ./packages/opencode/script/build.ts --single --baseline
           New-Item -ItemType Directory -Force -Path packages/desktop/src-tauri/sidecars | Out-Null
+          $binary = Get-ChildItem -LiteralPath packages/opencode/dist -Recurse -Filter opencode.exe |
+            Where-Object { $_.FullName -match "opencode-windows-x64" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $binary) {
+            throw "No Windows opencode.exe sidecar was produced"
+          }
           Copy-Item `
-            -LiteralPath packages/opencode/dist/opencode-windows-x64-baseline/bin/opencode.exe `
+            -LiteralPath $binary.FullName `
             -Destination packages/desktop/src-tauri/sidecars/opencode-cli-x86_64-pc-windows-msvc.exe `
             -Force
 
