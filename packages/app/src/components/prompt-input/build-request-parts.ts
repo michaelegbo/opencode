@@ -8,8 +8,10 @@ import type {
   FileAttachmentPart,
   FileContextItem,
   ImageAttachmentPart,
+  InspirationContextItem,
   Prompt,
   TemplateContextItem,
+  WorkflowContextItem,
 } from "@/context/prompt"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
@@ -18,7 +20,9 @@ type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id
 
 type BuildRequestPartsInput = {
   prompt: Prompt
-  context: ({ key: string } & (FileContextItem | ElementContextItem | TemplateContextItem))[]
+  context: ({
+    key: string
+  } & (FileContextItem | ElementContextItem | TemplateContextItem | WorkflowContextItem | InspirationContextItem))[]
   images: ImageAttachmentPart[]
   text: string
   messageID: string
@@ -53,6 +57,12 @@ const isElementContext = (item: BuildRequestPartsInput["context"][number]): item
 const isTemplateContext = (
   item: BuildRequestPartsInput["context"][number],
 ): item is { key: string } & TemplateContextItem => item.type === "template"
+const isWorkflowContext = (
+  item: BuildRequestPartsInput["context"][number],
+): item is { key: string } & WorkflowContextItem => item.type === "workflow"
+const isInspirationContext = (
+  item: BuildRequestPartsInput["context"][number],
+): item is { key: string } & InspirationContextItem => item.type === "inspiration"
 
 const TEMPLATE_REFERENCE_FILE_LIMIT = 48_000
 const TEMPLATE_REFERENCE_TOTAL_LIMIT = 140_000
@@ -141,6 +151,82 @@ const formatTemplateNote = (item: TemplateContextItem) => {
   if (references.notes.length) lines.push(...references.notes)
   lines.push("Reference files:")
   lines.push(...references.blocks)
+  return lines.join("\n\n")
+}
+
+const formatWorkflowNote = (item: WorkflowContextItem) => {
+  const nodes = item.nodes.map((node) => ({
+    id: node.id,
+    type: node.type,
+    name: node.name,
+    config: node.config ?? {},
+  }))
+  const edges = item.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    condition: edge.condition,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+  }))
+  const lines = [
+    "The user attached the following Paddie Studio workflow as an implementation reference.",
+    `Workflow: ${item.workflowName}`,
+    `Workflow ID: ${item.workflowID}`,
+    `Status: ${item.status}`,
+    `Nodes: ${item.nodes.length}`,
+    `Edges: ${item.edges.length}`,
+  ]
+  if (item.description?.trim()) lines.push(`Description: ${item.description.trim()}`)
+  if (item.method) lines.push(`Webhook method: ${item.method}`)
+  if (item.webhookUrl) lines.push(`Webhook URL: ${item.webhookUrl}`)
+  if (item.updatedAt) lines.push(`Last updated: ${item.updatedAt}`)
+  if (item.revision !== undefined) lines.push(`Revision: ${item.revision}`)
+  lines.push(
+    "Use this workflow from the current codebase by creating or updating a small integration wrapper, service, hook, route, or action that calls the generated client. Do not rewrite the workflow graph manually unless the user asks.",
+  )
+  lines.push(
+    "Prefer environment/config-driven URLs when appropriate, keep the generated function reusable, and preserve the workflow's node order and data-flow semantics.",
+  )
+  lines.push(`Generated ${item.language} client code:\n${item.code}`)
+  lines.push(`Workflow graph JSON:\n${JSON.stringify({ nodes, edges }, null, 2)}`)
+  return lines.join("\n\n")
+}
+
+const formatStyleSignals = (item: InspirationContextItem) => {
+  const groups = [
+    ["Colors", item.styleSignals.colors],
+    ["Typography", item.styleSignals.typography],
+    ["Layout and spacing", item.styleSignals.layout],
+    ["Borders", item.styleSignals.borders],
+    ["Shadows", item.styleSignals.shadows],
+    ["Transitions", item.styleSignals.transitions],
+    ["Animations", item.styleSignals.animations],
+    ["Keyframes", item.styleSignals.keyframes],
+  ] as const
+
+  return groups.flatMap(([label, values]) => (values.length ? [`${label}: ${values.join("; ")}`] : []))
+}
+
+const formatInspirationNote = (item: InspirationContextItem) => {
+  const lines = [
+    "The user attached the following public website as a high-fidelity design and motion inspiration reference.",
+    `URL: ${item.url}`,
+    `Page title: ${item.pageTitle}`,
+    `Reference mode: ${item.mode}`,
+    `Reference label: ${item.label}`,
+  ]
+  if (item.selector) lines.push(`Selector: ${item.selector}`)
+  if (item.text?.trim()) lines.push(`Text: ${item.text.trim()}`)
+  lines.push(
+    "Adapt the visible layout, spacing, hierarchy, colors, typography, component density, and motion intent to the current project. Do not copy private assets, logos, trademarks, brand text, or branding verbatim.",
+  )
+  const signals = formatStyleSignals(item)
+  if (signals.length) {
+    lines.push("Extracted style and motion signals:")
+    lines.push(...signals)
+  }
+  if (item.html.trim()) lines.push(`Reference HTML:\n${item.html.trim()}`)
   return lines.join("\n\n")
 }
 
@@ -241,6 +327,28 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
           id: Identifier.ascending("part"),
           type: "text",
           text: formatTemplateNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
+    if (isWorkflowContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatWorkflowNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
+    if (isInspirationContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatInspirationNote(item),
           synthetic: true,
         } satisfies PromptRequestPart,
       ]
