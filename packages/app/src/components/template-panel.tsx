@@ -12,7 +12,7 @@ import { useServer } from "@/context/server"
 import { useAuth } from "@/context/auth"
 import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
 import { STUDIO_LOGIN_URL, STUDIO_SIGNUP_URL } from "@/lib/paddie-links"
-import { WorkflowBuilder } from "@/components/workflow-builder"
+import { WorkflowBuilder, type WorkflowAttachPayload } from "@/components/workflow-builder"
 import {
   DEFAULT_TEMPLATE_THUMB_DATA_URL,
   filesFor,
@@ -340,6 +340,48 @@ export function TemplatePanel(props: {
     }
   }
 
+  const attachWorkflow = (payload: WorkflowAttachPayload) => {
+    const flow = payload.flow
+    const codegen = payload.codegen
+    for (const item of prompt.context.items()) {
+      if (item.type === "workflow" && item.workflowID === flow.id) {
+        prompt.context.remove(item.key)
+      }
+    }
+    prompt.context.add({
+      type: "workflow",
+      workflowID: flow.id,
+      workflowName: flow.name,
+      description: flow.description,
+      status: flow.status,
+      method: flow.webhook?.method,
+      webhookUrl: codegen.webhookUrl,
+      language: codegen.language,
+      code: codegen.code,
+      nodes: flow.nodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        name: node.name,
+        config: node.config,
+      })),
+      edges: flow.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        condition: edge.condition,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+      })),
+      revision: flow.revision,
+      updatedAt: flow.updatedAt,
+    })
+    focus()
+    showToast({
+      title: "Workflow added to chat",
+      description: `${flow.name} is ready to use in code.`,
+    })
+  }
+
   const create = async () => {
     const cur = tpl()
     const fs = platform.workbench
@@ -632,7 +674,7 @@ export function TemplatePanel(props: {
                         />
                       }
                     >
-                      <WorkflowBuilder />
+                      <WorkflowBuilder onAttachWorkflow={attachWorkflow} />
                     </Show>
                   }
                 >

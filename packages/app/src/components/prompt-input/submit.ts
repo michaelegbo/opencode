@@ -201,10 +201,10 @@ type CommentItem = {
   preview?: string
 }
 
-type TransientItem = Extract<ContextItem, { type: "element" | "template" }> & { key: string }
+type TransientItem = Extract<ContextItem, { type: "element" | "template" | "workflow" }> & { key: string }
 
 const isTransientItem = (item: ContextItem | (ContextItem & { key: string })): item is TransientItem =>
-  item.type === "element" || item.type === "template"
+  item.type === "element" || item.type === "template" || item.type === "workflow"
 
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
@@ -275,6 +275,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           label: item.label,
           html: item.html,
           text: item.text,
+        })
+        continue
+      }
+
+      if (item.type === "workflow") {
+        prompt.context.add({
+          type: "workflow",
+          workflowID: item.workflowID,
+          workflowName: item.workflowName,
+          description: item.description,
+          status: item.status,
+          method: item.method,
+          webhookUrl: item.webhookUrl,
+          language: item.language,
+          code: item.code,
+          nodes: item.nodes,
+          edges: item.edges,
+          revision: item.revision,
+          updatedAt: item.updatedAt,
         })
         continue
       }

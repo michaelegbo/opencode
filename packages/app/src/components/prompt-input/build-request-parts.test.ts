@@ -100,6 +100,48 @@ describe("buildRequestParts", () => {
     expect(synthetic).toHaveLength(1)
   })
 
+  test("adds Paddie workflow context with generated client code and graph", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "wire this workflow into the app", start: 0, end: 31 }],
+      context: [
+        {
+          key: "workflow:studio_flow_1:javascript",
+          type: "workflow",
+          workflowID: "studio_flow_1",
+          workflowName: "Order triage",
+          description: "Classify incoming orders",
+          status: "active",
+          method: "POST",
+          webhookUrl: "https://api.paddie.io/api/studio/webhooks/studio_wh_1",
+          language: "javascript",
+          code: "export async function runStudioFlow(payload = {}) { return fetch('/webhook') }",
+          nodes: [
+            { id: "n1", type: "webhook", name: "Webhook", config: { method: "POST" } },
+            { id: "n2", type: "ai", name: "Classify", config: { prompt: "Classify order urgency" } },
+          ],
+          edges: [{ id: "e1", source: "n1", target: "n2", condition: "always" }],
+          revision: 4,
+          updatedAt: "2026-05-19T12:00:00.000Z",
+        },
+      ],
+      images: [],
+      text: "wire this workflow into the app",
+      messageID: "msg_workflow",
+      sessionID: "ses_workflow",
+      sessionDirectory: "/repo",
+    })
+
+    const synthetic = result.requestParts.find((part) => part.type === "text" && part.synthetic)
+    expect(synthetic?.type).toBe("text")
+    if (synthetic?.type === "text") {
+      expect(synthetic.text).toContain("Paddie Studio workflow")
+      expect(synthetic.text).toContain("Order triage")
+      expect(synthetic.text).toContain("Generated javascript client code")
+      expect(synthetic.text).toContain("Workflow graph JSON")
+      expect(synthetic.text).toContain("Classify order urgency")
+    }
+  })
+
   test("adds file parts for @mentions inside comment text", () => {
     const result = buildRequestParts({
       prompt: [{ type: "text", content: "look", start: 0, end: 4 }],

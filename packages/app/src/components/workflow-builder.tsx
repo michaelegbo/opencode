@@ -1,7 +1,9 @@
 import { Button } from "@opencode-ai/ui/button"
-import { createMemo, createResource, createSignal, ErrorBoundary, onCleanup, onMount, Show } from "solid-js"
+import { showToast } from "@opencode-ai/ui/toast"
+import { createEffect, createMemo, createResource, createSignal, ErrorBoundary, For, onCleanup, onMount, Show } from "solid-js"
 import { type AuthUser, useAuth } from "@/context/auth"
 import { usePlatform } from "@/context/platform"
+import { paddieApi } from "@/lib/paddie-api"
 import { PADDIE_APP_ORIGIN, WORKFLOW_BUILDER_URL } from "@/lib/paddie-links"
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -9,6 +11,49 @@ const esc = (value: string) => value.replace(/<\/(script|style)/gi, "<\\/$1")
 const full =
   /([A-Za-z_$][\w$]*)\.jsx\(([A-Za-z_$][\w$]*),\{path:"\/studio\/fullscreen",element:\1\.jsx\(([A-Za-z_$][\w$]*),\{children:\1\.jsx\(([A-Za-z_$][\w$]*),\{autoFullscreen:!0\}\)\}\)\}\)/
 const api = /([A-Za-z_$][\w$]*)="\/api",([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.create\(\{baseURL:\1/
+
+type StudioWorkflowNode = {
+  id: string
+  type: string
+  name: string
+  config?: Record<string, unknown>
+}
+
+type StudioWorkflowEdge = {
+  id: string
+  source: string
+  target: string
+  condition?: string
+  sourceHandle?: string
+  targetHandle?: string
+}
+
+type StudioWorkflow = {
+  id: string
+  name: string
+  description?: string
+  status: string
+  webhook?: {
+    id: string
+    method: string
+  }
+  nodes: StudioWorkflowNode[]
+  edges: StudioWorkflowEdge[]
+  revision?: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+type StudioWorkflowCodegen = {
+  language: "javascript" | "python"
+  code: string
+  webhookUrl: string
+}
+
+export type WorkflowAttachPayload = {
+  flow: StudioWorkflow
+  codegen: StudioWorkflowCodegen
+}
 
 function origin(value: string) {
   return value.replace(
@@ -175,7 +220,7 @@ ${patched.map((js) => `<script type="module">${esc(js)}</script>`).join("\n")}
 </html>`
 }
 
-export function WorkflowBuilder() {
+export function WorkflowBuilder(props: { onAttachWorkflow?: (payload: WorkflowAttachPayload) => void }) {
   return (
     <ErrorBoundary
       fallback={(err, reset) => (
@@ -190,12 +235,12 @@ export function WorkflowBuilder() {
         </div>
       )}
     >
-      <WorkflowBuilderFrame />
+      <WorkflowBuilderFrame onAttachWorkflow={props.onAttachWorkflow} />
     </ErrorBoundary>
   )
 }
 
-function WorkflowBuilderFrame() {
+function WorkflowBuilderFrame(props: { onAttachWorkflow?: (payload: WorkflowAttachPayload) => void }) {
   const auth = useAuth()
   const platform = usePlatform()
   let box: HTMLDivElement | undefined
@@ -212,14 +257,28 @@ function WorkflowBuilderFrame() {
     },
     (input) => source(input.fetcher, input.token, input.user),
   )
+  const [flowRev, setFlowRev] = createSignal(0)
+  const [flows, flowsApi] = createResource(
+    () => {
+      if (!auth.token()) return
+      return flowRev()
+    },
+    () => paddieApi.get<StudioWorkflow[]>("/studio/flows"),
+  )
   const [fail, setFail] = createSignal<string>()
   const [wide, setWide] = createSignal(false)
   const [ready, setReady] = createSignal(false)
   const [rev, setRev] = createSignal(0)
+  const [selectedFlowId, setSelectedFlowId] = createSignal("")
+  const [attaching, setAttaching] = createSignal(false)
   const [zoom, setZoom] = createSignal(70)
   const scale = createMemo(() => zoom() / 100)
   const size = createMemo(() => `${100 / scale()}%`)
   const pct = createMemo(() => `${zoom()}%`)
+  const selectedFlow = createMemo(() => {
+    const list = flows() ?? []
+    return list.find((item) => item.id === selectedFlowId()) ?? list[0]
+  })
   const open = () => platform.openLink(WORKFLOW_BUILDER_URL)
   const fit = () => {
     const win = frame?.contentWindow
@@ -241,6 +300,8 @@ function WorkflowBuilderFrame() {
   const refresh = () => {
     setFail()
     setReady(false)
+    setFlowRev((value) => value + 1)
+    void flowsApi.refetch()
     if (platform.fetch) {
       setRev((value) => value + 1)
       void api.refetch()
@@ -276,8 +337,49 @@ function WorkflowBuilderFrame() {
   const reset = () => apply(70)
   const loaded = () => {
     setReady(true)
+    setFlowRev((value) => value + 1)
+    void flowsApi.refetch()
     pulse()
   }
+
+  const addWorkflowToCode = async () => {
+    const flow = selectedFlow()
+    if (!flow) {
+      showToast({
+        variant: "error",
+        title: "No workflow selected",
+        description: "Save a workflow in Paddie Studio, then reload flows.",
+      })
+      return
+    }
+    if (!props.onAttachWorkflow) return
+    setAttaching(true)
+    try {
+      const codegen = await paddieApi.get<StudioWorkflowCodegen>(
+        `/studio/flows/${flow.id}/codegen?language=javascript`,
+      )
+      props.onAttachWorkflow({ flow, codegen })
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "Could not add workflow",
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setAttaching(false)
+    }
+  }
+
+  createEffect(() => {
+    const list = flows() ?? []
+    if (list.length === 0) {
+      setSelectedFlowId("")
+      return
+    }
+    if (!list.some((item) => item.id === selectedFlowId())) {
+      setSelectedFlowId(list[0].id)
+    }
+  })
 
   onMount(() => {
     const listen = (event: MessageEvent) => {
@@ -355,6 +457,53 @@ function WorkflowBuilderFrame() {
         </Button>
         <Button variant="ghost" class="h-7 px-2 text-11-medium" onClick={open}>
           Open in browser
+        </Button>
+      </div>
+
+      <div class="min-h-12 shrink-0 border-b border-border-weaker-base bg-background-stronger px-4 py-2 flex flex-wrap items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Add workflow to code</div>
+          <div class="mt-0.5 text-11-medium text-text-weak truncate">
+            Select a saved Studio workflow. The generated JavaScript client and graph are attached to chat as code context.
+          </div>
+        </div>
+        <select
+          class="h-8 min-w-[220px] max-w-[340px] rounded-xl border border-border-weaker-base bg-background-base px-2 text-11-medium text-text-base outline-none"
+          value={selectedFlowId()}
+          disabled={flows.loading || (flows()?.length ?? 0) === 0}
+          onChange={(event) => setSelectedFlowId(event.currentTarget.value)}
+          title="Saved Paddie Studio workflows"
+        >
+          <Show
+            when={(flows()?.length ?? 0) > 0}
+            fallback={<option value="">{flows.loading ? "Loading workflows..." : "No saved workflows"}</option>}
+          >
+            <For each={flows() ?? []}>
+              {(flow) => (
+                <option value={flow.id}>
+                  {flow.name} · {flow.nodes.length} nodes · {flow.status}
+                </option>
+              )}
+            </For>
+          </Show>
+        </select>
+        <Button
+          variant="ghost"
+          class="h-8 px-3 text-11-medium"
+          disabled={flows.loading}
+          onClick={() => {
+            setFlowRev((value) => value + 1)
+            void flowsApi.refetch()
+          }}
+        >
+          Reload flows
+        </Button>
+        <Button
+          class="h-8 px-3 text-11-medium"
+          disabled={!selectedFlow() || attaching()}
+          onClick={() => void addWorkflowToCode()}
+        >
+          {attaching() ? "Adding..." : "Add workflow to code"}
         </Button>
       </div>
 

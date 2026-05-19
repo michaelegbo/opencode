@@ -1031,6 +1031,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             continue
           }
 
+          if (item.type === "workflow") {
+            prompt.context.add({
+              type: "workflow",
+              workflowID: item.workflowID,
+              workflowName: item.workflowName,
+              description: item.description,
+              status: item.status,
+              method: item.method,
+              webhookUrl: item.webhookUrl,
+              language: item.language,
+              code: item.code,
+              nodes: item.nodes,
+              edges: item.edges,
+              revision: item.revision,
+              updatedAt: item.updatedAt,
+            })
+            continue
+          }
+
           prompt.context.add({
             type: item.type,
             path: item.path,

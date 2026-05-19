@@ -29,7 +29,9 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 ? getFilenameTruncated(item.path, 14)
                 : item.type === "element"
                   ? item.label
-                  : item.label || item.partName || item.templateName
+                  : item.type === "workflow"
+                    ? item.workflowName
+                    : item.label || item.partName || item.templateName
             const tip =
               item.type === "file" ? (
                 <span class="flex max-w-[300px]">
@@ -42,6 +44,14 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 <div class="flex max-w-[320px] flex-col gap-1">
                   <span class="truncate text-text-invert-base">{item.label}</span>
                   <span class="break-all text-text-invert-base/80">{item.selector}</span>
+                </div>
+              ) : item.type === "workflow" ? (
+                <div class="flex max-w-[320px] flex-col gap-1">
+                  <span class="truncate text-text-invert-base">{item.workflowName}</span>
+                  <span class="text-text-invert-base/80">
+                    {item.nodes.length} nodes, {item.edges.length} links
+                  </span>
+                  <Show when={item.webhookUrl}>{(value) => <span class="break-all text-text-invert-base/70">{value()}</span>}</Show>
                 </div>
               ) : (
                 <div class="flex max-w-[320px] flex-col gap-1">
@@ -56,7 +66,9 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                 ? item.comment
                 : item.type === "element"
                   ? item.text?.trim() || item.selector
-                  : item.selector || item.description
+                  : item.type === "workflow"
+                    ? `${item.nodes.length} nodes, ${item.edges.length} links`
+                    : item.selector || item.description
 
             return (
               <Tooltip value={tip} placement="top" openDelay={2000}>
@@ -74,6 +86,8 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                       <FileIcon node={{ path: item.path, type: "file" }} class="shrink-0 size-3.5" />
                     ) : item.type === "element" ? (
                       <Icon name="window-cursor" class="shrink-0 size-3.5 text-icon-info-base" />
+                    ) : item.type === "workflow" ? (
+                      <Icon name="layout-right-full" class="shrink-0 size-3.5 text-icon-info-base" />
                     ) : (
                       <Icon name="layout-right-full" class="shrink-0 size-3.5 text-icon-info-base" />
                     )}

@@ -74,7 +74,35 @@ export type TemplateContextItem = {
   files: TemplateFile[]
 }
 
-export type ContextItem = FileContextItem | ElementContextItem | TemplateContextItem
+export type WorkflowContextItem = {
+  type: "workflow"
+  workflowID: string
+  workflowName: string
+  description?: string
+  status: string
+  method?: string
+  webhookUrl?: string
+  language: "javascript" | "python"
+  code: string
+  nodes: Array<{
+    id: string
+    type: string
+    name: string
+    config?: Record<string, unknown>
+  }>
+  edges: Array<{
+    id: string
+    source: string
+    target: string
+    condition?: string
+    sourceHandle?: string
+    targetHandle?: string
+  }>
+  revision?: number
+  updatedAt?: string
+}
+
+export type ContextItem = FileContextItem | ElementContextItem | TemplateContextItem | WorkflowContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
@@ -129,6 +157,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 function contextItemKey(item: ContextItem) {
   if (item.type === "element") return `${item.type}:${item.url}:${item.selector}`
   if (item.type === "template") return `${item.type}:${item.templateID}:${item.partID ?? "full"}:${item.selector ?? "part"}`
+  if (item.type === "workflow") return `${item.type}:${item.workflowID}:${item.language}`
   const start = item.selection?.startLine
   const end = item.selection?.endLine
   const key = `${item.type}:${item.path}:${start}:${end}`
