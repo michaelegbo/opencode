@@ -4,6 +4,7 @@ import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
+import type { InspirationContextPayload } from "@/inspiration/helpers"
 import type { TemplateFile } from "@/template/helpers"
 import { Persist, persisted } from "@/utils/persist"
 
@@ -102,7 +103,16 @@ export type WorkflowContextItem = {
   updatedAt?: string
 }
 
-export type ContextItem = FileContextItem | ElementContextItem | TemplateContextItem | WorkflowContextItem
+export type InspirationContextItem = InspirationContextPayload & {
+  type: "inspiration"
+}
+
+export type ContextItem =
+  | FileContextItem
+  | ElementContextItem
+  | TemplateContextItem
+  | WorkflowContextItem
+  | InspirationContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
@@ -156,6 +166,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 
 function contextItemKey(item: ContextItem) {
   if (item.type === "element") return `${item.type}:${item.url}:${item.selector}`
+  if (item.type === "inspiration") return `${item.type}:${item.url}:${item.mode}:${item.selector ?? "page"}`
   if (item.type === "template") return `${item.type}:${item.templateID}:${item.partID ?? "full"}:${item.selector ?? "part"}`
   if (item.type === "workflow") return `${item.type}:${item.workflowID}:${item.language}`
   const start = item.selection?.startLine

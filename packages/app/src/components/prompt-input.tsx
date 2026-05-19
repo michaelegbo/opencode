@@ -1050,6 +1050,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             continue
           }
 
+          if (item.type === "inspiration") {
+            prompt.context.add({
+              type: "inspiration",
+              url: item.url,
+              pageTitle: item.pageTitle,
+              mode: item.mode,
+              selector: item.selector,
+              label: item.label,
+              text: item.text,
+              html: item.html,
+              styleSignals: item.styleSignals,
+            })
+            continue
+          }
+
           prompt.context.add({
             type: item.type,
             path: item.path,

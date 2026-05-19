@@ -8,6 +8,7 @@ import type {
   FileAttachmentPart,
   FileContextItem,
   ImageAttachmentPart,
+  InspirationContextItem,
   Prompt,
   TemplateContextItem,
   WorkflowContextItem,
@@ -19,7 +20,9 @@ type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id
 
 type BuildRequestPartsInput = {
   prompt: Prompt
-  context: ({ key: string } & (FileContextItem | ElementContextItem | TemplateContextItem | WorkflowContextItem))[]
+  context: ({
+    key: string
+  } & (FileContextItem | ElementContextItem | TemplateContextItem | WorkflowContextItem | InspirationContextItem))[]
   images: ImageAttachmentPart[]
   text: string
   messageID: string
@@ -57,6 +60,9 @@ const isTemplateContext = (
 const isWorkflowContext = (
   item: BuildRequestPartsInput["context"][number],
 ): item is { key: string } & WorkflowContextItem => item.type === "workflow"
+const isInspirationContext = (
+  item: BuildRequestPartsInput["context"][number],
+): item is { key: string } & InspirationContextItem => item.type === "inspiration"
 
 const TEMPLATE_REFERENCE_FILE_LIMIT = 48_000
 const TEMPLATE_REFERENCE_TOTAL_LIMIT = 140_000
@@ -187,6 +193,43 @@ const formatWorkflowNote = (item: WorkflowContextItem) => {
   return lines.join("\n\n")
 }
 
+const formatStyleSignals = (item: InspirationContextItem) => {
+  const groups = [
+    ["Colors", item.styleSignals.colors],
+    ["Typography", item.styleSignals.typography],
+    ["Layout and spacing", item.styleSignals.layout],
+    ["Borders", item.styleSignals.borders],
+    ["Shadows", item.styleSignals.shadows],
+    ["Transitions", item.styleSignals.transitions],
+    ["Animations", item.styleSignals.animations],
+    ["Keyframes", item.styleSignals.keyframes],
+  ] as const
+
+  return groups.flatMap(([label, values]) => (values.length ? [`${label}: ${values.join("; ")}`] : []))
+}
+
+const formatInspirationNote = (item: InspirationContextItem) => {
+  const lines = [
+    "The user attached the following public website as a high-fidelity design and motion inspiration reference.",
+    `URL: ${item.url}`,
+    `Page title: ${item.pageTitle}`,
+    `Reference mode: ${item.mode}`,
+    `Reference label: ${item.label}`,
+  ]
+  if (item.selector) lines.push(`Selector: ${item.selector}`)
+  if (item.text?.trim()) lines.push(`Text: ${item.text.trim()}`)
+  lines.push(
+    "Adapt the visible layout, spacing, hierarchy, colors, typography, component density, and motion intent to the current project. Do not copy private assets, logos, trademarks, brand text, or branding verbatim.",
+  )
+  const signals = formatStyleSignals(item)
+  if (signals.length) {
+    lines.push("Extracted style and motion signals:")
+    lines.push(...signals)
+  }
+  if (item.html.trim()) lines.push(`Reference HTML:\n${item.html.trim()}`)
+  return lines.join("\n\n")
+}
+
 const toOptimisticPart = (part: PromptRequestPart, sessionID: string, messageID: string): Part => {
   if (part.type === "text") {
     return {
@@ -295,6 +338,17 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
           id: Identifier.ascending("part"),
           type: "text",
           text: formatWorkflowNote(item),
+          synthetic: true,
+        } satisfies PromptRequestPart,
+      ]
+    }
+
+    if (isInspirationContext(item)) {
+      return [
+        {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatInspirationNote(item),
           synthetic: true,
         } satisfies PromptRequestPart,
       ]

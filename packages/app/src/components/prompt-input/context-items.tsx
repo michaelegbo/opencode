@@ -3,8 +3,9 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/core/util/path"
+import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import type { ContextItem } from "@/context/prompt"
+import { contextItemChip } from "./context-item-chip"
 
 type PromptContextItem = ContextItem & { key: string }
 
@@ -24,14 +25,8 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
           {(item) => {
             const selected = props.active(item)
             const clickable = item.type === "file" && !!item.commentID
-            const label =
-              item.type === "file"
-                ? getFilenameTruncated(item.path, 14)
-                : item.type === "element"
-                  ? item.label
-                  : item.type === "workflow"
-                    ? item.workflowName
-                    : item.label || item.partName || item.templateName
+            const chip = contextItemChip(item)
+            const label = chip.label
             const tip =
               item.type === "file" ? (
                 <span class="flex max-w-[300px]">
@@ -53,6 +48,12 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                   </span>
                   <Show when={item.webhookUrl}>{(value) => <span class="break-all text-text-invert-base/70">{value()}</span>}</Show>
                 </div>
+              ) : item.type === "inspiration" ? (
+                <div class="flex max-w-[320px] flex-col gap-1">
+                  <span class="truncate text-text-invert-base">{item.mode === "page" ? item.pageTitle : item.label}</span>
+                  <span class="break-all text-text-invert-base/80">{item.url}</span>
+                  <Show when={item.selector}>{(value) => <span class="break-all text-text-invert-base/70">{value()}</span>}</Show>
+                </div>
               ) : (
                 <div class="flex max-w-[320px] flex-col gap-1">
                   <span class="truncate text-text-invert-base">{item.templateName}</span>
@@ -61,14 +62,7 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                   <span class="text-text-invert-base/70">{item.files.length} reference files</span>
                 </div>
               )
-            const body =
-              item.type === "file"
-                ? item.comment
-                : item.type === "element"
-                  ? item.text?.trim() || item.selector
-                  : item.type === "workflow"
-                    ? `${item.nodes.length} nodes, ${item.edges.length} links`
-                    : item.selector || item.description
+            const body = chip.body
 
             return (
               <Tooltip value={tip} placement="top" openDelay={2000}>
@@ -88,6 +82,8 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
                       <Icon name="window-cursor" class="shrink-0 size-3.5 text-icon-info-base" />
                     ) : item.type === "workflow" ? (
                       <Icon name="layout-right-full" class="shrink-0 size-3.5 text-icon-info-base" />
+                    ) : item.type === "inspiration" ? (
+                      <Icon name="window-cursor" class="shrink-0 size-3.5 text-icon-info-base" />
                     ) : (
                       <Icon name="layout-right-full" class="shrink-0 size-3.5 text-icon-info-base" />
                     )}

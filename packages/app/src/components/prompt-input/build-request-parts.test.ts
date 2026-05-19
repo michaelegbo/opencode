@@ -142,6 +142,52 @@ describe("buildRequestParts", () => {
     }
   })
 
+  test("adds public website inspiration context as a design reference note", () => {
+    const result = buildRequestParts({
+      prompt: [{ type: "text", content: "make this page feel like the reference", start: 0, end: 39 }],
+      context: [
+        {
+          key: "inspiration:https://example.com/:element:main",
+          type: "inspiration",
+          url: "https://example.com/",
+          pageTitle: "Example",
+          mode: "element",
+          selector: "main > section.hero",
+          label: "section.hero",
+          text: "Design faster",
+          html: "<section class=\"hero\">Design faster</section>",
+          styleSignals: {
+            colors: ["rgb(10, 20, 30)", "rgb(240, 248, 255)"],
+            typography: ["font-size: 48px", "font-family: Inter"],
+            layout: ["display: grid", "gap: 32px"],
+            borders: ["border-radius: 24px"],
+            shadows: ["box-shadow: 0 20px 60px #0003"],
+            transitions: ["transition-duration: 200ms"],
+            animations: ["animation-name: fade-in"],
+            keyframes: ["@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }"],
+          },
+        },
+      ],
+      images: [],
+      text: "make this page feel like the reference",
+      messageID: "msg_inspiration",
+      sessionID: "ses_inspiration",
+      sessionDirectory: "/repo",
+    })
+
+    const synthetic = result.requestParts.find((part) => part.type === "text" && part.synthetic)
+    expect(synthetic?.type).toBe("text")
+    if (synthetic?.type === "text") {
+      expect(synthetic.text).toContain("public website")
+      expect(synthetic.text).toContain("https://example.com/")
+      expect(synthetic.text).toContain("Reference mode: element")
+      expect(synthetic.text).toContain("main > section.hero")
+      expect(synthetic.text).toContain("font-size: 48px")
+      expect(synthetic.text).toContain("@keyframes fade-in")
+      expect(synthetic.text).toContain("Do not copy private assets")
+    }
+  })
+
   test("adds file parts for @mentions inside comment text", () => {
     const result = buildRequestParts({
       prompt: [{ type: "text", content: "look", start: 0, end: 4 }],

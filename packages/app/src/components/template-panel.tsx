@@ -12,6 +12,7 @@ import { useServer } from "@/context/server"
 import { useAuth } from "@/context/auth"
 import { paddieApi, UpgradeRequiredError } from "@/lib/paddie-api"
 import { STUDIO_LOGIN_URL, STUDIO_SIGNUP_URL } from "@/lib/paddie-links"
+import { InspirationPanel } from "@/components/inspiration-panel"
 import { WorkflowBuilder, type WorkflowAttachPayload } from "@/components/workflow-builder"
 import {
   DEFAULT_TEMPLATE_THUMB_DATA_URL,
@@ -72,6 +73,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 type Device = "desktop" | "tablet" | "mobile"
 type Desk = "1920" | "1600" | "1440"
+type StudioSection = "templates" | "inspiration" | "workflow"
 
 const views = {
   "1920": { w: 1920, h: 1080, label: "1920x1080" },
@@ -112,7 +114,7 @@ export function TemplatePanel(props: {
   const [pid, setPID] = createSignal("full")
   const [pick, setPick] = createSignal(false)
   const [view, setView] = createSignal<"library" | "detail">("library")
-  const [section, setSection] = createSignal<"templates" | "workflow">("templates")
+  const [section, setSection] = createSignal<StudioSection>("templates")
   const [parts, setParts] = createSignal(false)
   const [device, setDevice] = createSignal<Device>("desktop")
   const [desk, setDesk] = createSignal<Desk>("1920")
@@ -560,7 +562,7 @@ export function TemplatePanel(props: {
     </button>
   )
 
-  const tab = (value: "templates" | "workflow", label: string) => (
+  const tab = (value: StudioSection, label: string) => (
     <button
       type="button"
       classList={{
@@ -611,12 +613,13 @@ export function TemplatePanel(props: {
                       </div>
                       <div class="min-w-0">
                         <div class="text-10-medium uppercase tracking-[0.12em] text-text-weak">Studio</div>
-                        <div class="text-15-medium text-text-base">Templates & workflows</div>
+                        <div class="text-15-medium text-text-base">Templates, inspiration & workflows</div>
                       </div>
                     </div>
                     <div class="flex flex-wrap items-center justify-end gap-2 shrink-0">
                       <div class="rounded-xl border border-border-weaker-base bg-background-base p-1 flex items-center gap-1">
                         {tab("templates", "Templates")}
+                        {tab("inspiration", "Inspiration")}
                         {tab("workflow", "Workflow Builder")}
                       </div>
                       <Show when={auth.isAuthenticated()}>
@@ -658,26 +661,31 @@ export function TemplatePanel(props: {
                   <div class="mt-3 max-w-[780px] text-13-medium text-text-weak">
                     {section() === "workflow"
                       ? "Build and manage Paddie workflows with the same account used for Studio templates."
-                      : "Browse a starter first, then open it in a desktop canvas. Curated parts stay hidden until you select one or open them yourself."}
+                      : section() === "inspiration"
+                        ? "Browse a public website, capture a selectable snapshot, and attach page or element references to chat."
+                        : "Browse a starter first, then open it in a desktop canvas. Curated parts stay hidden until you select one or open them yourself."}
                   </div>
                 </div>
 
-                <Show
-                  when={section() === "templates"}
-                  fallback={
-                    <Show
-                      when={auth.isAuthenticated()}
-                      fallback={
-                        <LoginCard
-                          desc="Use your Paddie account to access Workflow Builder"
-                          openLink={(url) => platform.openLink(url)}
-                        />
-                      }
-                    >
-                      <WorkflowBuilder onAttachWorkflow={attachWorkflow} />
-                    </Show>
-                  }
-                >
+                <Show when={section() === "inspiration"}>
+                  <InspirationPanel chatHidden={props.chatHidden} onChatToggle={props.onChatToggle} />
+                </Show>
+
+                <Show when={section() === "workflow"}>
+                  <Show
+                    when={auth.isAuthenticated()}
+                    fallback={
+                      <LoginCard
+                        desc="Use your Paddie account to access Workflow Builder"
+                        openLink={(url) => platform.openLink(url)}
+                      />
+                    }
+                  >
+                    <WorkflowBuilder onAttachWorkflow={attachWorkflow} />
+                  </Show>
+                </Show>
+
+                <Show when={section() === "templates"}>
                   <Show when={!auth.isAuthenticated()}>
                     <LoginCard openLink={(url) => platform.openLink(url)} />
                   </Show>
